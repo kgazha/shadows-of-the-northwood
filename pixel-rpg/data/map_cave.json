@@ -16,14 +16,14 @@
   "VVVVVVVVV#.#VVVVVVVVV#,...M.#V",
   "VVVVVVVVV#,#VVVVVVVVV#..,...#V",
   "VVVVVVVVV#..#VVVVVVVV#.M.M,.#V",
-  "VVVVV######L#########V######VV",
+  "VVVVV######.#########V######VV",
   "VVVV#R...,......,....#VVVVVVVV",
   "VVVV#..P...,......PB.#VVVVVVVV",
   "VVVV#.,.B....,......,#VVVVVVVV",
-  "VVVV#..P,......B..P..#VVVVVVVV",
-  "VVVV#.B...,......,C..#VVVVVVVV",
-  "VVVV#R......AAA....,R#VVVVVVVV",
-  "VVVVV################VVVVVVVVV",
+  "VVVV#..P,......B.#P##VVVVVVVVV",
+  "VVVV#.B...,......LC..#VVVVVVVV",
+  "VVVV#R......AAA..#.,R#VVVVVVVV",
+  "VVVVV############V###VVVVVVVVV",
   "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"
  ],
  "spawn": [
@@ -52,8 +52,8 @@
  ],
  "door": [
   [
-   11,
-   13
+   17,
+   18
   ]
  ]
 }

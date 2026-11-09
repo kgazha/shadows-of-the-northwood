@@ -5,6 +5,8 @@ const CHASE_DIST := 48.0
 const HIT_DIST := 11.0
 const SPEED_CHASE := 40.0
 const SPEED_WANDER := 16.0
+## Возобновляемый ресурс прокачки: слайм отрастает у дома через ~50 с.
+const RESPAWN := 50.0
 
 var world: Node2D
 var hp := 3
@@ -14,10 +16,16 @@ var dirv := Vector2.ZERO
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
 var freeze_t := 0.0
+## Смерть: тайм-аут до возрождения у «дома».
+var dying := false
+var respawn_t := 0.0
+var home := Vector2.ZERO
+var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
 	position = world.tile_to_world(tile)
+	home = position
 	collision_layer = 4
 	collision_mask = 1 | 2 | 4
 	add_to_group("enemy")
@@ -26,6 +34,7 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	sh.size = Vector2(10, 8)
 	cs.shape = sh
 	add_child(cs)
+	_shape = cs
 	anim = AnimatedSprite2D.new()
 	var fr := SpriteFrames.new()
 	fr.remove_animation("default")
@@ -43,6 +52,11 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	anim.play("walk")
 
 func _physics_process(delta: float) -> void:
+	if dying:
+		respawn_t -= delta
+		if respawn_t <= 0.0:
+			_respawn()
+		return
 	hurt_t = maxf(0.0, hurt_t - delta)
 	freeze_t = maxf(0.0, freeze_t - delta)
 	if hurt_t > 0.0:
@@ -75,14 +89,34 @@ func _physics_process(delta: float) -> void:
 		world.player.take_damage(1)
 
 func hurt(dmg: int, from: Vector2) -> void:
+	if dying:
+		return
 	hp -= dmg
 	hurt_t = 0.3
 	velocity = (global_position - from).normalized() * 70.0
 	if hp <= 0:
-		GameState.slime_kills += 1
-		GameState.add_xp(7)
-		GameState.toast.emit("Слайм повержен! (+7 опыта)")
-		GameState.quest_changed.emit()
-		if GameState.slime_quest == 1 and GameState.slime_kills == 3:
-			GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")
-		queue_free()
+		_die()
+
+func _die() -> void:
+	dying = true
+	respawn_t = RESPAWN
+	GameState.slime_kills += 1
+	GameState.add_xp(7)
+	GameState.toast.emit("Слайм повержен! (+7 опыта)")
+	GameState.quest_changed.emit()
+	if GameState.slime_quest == 1 and GameState.slime_kills == 3:
+		GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")
+	remove_from_group("enemy")
+	visible = false
+	_shape.disabled = true
+
+func _respawn() -> void:
+	dying = false
+	hp = 3
+	freeze_t = 0.0
+	hurt_t = 0.0
+	position = home
+	modulate = Color.WHITE
+	visible = true
+	_shape.disabled = false
+	add_to_group("enemy")

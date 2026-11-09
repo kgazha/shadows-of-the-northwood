@@ -4,6 +4,12 @@ extends CharacterBody2D
 
 const SPEED := 30.0
 const HIT_DIST := 12.0
+## Рывок: раз в ~4.5 с гром бросается вперёд — давление и на ближний бой,
+## и на «стойщих» вдали лучника/мага (правка баланса из retention-ревью).
+const CHARGE_SPEED := 80.0
+const CHARGE_CD := 4.5
+const CHARGE_TIME := 0.7
+const CHARGE_MIN_DIST := 26.0
 
 var world: Node2D
 var hp := 12
@@ -11,6 +17,9 @@ var anim: AnimatedSprite2D
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
 var freeze_t := 0.0
+var charge_t := 2.5
+var rush_t := 0.0
+var rush_dir := Vector2.ZERO
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
@@ -65,9 +74,21 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 	var d := global_position.distance_to(world.player.global_position)
-	velocity = (world.player.global_position - global_position).normalized() * SPEED
+	if rush_t > 0.0:
+		rush_t -= delta
+		modulate = Color(1.15, 0.7, 0.55) if hurt_t <= 0.0 and freeze_t <= 0.0 else modulate
+		velocity = rush_dir * CHARGE_SPEED
+	else:
+		charge_t -= delta
+		if charge_t <= 0.0 and d > CHARGE_MIN_DIST:
+			charge_t = CHARGE_CD
+			rush_t = CHARGE_TIME
+			rush_dir = (world.player.global_position - global_position).normalized()
+			GameState.toast.emit("Гром бросается вперёд — отходи!")
+		else:
+			velocity = (world.player.global_position - global_position).normalized() * SPEED
 	move_and_slide()
-	if d < HIT_DIST:
+	if global_position.distance_to(world.player.global_position) < HIT_DIST:
 		world.player.take_damage(2)
 
 func hurt(dmg: int, from: Vector2) -> void:

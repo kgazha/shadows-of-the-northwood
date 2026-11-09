@@ -306,10 +306,92 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.cancel_orders()
 	elif event.is_action_pressed("ui_cancel"):
 		player.cancel_orders()
+	elif event.is_action_pressed("potion"):
+		drink_potion()
 	else:
 		for i in 4:
 			if event.is_action_pressed("skill_%d" % (i + 1)):
 				player.cast_skill(i, get_global_mouse_position())
+
+# --- зелья ---
+
+## Лесное зелье: трава -> +3 HP (клавиша Q или кнопка на HUD).
+func drink_potion() -> void:
+	if GameState.input_locked or hud.is_dialog_open() or hud.is_modal_open():
+		return
+	if GameState.herbs <= 0:
+		GameState.toast.emit("Трав нет. Собери их у кустов (E).")
+		return
+	if GameState.hp >= GameState.max_hp:
+		GameState.toast.emit("Ты и так здрав.")
+		return
+	GameState.herbs -= 1
+	GameState.heal(3)
+	GameState.quest_changed.emit()  # автосейв + обновление HUD
+	GameState.toast.emit("Лесное зелье: +3 HP")
+
+# --- маркер цели квеста ---
+
+## Мировые координаты текущей цели для HUD-стрелки (Vector2.INF — цели нет).
+func objective_pos() -> Vector2:
+	var target := _objective_raw()
+	if target == Vector2.INF or player == null:
+		return Vector2.INF
+	# цель в другой зоне — стрелка ведёт к переходу
+	var target_in_cave: bool = target.y > CAVE_OFFSET.y - 1000.0
+	if target_in_cave != GameState.in_cave:
+		if GameState.in_cave and dungeon_zone != null and dungeon_zone.stairs_node != null:
+			return dungeon_zone.stairs_node.global_position
+		if not GameState.in_cave:
+			return tile_to_world(CAVE_ENTRANCE_TILE)
+	return target
+
+func _objective_raw() -> Vector2:
+	if GameState.elder_quest < 2:
+		if GameState.elder_quest == 1 and GameState.herbs < 3:
+			var hb := _nearest_herb()
+			if hb != null:
+				return hb.global_position
+		var el := _find_npc("elder")
+		return el.global_position if el != null else Vector2.INF
+	# --- линия пещеры (cave_state 0..3) ---
+	if GameState.cave_state >= 4:
+		return Vector2.INF
+	if dungeon_zone == null:
+		return Vector2.INF
+	if GameState.cave_state == 3:
+		if not GameState.has_amulet:
+			if GameState.door_opened and is_instance_valid(dungeon_zone.chest_node):
+				return dungeon_zone.chest_node.global_position
+			if dungeon_zone.door_tile.x >= 0:
+				return CAVE_OFFSET + dungeon_zone.tile_to_world(dungeon_zone.door_tile)
+		if dungeon_zone.hermit_node != null:
+			return dungeon_zone.hermit_node.global_position
+		return Vector2.INF
+	if not GameState.boss_defeated and is_instance_valid(dungeon_zone.boss_node):
+		return dungeon_zone.boss_node.global_position
+	if dungeon_zone.hermit_node != null:
+		return dungeon_zone.hermit_node.global_position
+	return Vector2.INF
+
+func _find_npc(id: String) -> Node2D:
+	for n in village_zone.get_children():
+		if n.get("npc_id") != null and n.get("npc_id") == id:
+			return n
+	return null
+
+func _nearest_herb() -> Node2D:
+	if player == null:
+		return null
+	var best: Node2D = null
+	var bd := INF
+	for h in village_zone.get_children():
+		if h.get("kind") != null and h.get("kind") == "herb" and h.get("used") != true:
+			var d := player.global_position.distance_squared_to(h.global_position)
+			if d < bd:
+				bd = d
+				best = h
+	return best
 
 # --- переход между зонами ---
 

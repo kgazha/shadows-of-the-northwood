@@ -3,94 +3,128 @@
 > Журнал контекста разработки. Любая новая сессия ИИ-ассистента должна начать с этого файла.
 > Обновлять при каждом значимом изменении.
 
-## Текущий статус (2026-11-09)
+## Текущий статус (фаза 3 завершена)
 
-✅ **Вертикальный срез готов и играбелен** (проверено headless-прогоном и живыми запусками, exit 0).
+✅ **Два класса зон, три класса героя, скиллы, мышиное управление, пещера с боссом,
+полная квестовая линия до финала, автосейвы, респавн врагов/трав, зелья, маркер цели.**
+Headless-смоук чистый; регрессия QA-харнессом — PASS.
 
 - Движок: **Godot 4.7.2 stable** (портативный, `tools/godot/`), рендер GL Compatibility.
-- Игра: деревня Морхейм + лес; герой с анимацией, 3 NPC, 2 квестовые цепочки, слаймы с ИИ,
-  сундук с мечом, опыт/уровни, сердца HP, диалоги с портретами и эффектом печати, F5/F9 сейвы.
-- Все ассеты — процедурно сгенерированы (см. «Пайплайн»).
+- Git: `943def2` baseline → `13073d7` art → `526b256` классы → `7ed2527` диалог-клик →
+  `0a3e619` атмосфера → `f917a9f` фикс fade_rect (клики) → далее фаза 3 (сейвы двери и пр.).
 
-## Как запустить
+## Как запустить / проверить
 
-- Двойной клик по `start-game.bat` (в корне workspace) — сохраняет всё в `tools/appdata`.
-- CLI: `tools/godot/Godot_v4.7.2-stable_win64.exe --path pixel-rpg`
-- Редактор: тот же exe с флагом `-e --path pixel-rpg`
-- Управление: WASD/стрелки — ходьба; E — диалог/действие; Пробел — атака; F5/F9 — сейв/лоад.
+- Игрок: двойной клик `start-game.bat` (сейвы в `tools/appdata`).
+- Смоук: `& tools/godot/Godot_v4.7.2-stable_win64.exe --headless --path pixel-rpg --quit-after 240`
+  — игнорировать «Failed to read the root certificate store» (шум); судить по отсутствию SCRIPT ERROR.
+- После правки ассетов: сначала прогон с `--import`.
+- Тайминг-тесты: флаг `--fixed-fps 60` (иначе физика/твины в headless врут).
+- ВНИМАНИЕ: `push_input` в headless НЕ двигает GUI-хиттестинг — клики мышью проверяются
+  только живым запуском или прямым вызовом методов. Реальные баги от игрока важнее зелёных тестов.
+- Сейв пользователя: `tools/appdata/Godot/app_userdata/Тени Северного Леса/save_morkheim.json`
+  (перед тестами, пишущими GameState, ДЕЛАТЬ БЭКАП).
+
+## Управление (нынешнее)
+
+- **ЛКМ** — идти / атаковать (клик по врагу = автоатака в радиусе класса) / выбрать интерактив.
+- **ПКМ / Esc** — отменить приказ. **E** — взаимодействие и «далее» в диалоге (диалог также жмётся ЛКМ/Space/Enter).
+- **1–4** или клик по иконкам — скиллы класса (КД-шторка, замок «ур.N»).
+- **Q** или кнопка у панели скиллов — зелье из трав (+3 HP).
+- **F5/F9** — сейв/лоад. Автосейв: level-up, любое изменение квестов, открытие двери.
+- WASD/стрелки остались (дублируют move_*), но основной scheme — мышь.
+
+## Ключевые механики
+
+- **Классы** (`scripts/classes_data.gd`): warrior hp12/melee, archer hp8/range80 (стрелы),
+  mage hp6/range70 (фаербол+заморозка). Скиллы открываются на ур. 1/2/3/4, КД 4–18 с.
+  XP-кривая ×1.6 (20/32/51/82/131…). Урон производный: класс + меч x2 + амулет +1
+  (поле `damage` — getter, записи игнорируются намеренно!).
+- **Модальный выбор класса** (`hud.show_class_modal`) при `class_id==""` — первый экран игры.
+  fade-слой мира на CanvasLayer 10 ОБЯЗАТЕЛЬНО с `mouse_filter=IGNORE` (иначе ест все клики).
+- **Зоны**: деревня + пещера (Node2D Cave со смещением `CAVE_OFFSET y=4800`), переходы
+  fade-твином. Пещера: отшельник Геральд → босс «Осквернённый гром» → ключ → ниша с сундуком
+  (дверь `[[17,18]]`, сундук (18,18)) → амулет → финал у отшельника. cave_state 0..4.
+  **Смерть = мягкая**: респаун с полным HP у костра деревни.
+- **Ресурсы цикла** (фаза 3): слаймы респавнятся у дома через 50 с (XP-петля), травы
+  отрастают за 50 с (зелья), босс давит рывком каждые ~4.5 с (лучник/маг не стоят безнаказанно).
+- **Дверь ниши сериализуется**: `GameState.door_opened` (старые сейвы совместимы — d.get defaults).
+- **Маркер цели**: золотая стрелка на краю экрана (`hud._update_marker`), цель считает
+  `world.objective_pos()` (старейшина→травы→вход в пещеру→босс→отшельник→дверь/сундук; цель
+  в другой зоне = стрелка к переходу). Скрыта, когда цель в кадре.
 
 ## Структура
 
 ```
-pixel-rpg/               проект Godot
-  project.godot          конфиг (input-мапа, viewport 640x360, nearest-фильтр, snap)
-  scenes/main.tscn       единственная сцена: Node2D + world.gd (всё остальное строится кодом!)
-  scripts/world.gd       мир: парсинг карты, тайлмап, стены, спавн, диалоги, ввод, квест-логика
-  scripts/player.gd      персонаж: движение, спрайт-фреймы из листа, атака (Area2D на 2 кадра)
-  scripts/npc.gd         NPC-зоны диалога (Area2D, hint "E")
-  scripts/interactable.gd трава/сундук
-  scripts/slime.gd       враг: блуждание -> преследование, knockback, смерть
-  scripts/hud.gd         CanvasLayer: сердца, XP, задания, диалоги, тосты (всё в коде)
-  scripts/game_state.gd  Autoload GameState: статы, квесты, save/load (JSON в user://)
-  data/map_village.json  карта (генерится, не редактировать руками)
-  data/dialogues.json    ВЕСЬ текст игры — правьте свободно
-  assets/*.png           генерированные ассеты
+pixel-rpg/
+  project.godot           input: move_*, interact(E), attack(Space), skill_1..4, potion(Q), F5/F9
+  scenes/main.tscn        ЕДИНСТВЕННАЯ сцена: Node2D + world.gd (всё строится кодом в _ready!)
+  scripts/world.gd        мир: зоны, карта, ввод (мышь-приказы), диалоги, квест-логика talk(),
+                          objective_pos()/маркер, drink_potion(), save/load
+  scripts/player.gd       герой: классы, приказы ЛКМ, автоатака, cast_skill(0..3, at), снаряды,
+                          hurt_cd, скилл-КД
+  scripts/classes_data.gd справочник CLASSES/SKILLS (баланс править здесь)
+  scripts/game_state.gd   autoload GameState: все флаги/сейвы; _ready вешает автосейвы
+  scripts/hud.gd          CanvasLayer: сердца/XP/тосты/диалоги, панель скиллов, кнопка зелья,
+                          стрелка цели, модалка классов (gui_input, НЕ signals на клики push_input)
+  scripts/atmosphere.gd   свет/тени/вода/факелы/частицы/твинт зон/виньетка (~580 строк)
+  scripts/dungeon_zone.gd пещера из map_cave.json: hermit/лестница/дверь(сериализ.)/сундук/босс-триггер
+  scripts/dungeon_zone internals: ссылки hermit_node/boss_node/chest_node/stairs_node для маркера
+  scripts/interactable.gd трава (респавн 50 с) / сундук меча (подсказка «Пустой сундук»)
+  scripts/slime.gd        респавн у дома; dying-состояние вне группы "enemy"
+  scripts/brute.gd        босс: погоня + рывок CHARGE_CD 4.5 с
+  scripts/npc.gd, projectile.gd, dungeon_zone.gd inner classes
+  data/map_village.json, data/map_cave.json   (генераторы! не руками)
+  data/dialogues.json + data/dialogues_v2.json (весь текст — правьте свободно)
 tools/
-  gen_assets.js          генератор пиксель-арта (чистый Node, PNG-энкодер внутри)
-  gen_map.js             генератор карты -> data/map_village.json
-  dl.js                  HTTPS-загрузчик через Node (см. «Особенности среды»)
-  godot/                 портативный Godot 4.7.2
+  gen_assets.js  → затем gen_assets2.js   (ПОРЯДОК ОБЯЗАТЕЛЕН: второй перетирает первый)
+  gen_map.js, gen_map_cave.js  (cave содержит DEADLOCK-проверку: цель/отшельник/выход
+                                достижимы даже с закрытой дверью, иначе throw)
+  png_check.js   <файл> [cw ch] — проверка оглушённых клеток PNG без «зрения»
+  dl.js          единственный сетевой доступ
+  godot/         портативный движок; appdata/localdata — песочница APPDATA
+docs/DESIGN_v2_classes.md   спека классов/скиллов (правка v1.1: ур.аны 1..4, xp x1.6)
+QA-REPORT.md, RETENTION-REPORT.md  ревью-отчёты команды
+start-game.bat
 ```
 
-## Пайплайн пересборки контента
+## Пайплайн ассетов (детерминированный, без сети и рандома)
 
-1. Правка `tools/gen_assets.js` или `tools/gen_map.js`
-2. `node tools/gen_assets.js` и/или `node tools/gen_map.js`
-3. `node tools/dl.js` — не нужен; при новых png — re-import: exe + `--headless --path pixel-rpg --import`
-4. Дымовой тест: exe + `--headless --path pixel-rpg --quit-after 240` (ловить `SCRIPT ERROR`)
-5. Запуск игры.
+1. `node tools/gen_assets.js` — базовый лист.
+2. `node tools/gen_assets2.js` — ПОЛИРОВКА (перезаписывает tiles/slime/npc/портреты/heart/player
+   + decor.png, anim_tiles.png, shadow.png, class_*.png, skill_icons.png, projectiles.png,
+   cursor_move/enemy.png, dungeon_tiles.png, brute.png, key.png, portraits2.png).
+3. `node tools/gen_map.js`, `node tools/gen_map_cave.js`.
+4. Прогон Godot с `--import` (иначе новые PNG не увидятся).
+5. `node tools/png_check.js pixel-rpg/assets/<файл> 16 16` — по 256 непрозрачных пикселей
+   на клетку (или близко) — так верифицируем арт без визуальной модели.
 
-Ключ: **сцены не содержат данных** — почти всё создаётся кодом в `_ready()`, поэтому
-правки карт/ассетов не требуют трогать .tscn, а ручная работа в редакторе почти не нужна.
+## Грабли Godot 4.7 (проверено на себе)
 
-## Квесты и состояние (GameState, autoload)
+- `CanvasLayer.layer=10` рисуется И пикает поверх HUD(1): невидимый ColorRect c дефолтным
+  `mouse_filter=STOP` убивает все клики игры. Всегда IGNORE для оверлеев.
+- `push_input` в headless не двигает GUI-хиттест → клик-тесты бессмысленны, модалку
+  проверять прямым вызовом или живым запуском.
+- `PhysicsPointQueryParameters2D.position` (не point); Light2D абстрактный → PointLight2D;
+  TileMapLayer: нет set_cells/get_index_of_child, есть get_cell_atlas_coords;
+  `Viewport.push_input` возвращает void; CPUParticles2D без turbulence;
+  `String(null)` — ошибка рантайма (лишь str() переносит null);
+  var-свойства с setter'ом-заглушкой (damage) — легаси-код пишет в них молча.
+- `var m := load(...).instantiate()` не выводит тип — аннотировать `: Node`.
+- Голова: `--quit-after N` на всякий случай (парс-ошибка = сцена не китует = вечный job).
 
-- `elder_quest`: 0->1 (диалог) -> 2 (3 травы >= herbs, +25 XP, full heal)
-- `slime_quest`: 0->1 (диалог) -> 2 (slime_kills>=3, damage=max(2), +30 XP)
-- `has_sword` (сундук в лесу): damage=max(2). Уровни: xp_next 20*2^n, +2 max_hp, full heal.
-- Сейв: JSON в `user://save_morkheim.json`; позиция игрока — часть сейва.
-- Смерть: hp==0 -> диалог death -> респавн на spawn, full heal.
+## Команда-конвейер (мультиагент)
 
-## Решения (почему так)
+Правило, спасшее от merge-конфликтов: **несекующаяся ответственность по файлам**
+(писатель → data/*.json+LORE, художник → tools/gen_assets2.js+ассеты, дев → scripts/*,
+QA → только чтение + временные харнессы, ретеншен → аналитика). Оркестратор интегрирует
+и гоняет смоук. QA-харнессы (`qa_main.*`, `qa_p3.*`) — временные, в дерево не коммитить.
 
-- **Godot 4** выбран против Defold/Phaser: визуальный редактор + переносимость; для VK экспорт в Web.
-- **gl_compatibility** — требование веба/слабых GPU (VK-аудитория на телефонах).
-- 640x360 viewport + window override 1280x720 + canvas_items stretch + nearest = пиксель-перфект.
-- Коллизии карты — один StaticBody2D с прямоугольником на тайл (проще TileSet physics).
-- Диалоги/квесты — код в world.gd talk() + тексты в JSON (данные отдельно от логики).
+## Идеи / бэклог
 
-## Особенности среды (важно для новых сессий!)
-
-- **Сеть из песочницы**: Invoke-WebRequest и curl (schannel) БЛОКИРУЮТСЯ. качать только через
-  `node tools/dl.js <url> <dest>` (TLS Node работает). Скачанный Godot: sha256
-  `731980f9...a1e953`, 86 013 866 байт.
-- **Запись вне workspace запрещена**: Godot шлёт ошибки про AppData — это шум, НЕ лечится,
-  кроме как `APPDATA=$PWD/tools/appdata` (в start-game.bat и моих запусках).
-- В pwsh под песочницей `Expand-Archive` ругается Write-Progress — файлы при этом распаковываются.
-- read_image недоступен (модель без vision) — проверять headless-логами.
-
-## Дорожная карта (дальше)
-
-1. Фидбек по геймплею (скорость, баланс, тексты) — правки итерациями.
-2. Контент: расширить лес/подземелье, музыка+звуки (генерация chiptune в gen_assets), больше квестов.
-3. **WebGL-экспорт**: скачать экспорт-шаблоны `Godot_v4.7.2-stable_export_templates.tpz` (~1.2 ГБ,
-   через node dl.js), распаковать в `%user%/export_templates/4.7.2.stable/` (у нас = tools/appdata),
-   создать export_presets.cfg (Web, threads OFF для VK!) и `--export-release "Web" build/index.html`.
-4. **VK Bridge** в index.html: подключить CDN VK Bridge, вызывать `bridge.send("VKWebAppInit", {})`
-   в первые 30 секунд; затем покупки/реклама по докам dev.vk.com/ru/games.
-5. Хостинг статики VK (CDN) или свой HTTPS-сервер; серверная часть не нужна (одиночная игра).
-
-## Изменения
-
-- 2026-11-09: создан вертикальный срез (день 1). Godot 4.7.2, все ассеты сгенерированы,
-  дымовые тесты чистые, два живых запуска по желанию пользователя.
+- Звук (музы нет вообще — самый заметный пробел).
+- VK Bridge + WebGL-экспорт (export_templates.tpz ~1.2 ГБ качать dl.js; потоки выключить).
+- Экономика торговца (скидочный меч за слаймов), купля зелий.
+- Реиграбельность: смена класса = полный сброс прогресса (сейчас частичный).
+- Автоплитка-лайт для стен пещеры, ещё вариаций декор-россыпи.
+- Диалоги во время fade всё ещё могут выглядеть скомкано — не проверялось в живую.

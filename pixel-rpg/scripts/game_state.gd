@@ -35,6 +35,7 @@ var seen_intro := false
 var cave_state := 0
 var has_key := false
 var has_amulet := false
+var door_opened := false  # дверь алтарной ниши открыта ключом (переживает перезаход)
 var in_cave := false
 var seen_cave_intro := false
 var seen_boss_intro := false
@@ -49,6 +50,11 @@ var boss_defeated: bool:
 var player_pos := Vector2.ZERO
 var pos_valid := false
 var input_locked := false
+
+func _ready() -> void:
+	# Автосебы: редкие, но важные для игрока моменты не должны теряться.
+	leveled_up.connect(func(_l: int) -> void: save_game())
+	quest_changed.connect(func() -> void: save_game())
 
 func heal_full() -> void:
 	hp = max_hp
@@ -108,6 +114,7 @@ func to_dict() -> Dictionary:
 		"elder_quest": elder_quest, "slime_quest": slime_quest,
 		"seen_intro": seen_intro,
 		"cave_state": cave_state, "has_key": has_key, "has_amulet": has_amulet,
+		"door_opened": door_opened,
 		"in_cave": in_cave, "seen_cave_intro": seen_cave_intro,
 		"seen_boss_intro": seen_boss_intro, "boss_defeated": boss_defeated,
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
@@ -131,6 +138,7 @@ func from_dict(d: Dictionary) -> void:
 	cave_state = int(d.get("cave_state", 0))
 	has_key = bool(d.get("has_key", false))
 	has_amulet = bool(d.get("has_amulet", false))
+	door_opened = bool(d.get("door_opened", false))
 	in_cave = bool(d.get("in_cave", false))
 	seen_cave_intro = bool(d.get("seen_cave_intro", false))
 	seen_boss_intro = bool(d.get("seen_boss_intro", false))

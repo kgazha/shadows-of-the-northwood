@@ -21,6 +21,12 @@ var spawn_world_pos := Vector2.ZERO
 var tilemap: TileMapLayer
 var _door_shapes := {}  # Vector2i -> CollisionShape2D: форму двери убираем при открытии
 var chest_tile := Vector2i(-1, -1)  # тайл алтарного сундука (для chest_big_open = 12)
+var door_tile := Vector2i(-1, -1)   # тайл запертой двери (для маркера цели)
+# ссылки для HUD-маркера цели
+var hermit_node: Node2D
+var boss_node: Node2D
+var chest_node: Node2D
+var stairs_node: Node2D
 
 func setup(p_world: Node2D) -> void:
 	world = p_world
@@ -47,6 +53,11 @@ func setup(p_world: Node2D) -> void:
 	else:
 		push_warning("Нет ассета: assets/dungeon_tiles.png — пещера построена без тайлов")
 	_build_walls()
+	# дверь уже была открыта в прошлой сессии — убираем тайл и коллизию сразу
+	if GameState.door_opened:
+		for d: Array in m.get("door", []):
+			if d.size() == 2:
+				unlock_door(Vector2i(int(d[0]), int(d[1])))
 	_spawn_entities(m)
 
 func tile_to_world(t: Vector2i) -> Vector2:
@@ -121,13 +132,19 @@ func _spawn_entities(m: Dictionary) -> void:
 		var hm := HermitNpc.new()
 		add_child(hm)
 		hm.setup(self, Vector2i(int(her[0]), int(her[1])))
+		hermit_node = hm
 	var st: Array = m.get("stairs_out", [spawn_tile.x, spawn_tile.y])
 	if st.size() == 2:
 		var xs := ExitStairs.new()
 		add_child(xs)
 		xs.setup(self, Vector2i(int(st[0]), int(st[1])))
+		stairs_node = xs
 	for d: Array in m.get("door", []):
 		if d.size() == 2:
+			if door_tile.x < 0:
+				door_tile = Vector2i(int(d[0]), int(d[1]))
+			if GameState.door_opened:
+				continue
 			var dr := CaveDoor.new()
 			add_child(dr)
 			dr.setup(self, Vector2i(int(d[0]), int(d[1])))
@@ -136,12 +153,14 @@ func _spawn_entities(m: Dictionary) -> void:
 		var cc := CaveChest.new()
 		add_child(cc)
 		cc.setup(self, Vector2i(int(ch[0]), int(ch[1])))
+		chest_node = cc
 	if not GameState.boss_defeated:
 		var bs: Array = m.get("boss", [])
 		if bs.size() == 2:
 			var brute = load("res://scripts/brute.gd").new()
 			add_child(brute)
 			brute.setup(world, Vector2i(int(bs[0]), int(bs[1])))
+			boss_node = brute
 		var tg: Array = m.get("boss_trigger", [])
 		if tg.size() == 2:
 			var tr := BossTrigger.new()
@@ -245,6 +264,8 @@ class CaveDoor:
 			GameState.toast.emit("Нужен ключ Геральда")
 			return
 		zone.unlock_door(tile)
+		GameState.door_opened = true
+		GameState.save_game()
 		GameState.toast.emit("Защёлкнул древний замок — дверь открыта")
 		queue_free()
 	func _on_enter(b: Node) -> void:

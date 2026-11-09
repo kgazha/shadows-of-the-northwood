@@ -40,6 +40,9 @@ var skill_icons_tex: Texture2D
 var skill_panel: PanelContainer
 var skill_slots: Array = []     # словари {root, icon, cd, lvl_lbl}
 var switch_btn: Button
+var potion_btn: Button          # зелье из трав (Q)
+var marker: Polygon2D           # стрелка к цели квеста
+var marker_t := 0.0
 var modal: Control
 var modal_shown := false
 var class_chosen_cb := Callable()
@@ -126,6 +129,12 @@ func setup(p_world: Node2D) -> void:
 
 	_build_skill_panel(th)
 	_build_class_modal(th)
+	# стрелка-указатель цели: рисуется на канвасе CanvasLayer = экранные координаты
+	marker = Polygon2D.new()
+	marker.polygon = PackedVector2Array([Vector2(9, 0), Vector2(-6, -6), Vector2(-3, 0), Vector2(-6, 6)])
+	marker.color = Color(1.0, 0.84, 0.35, 0.9)
+	marker.visible = false
+	add_child(marker)
 
 	GameState.stats_changed.connect(refresh)
 	GameState.quest_changed.connect(refresh)
@@ -156,6 +165,33 @@ func _process(delta: float) -> void:
 			typing = false
 		dtext.visible_characters = int(chars_shown)
 	_update_skill_states()
+	_update_marker(delta)
+
+## Стрелка к цели: видна, только когда цель за краем экрана.
+func _update_marker(delta: float) -> void:
+	if marker == null or world == null or world.player == null:
+		return
+	if GameState.class_id == "" or GameState.input_locked or is_dialog_open() or is_modal_open():
+		marker.visible = false
+		return
+	var tp: Vector2 = world.objective_pos()
+	if tp == Vector2.INF:
+		marker.visible = false
+		return
+	var xform := world.get_viewport().get_canvas_transform()
+	var center := get_viewport().get_visible_rect().size * 0.5
+	var d: Vector2 = xform * tp - center
+	var half := center - Vector2(24, 24)
+	if absf(d.x) < half.x and absf(d.y) < half.y:
+		marker.visible = false  # цель на экране — стрелка не нужна
+		return
+	marker_t += delta
+	var ad := Vector2(maxf(absf(d.x), 0.001), maxf(absf(d.y), 0.001))
+	var t := minf(half.x / ad.x, half.y / ad.y)
+	marker.position = center + d * t
+	marker.rotation = d.angle()
+	marker.color = Color(1.0, 0.84, 0.35, 0.75 + 0.2 * sin(marker_t * 5.0))
+	marker.visible = true
 
 func refresh() -> void:
 	for c in heart_row.get_children():
@@ -205,12 +241,20 @@ func refresh() -> void:
 			else:
 				q.append("• Открой сундук за запертой дверью (нужен ключ)")
 	quests.text = ("Задания:\n" + "\n".join(q)) if not q.is_empty() else ""
+	if potion_btn != null:
+		potion_btn.visible = GameState.class_id != ""
+		potion_btn.text = "x%d" % GameState.herbs
 
 func show_toast(text: String) -> void:
 	toast_lbl.text = text
 	toast_t = 3.0
 
 func show_dialog(arr: Array, cb: Callable) -> void:
+	if arr.is_empty():
+		# пустая реплика (потерянный ключ диалога) — не блокируем ввод и не падаем
+		if cb.is_valid():
+			cb.call()
+		return
 	lines = arr
 	li = 0
 	on_end = cb
@@ -325,6 +369,29 @@ func _build_skill_panel(th: Theme) -> void:
 	switch_btn.pressed.connect(_on_class_switch)
 	switch_btn.theme = th
 	add_child(switch_btn)
+	# зелье из трав — справа от панели скиллов
+	potion_btn = Button.new()
+	potion_btn.add_theme_font_size_override("font_size", 8)
+	potion_btn.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	potion_btn.offset_left = 76
+	potion_btn.offset_right = 124
+	potion_btn.offset_top = -90
+	potion_btn.offset_bottom = -66
+	potion_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	potion_btn.tooltip_text = "Лесное зелье: +3 HP (Q или клик)"
+	if ResourceLoader.exists("res://assets/tiles.png"):
+		var hat := AtlasTexture.new()
+		hat.atlas = load("res://assets/tiles.png")
+		hat.region = Rect2(11 * 16, 0, 16, 16)
+		potion_btn.icon = hat
+	potion_btn.pressed.connect(_on_potion_pressed)
+	potion_btn.theme = th
+	potion_btn.visible = false
+	add_child(potion_btn)
+
+func _on_potion_pressed() -> void:
+	if world != null and world.has_method("drink_potion"):
+		world.drink_potion()
 
 ## Перестроить иконки под текущий класс (после выбора/смены класса, загрузки сейва).
 func refresh_skills() -> void:
