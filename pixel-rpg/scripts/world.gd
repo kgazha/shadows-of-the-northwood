@@ -260,7 +260,11 @@ func _on_area_pick(_vp: Node, ev: InputEvent, _shape: int, obj) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameState.input_locked:
-		if (event.is_action_pressed("interact") or event.is_action_pressed("attack")) and hud.is_dialog_open():
+		var advance_input := event.is_action_pressed("interact") or event.is_action_pressed("attack") \
+			or event.is_action_pressed("ui_accept") \
+			or (event is InputEventMouseButton and event.pressed \
+				and (event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT))
+		if advance_input and hud.is_dialog_open():
 			hud.advance()
 			get_viewport().set_input_as_handled()
 		return
