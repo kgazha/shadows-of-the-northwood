@@ -229,7 +229,7 @@ func _enemy_at(p: Vector2) -> Node2D:
 		return null
 	var space := get_world_2d().direct_space_state
 	var q := PhysicsPointQueryParameters2D.new()
-	q.point = p
+	q.position = p
 	q.collision_mask = 4
 	q.collide_with_bodies = true
 	q.collide_with_areas = false
