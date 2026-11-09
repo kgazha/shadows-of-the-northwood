@@ -1,0 +1,116 @@
+{
+ "width": 48,
+ "height": 30,
+ "tile": 16,
+ "grid": [
+  "tttttttttttttttttttttttttttttttttttttttttttttttt",
+  "tttttttttttttttttttttttttttttttttttttttttttttttt",
+  "ttggggggggggggggggggggggggggggggggggggggggggggtt",
+  "ttggggRRRRRRgggggfggggggggggggggggggfgggggggggtt",
+  "ttggggRRRRRRggggfggggggggggggggggggfwwwwwwwwwgtt",
+  "ttggggWWWWWWgggggggggggggggggfgggggrwwwwwwwwwgtt",
+  "ttgggfWWDWWWggggggggggggfgggggggggggwwwwwwwwwgtt",
+  "ttggggggdggfggggggggggggggggggfgggggwwwwwwwwwgtt",
+  "ttggggggdggggggggggggggggggfgggggggrwwwwwwwwwgtt",
+  "ttggggggdggggfggggggggggggggggggfgggwwwwwwwwwgtt",
+  "ttggggggdggggggfggggggggggggggggggfgggggggggggtt",
+  "ttggggggdgsggggggggfggggggggggggggggggfgggggggtt",
+  "ttggdddddddddddddddddddddddddddddddddddddddddgtt",
+  "ttggggggggggggggggggggdgggggggggggggggggggggggtt",
+  "ttggggggggggggggggggggdgggggggggggggggggggggggtt",
+  "ttTtTtTtTtTtTtTtTtTtTtdsTtTtTtTtTtTtTtTtTtTtTttt",
+  "ttTTTTTTTTTTTTTTTTTTTTdTTTTTrTTTTTTTTTTTTTTTTTtt",
+  "ttTTTtTTTTTtTTTrTtTTTTdTTTTTTtTTTTTtTTTTTtTTrTtt",
+  "ttTTTTTTTTTTTrTTTTTTTTdTTTTTTTTTTTTTTTTTTTrTTTtt",
+  "ttrTTtTTTTTtTTTTTTTTTTTTTTTTTtTrTTTtTTTTTtTTTTtt",
+  "ttTTTTTTTTTTTTTTTTTrTTTTTTTTTTTTTTTTTTTTTTTTTTtt",
+  "ttTtTtTtTtrtTtTTTTTTTTTtTTTTTTTtTtTTTTTTTtTtTttt",
+  "ttTrTTTTTTTTTTTTTTTTTTTTTTTTTTTTrTTTTTTTTTTTTTtt",
+  "ttTTTtTTTrTtTTTTTTTTTTTTTTTTTTTTTTTtTTrTTtTTTTtt",
+  "ttTTTTrTTTTTTTTTTTTTTTTTTTTTTTTTTTTrTTTTTTTTTTtt",
+  "ttTTTtTTTTTtTTTTTtrTTTTTTTTTTtTTTTTtTTTTTtTTTTtt",
+  "ttTTTTTTTTTTTTTTTrTTTTTTTTTTTTTTTTTTTTTTTTTTTTtt",
+  "ttggggggggggggggggggggggggggggggggggggggggggggtt",
+  "tttttttttttttttttttttttttttttttttttttttttttttttt",
+  "tttttttttttttttttttttttttttttttttttttttttttttttt"
+ ],
+ "spawn": [
+  8,
+  10
+ ],
+ "npcs": [
+  [
+   "elder",
+   10,
+   8
+  ],
+  [
+   "merchant",
+   22,
+   13
+  ],
+  [
+   "farmer",
+   29,
+   13
+  ]
+ ],
+ "herbs": [
+  [
+   14,
+   19
+  ],
+  [
+   26,
+   20
+  ],
+  [
+   17,
+   24
+  ],
+  [
+   30,
+   24
+  ],
+  [
+   24,
+   17
+  ],
+  [
+   12,
+   17
+  ]
+ ],
+ "chests": [
+  [
+   37,
+   21
+  ]
+ ],
+ "slimes": [
+  [
+   16,
+   21
+  ],
+  [
+   24,
+   22
+  ],
+  [
+   30,
+   19
+  ],
+  [
+   20,
+   25
+  ],
+  [
+   33,
+   22
+  ],
+  [
+   27,
+   24
+  ]
+ ]
+}

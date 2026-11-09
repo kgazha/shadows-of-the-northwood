@@ -1,0 +1,10 @@
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "p0" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://test_s2.gd:106)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "dist0" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://test_s2.gd:107)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "moved" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://test_s2.gd:109)
+ERROR: Failed to load script "res://test_s2.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript_resource_format.cpp:46)

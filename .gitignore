@@ -1,0 +1,8 @@
+# Тяжёлое и машинное — не храним
+tools/godot/
+tools/appdata/
+tools/localdata/
+*.zip
+pixel-rpg/.godot/
+*.tmp
+test_*_tmp.*

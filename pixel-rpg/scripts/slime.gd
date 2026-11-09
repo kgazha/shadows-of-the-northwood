@@ -1,0 +1,88 @@
+extends CharacterBody2D
+## Слайм: бродит, преследует героя, бьёт при контакте.
+
+const CHASE_DIST := 48.0
+const HIT_DIST := 11.0
+const SPEED_CHASE := 40.0
+const SPEED_WANDER := 16.0
+
+var world: Node2D
+var hp := 3
+var anim: AnimatedSprite2D
+var wander_t := 0.0
+var dirv := Vector2.ZERO
+var hurt_t := 0.0
+## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
+var freeze_t := 0.0
+
+func setup(p_world: Node2D, tile: Vector2i) -> void:
+	world = p_world
+	position = world.tile_to_world(tile)
+	collision_layer = 4
+	collision_mask = 1 | 2 | 4
+	add_to_group("enemy")
+	var cs := CollisionShape2D.new()
+	var sh := RectangleShape2D.new()
+	sh.size = Vector2(10, 8)
+	cs.shape = sh
+	add_child(cs)
+	anim = AnimatedSprite2D.new()
+	var fr := SpriteFrames.new()
+	fr.remove_animation("default")
+	fr.add_animation("walk")
+	fr.set_animation_loop("walk", true)
+	fr.set_animation_speed("walk", 3.0)
+	var tex := load("res://assets/slime.png")
+	for col in [0, 1]:
+		var at := AtlasTexture.new()
+		at.atlas = tex
+		at.region = Rect2(col * 16, 0, 16, 16)
+		fr.add_frame("walk", at, 0.0)
+	anim.sprite_frames = fr
+	add_child(anim)
+	anim.play("walk")
+
+func _physics_process(delta: float) -> void:
+	hurt_t = maxf(0.0, hurt_t - delta)
+	freeze_t = maxf(0.0, freeze_t - delta)
+	if hurt_t > 0.0:
+		modulate = Color(1, 0.5, 0.5)
+	elif freeze_t > 0.0:
+		modulate = Color(0.55, 0.75, 1.0)
+	else:
+		modulate = Color.WHITE
+	if GameState.input_locked or world.player == null or GameState.hp <= 0:
+		velocity = Vector2.ZERO
+		return
+	if freeze_t > 0.0:
+		velocity = Vector2.ZERO
+		return
+	var d := global_position.distance_to(world.player.global_position)
+	if d < CHASE_DIST:
+		dirv = (world.player.global_position - global_position).normalized()
+		velocity = dirv * SPEED_CHASE
+	else:
+		wander_t -= delta
+		if wander_t <= 0.0:
+			wander_t = randf_range(1.2, 2.6)
+			if randf() < 0.35:
+				dirv = Vector2.ZERO
+			else:
+				dirv = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)).normalized()
+		velocity = dirv * SPEED_WANDER
+	move_and_slide()
+	if d < HIT_DIST:
+		world.player.take_damage(1)
+
+func hurt(dmg: int, from: Vector2) -> void:
+	hp -= dmg
+	hurt_t = 0.3
+	velocity = (global_position - from).normalized() * 70.0
+	if hp <= 0:
+		GameState.slime_kills += 1
+		GameState.add_xp(7)
+		GameState.toast.emit("Слайм повержен! (+7 опыта)")
+		GameState.quest_changed.emit()
+		if GameState.slime_quest == 1 and GameState.slime_kills == 3:
+			GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")
+		queue_free()

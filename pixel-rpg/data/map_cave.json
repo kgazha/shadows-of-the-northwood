@@ -1,0 +1,59 @@
+{
+ "width": 30,
+ "height": 22,
+ "tile": 16,
+ "grid": [
+  "VVVVVVVVVVVV######VVVVVVVVVVVV",
+  "VVVVVVVVVVV#.S....#VVVVVVVVVVV",
+  "VVVVVVVVVVV#.,....#VVVVVVVVVVV",
+  "VVVVVVVVVVV#.B.,R.#VVVVVVVVVVV",
+  "VVVVVVVVVVV#.....,#VVVVVVVVVVV",
+  "VVVVVVVVVVVV#.####VVVV######VV",
+  "VVVVVVVVVVV#..#VVVVVV#R...M.#V",
+  "VVVVVVVVVV##.#########.,B...#V",
+  "VVVVVVVVV#.,......,......,M.#V",
+  "VVVVVVVVV#.###########.....,#V",
+  "VVVVVVVVV#.#VVVVVVVVV#,...M.#V",
+  "VVVVVVVVV#,#VVVVVVVVV#..,...#V",
+  "VVVVVVVVV#..#VVVVVVVV#.M.M,.#V",
+  "VVVVV######L#########V######VV",
+  "VVVV#R...,......,....#VVVVVVVV",
+  "VVVV#..P...,......PB.#VVVVVVVV",
+  "VVVV#.,.B....,......,#VVVVVVVV",
+  "VVVV#..P,......B..P..#VVVVVVVV",
+  "VVVV#.B...,......,C..#VVVVVVVV",
+  "VVVV#R......AAA....,R#VVVVVVVV",
+  "VVVVV################VVVVVVVVV",
+  "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"
+ ],
+ "spawn": [
+  13,
+  2
+ ],
+ "stairs_out": [
+  13,
+  1
+ ],
+ "hermit": [
+  24,
+  9
+ ],
+ "boss": [
+  12,
+  16
+ ],
+ "boss_trigger": [
+  11,
+  14
+ ],
+ "chest": [
+  18,
+  18
+ ],
+ "door": [
+  [
+   11,
+   13
+  ]
+ ]
+}
