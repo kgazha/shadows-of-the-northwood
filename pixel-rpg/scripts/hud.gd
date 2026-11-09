@@ -133,6 +133,16 @@ func setup(p_world: Node2D) -> void:
 	GameState.leveled_up.connect(_on_leveled_up)
 	refresh()
 	refresh_skills()
+	# виньетка спринта «Атмосфера» — последний child CanvasLayer: поверх всей HUD, мышь не перехватывает
+	var vign := TextureRect.new()
+	vign.name = "Vignette"
+	# дизайн-разрешение из project.godot (visible_rect на старте ещё не он); STRETCH_SCALE растянет под окно
+	var dres := Vector2(ProjectSettings.get_setting("display/window/size/viewport_width"), ProjectSettings.get_setting("display/window/size/viewport_height"))
+	vign.texture = load("res://scripts/atmosphere.gd").make_vignette_texture(dres)
+	vign.stretch_mode = TextureRect.STRETCH_SCALE
+	vign.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vign.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vign)
 
 func _process(delta: float) -> void:
 	if toast_t > 0.0:

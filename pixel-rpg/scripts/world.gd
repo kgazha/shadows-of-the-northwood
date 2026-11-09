@@ -31,6 +31,7 @@ var fade_rect: ColorRect
 var village_return_pos := Vector2.INF  # куда возвращаться из пещеры (то место, где вошли)
 var cur_move: Texture2D    # курсор «идти» (cursor_move.png)
 var cur_enemy: Texture2D   # курсор «атака» (cursor_enemy.png)
+var atmosphere             # scripts/atmosphere.gd: свет/тени/частицы/цветокор (весь визуал спринта «Атмосфера»)
 
 func _ready() -> void:
 	var mf := FileAccess.open("res://data/map_village.json", FileAccess.READ)
@@ -63,6 +64,10 @@ func _ready() -> void:
 	_spawn_entities()
 	_build_cave()
 	_build_cave_entrance()
+	atmosphere = load("res://scripts/atmosphere.gd").new()
+	add_child(atmosphere)
+	atmosphere.setup(self)
+	atmosphere.zone_changed(GameState.in_cave, true)  # стартовое состояние после загрузки сейва — без фейда
 	_build_fade()
 	_load_cursors()
 	hud = load("res://scripts/hud.gd").new()
@@ -260,7 +265,7 @@ func _on_area_pick(_vp: Node, ev: InputEvent, _shape: int, obj) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if GameState.input_locked:
-		var advance_input := event.is_action_pressed("interact") or event.is_action_pressed("attack") \
+		var advance_input: bool = event.is_action_pressed("interact") or event.is_action_pressed("attack") \
 			or event.is_action_pressed("ui_accept") \
 			or (event is InputEventMouseButton and event.pressed \
 				and (event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT))
@@ -324,6 +329,8 @@ func apply_zone(to_cave: bool, teleport: bool = true) -> void:
 		else:
 			player.global_position = village_return_pos if village_return_pos != Vector2.INF else tile_to_world(spawn_tile)
 	_set_cam_limits(to_cave)
+	if atmosphere != null:
+		atmosphere.zone_changed(to_cave)
 
 func _set_cam_limits(to_cave: bool) -> void:
 	if to_cave and dungeon_zone != null:
