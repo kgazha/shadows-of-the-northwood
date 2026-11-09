@@ -7,7 +7,6 @@ extends Node
 
 var world          # инстанс main.tscn
 var fails := 0
-var frames := 0
 
 func _ready() -> void:
 	get_tree().create_timer(180.0).timeout.connect(func():
@@ -16,9 +15,6 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	await get_tree().process_frame
 	_run()
-
-func _physics_frame(_d: float) -> void:
-	frames += 1
 
 func check(label: String, ok: bool) -> void:
 	print(("OK   | " if ok else "FAIL | ") + label)
@@ -103,10 +99,10 @@ func _run() -> void:
 	world.village_zone.add_child(sl2)
 	sl2.setup(world, world.spawn_tile + Vector2i(4, 0))  # 64 px — дальше мили
 	p.command_attack(sl2)
-	var p0 := p.global_position
-	var dist0 := p.global_position.distance_to(sl2.global_position)
+	var p0: Vector2 = p.global_position
+	var dist0: float = p.global_position.distance_to(sl2.global_position)
 	var killed2 := await wait_until(func(): not is_instance_valid(sl2), 2000)
-	var moved := p.global_position.distance_to(p0)
+	var moved: float = p.global_position.distance_to(p0)
 	check("лучник: слайм убит с %d px" % int(dist0), killed2 and dist0 > 40)
 	check("лучник: стрелял с места (не догонял в мили)", killed2 and moved < 1.0)
 	p.cancel_orders()
