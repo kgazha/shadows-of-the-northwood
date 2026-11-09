@@ -207,7 +207,8 @@ func _build_fade() -> void:
 	add_child(cl)
 	fade_rect = ColorRect.new()
 	fade_rect.color = Color(0, 0, 0, 0)
-	fade_rect.size = Vector2(800, 480)
+	fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE  # не есть мышь: слой выше HUD!
+	fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cl.add_child(fade_rect)
 
 func _process(_delta: float) -> void:
