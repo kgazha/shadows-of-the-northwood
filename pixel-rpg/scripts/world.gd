@@ -143,6 +143,7 @@ func _ready() -> void:
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
 	add_child(Achv.new())  # достижения+daily (achv.gd); после load_game() — daily видит stamp
+	GameState.ng_plus_started.connect(func() -> void: get_tree().reload_current_scene.call_deferred())
 	if loaded:
 		apply_zone(GameState.in_cave, false)
 		if GameState.pos_valid:

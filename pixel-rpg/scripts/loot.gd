@@ -24,6 +24,10 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 			gold += _roll_gold(e["gold"])
 		elif e.has("item"):
 			_give_item(GameState, String(e.get("item", "")), maxi(1, int(e.get("qty", 1))))
+	# NG+ §1.3: золото × ng_gold_mult(волна) — на ИТОГ ролла, формула в game_state.gd
+	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
+	# поверх волны). На w0 тождество (×1.0).
+	gold = int(round(gold * GameState.ng_gold_mult(GameState.ng_wave())))
 	if gold <= 0:
 		return
 	# «Жадность» алтаря Пепла: +25% золота (поверх будущих ng_gold_mult — они встанут ниже).

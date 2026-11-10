@@ -68,6 +68,14 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		kill_xp = int(cfg.xp)
 		hit_dist = HIT_DIST_MOB
 		base_tint = Color(0.86, 0.92, 1.0) if tier == 1 else (Color(1.0, 0.96, 0.86) if tier == 2 else Color(0.94, 0.84, 1.0))
+	# NG+ §1.3: скейл базы (tier/boss) по волне при инициализации. Скорость,
+	# рывок и XP не скейлятся — читаемость ударов и баланс прокачки.
+	# Исключение: Ведьма Пепелища (mob_boss2.gd, зовёт super.setup) — конечна
+	# флагу ashen.boss, вне круга: её скейлить = тихо ломать баланс зоны-2.
+	if get_script() == load("res://scripts/brute.gd"):
+		var w := GameState.ng_wave()
+		hp = int(round(hp * GameState.hp_mult(w)))
+		dmg += GameState.dmg_bonus(w)
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4
@@ -179,9 +187,10 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 		if boss:
 			GameState.boss_defeated = true
 			Achv.on_boss_death()  # ачивки «Убийца босса» / «хардкор» (achv.gd)
-			# §4.1: +3 Пепла ровно один раз за круг — гейт флагом ng.boss_0
-			if int(GameState.flags.get("ng.boss_0", 0)) == 0:
-				GameState.set_flag("ng.boss_0", 1)
+			# §4.1: +3 Пепла ровно один раз за круг — гейт флагом ng.boss_<волна>
+			var boss_key := "ng.boss_%d" % GameState.ng_wave()
+			if int(GameState.flags.get(boss_key, 0)) == 0:
+				GameState.set_flag(boss_key, 1)
 				Achv.grant_ash(3)
 			GameState.add_xp(BOSS_XP)
 			GameState.toast.emit("Гниль отступает!")

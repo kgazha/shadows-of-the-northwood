@@ -10,9 +10,14 @@ const RESPAWN := 50.0
 ## Дроп алхимических материалов: умеренный шанс (дефицит — ~4 слайма на материал).
 const MAT_DROP_CHANCE := 0.25
 const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
+## NG+ §1.3: базы до скейла по волне. Формулы — в game_state.gd (одна точка истины).
+const BASE_HP := 3
+const BASE_DMG := 1
 
 var world: Node2D
-var hp := 3
+var hp := BASE_HP
+## Урон контакта (база + волновой бонус, §1.3).
+var dmg := BASE_DMG
 var anim: AnimatedSprite2D
 var wander_t := 0.0
 var dirv := Vector2.ZERO
@@ -27,6 +32,7 @@ var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
+	_apply_ng_stats()
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4
@@ -53,6 +59,12 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	anim.sprite_frames = fr
 	add_child(anim)
 	anim.play("walk")
+
+## HP/урон по текущей волне NG+ (§1.3); пересчёт при спавне и дома у респауна.
+func _apply_ng_stats() -> void:
+	var w := GameState.ng_wave()
+	hp = int(round(BASE_HP * GameState.hp_mult(w)))
+	dmg = BASE_DMG + GameState.dmg_bonus(w)
 
 func _physics_process(delta: float) -> void:
 	if dying:
@@ -89,7 +101,7 @@ func _physics_process(delta: float) -> void:
 		velocity = dirv * SPEED_WANDER
 	move_and_slide()
 	if d < HIT_DIST:
-		world.player.take_damage(1)
+		world.player.take_damage(dmg)
 
 func hurt(dmg: int, from: Vector2) -> void:
 	if dying:
@@ -132,7 +144,7 @@ func _roll_mat_drop() -> void:
 
 func _respawn() -> void:
 	dying = false
-	hp = 3
+	_apply_ng_stats()  # NG+ §1.3: домой волна могла уйти вперёд
 	freeze_t = 0.0
 	hurt_t = 0.0
 	position = home

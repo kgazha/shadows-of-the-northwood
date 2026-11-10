@@ -10,6 +10,8 @@ signal leveled_up(level: int)
 signal regen_hp_tick
 signal regen_mana_tick
 signal gold_changed
+## Новый «Круг Пепла» активирован: мир пересобран владельцем сцены (хук в world).
+signal ng_plus_started
 
 # --- восстановление (B+F): внебойная регенерация + мана мага ---
 const COMBAT_HOLD := 6.0        # сколько секунд считаем «в бою» после контакта
@@ -451,3 +453,65 @@ func load_game() -> bool:
 		return false
 	from_dict(data)
 	return true
+
+# --- NG+ «Круги Пепла» (RETENTION_NG_PLUS §1): ОДНА точка истины формул ---
+## Кап волны: дальше цифры не растут — круги на кап-значениях играются сколько
+## угодно (удержание, а не бесконечная спираль).
+const NG_WAVE_CAP := 5
+
+## Текущий круг (обычная игра — 0). Сейвы без ng.* читаются как 0 (§5 риск-правило:
+## только flags.get с дефолтом, никаких прямых обращений к ключу).
+func ng_wave() -> int:
+	return clampi(_num(flags.get("ng.wave", 0), 0), 0, NG_WAVE_CAP)
+
+## Множитель HP мобов (§1.3): +50% за круг, потолок ×3.5 (на w5 и выше).
+func hp_mult(w: int) -> float:
+	return minf(1.0 + 0.5 * float(w), 3.5)
+
+## Прибавка к урону мобов (§1.3): w1-2 +1, w3-4 +2, w5 +3.
+func dmg_bonus(w: int) -> int:
+	return int(ceil(float(w) / 2.0))
+
+## Множитель золота (§1.3): +40% за круг, w5 → ×3.0. Применяется к ИТОГУ ролла.
+func ng_gold_mult(w: int) -> float:
+	return 1.0 + 0.4 * float(w)
+
+## Начать новый круг (§1.1–1.2). P1: вызывается программно (триггер в диалоге
+## Старейшины — P2, не здесь). Переносится: золото, шестерня, класс/уровни/статы,
+## амулет, achv.*, meta.*, daily.*, ng.*; сбрасывается мир и сюжет (§1.2).
+## На кап-волне номер не растёт, но мир сбрасывается — круги повторяемы.
+## Возвращает номер круга после вызова.
+func start_ng_plus() -> int:
+	var w := mini(ng_wave() + 1, NG_WAVE_CAP)
+	flags["ng.wave"] = w
+	# --- что сбрасывается (инверсия таблицы переноса §1.2) ---
+	elder_quest = 0
+	slime_quest = 0
+	cave_state = 0  # boss_defeated — производный (var-обёртка), обнулится сам
+	has_key = false
+	door_opened = false
+	chests_used = []
+	campfires_used = {}
+	materials = {"suhotsvet": 0, "zhim": 0}  # структура сохраняем: add_material сверяет has()
+	brewed_potions = 0
+	# квестовые/диалоговые флаги (q.*, q.got.*, q.last.*) и Пепелище (ashen.*:
+	# ведьма/сундук/интро) — перепроходятся каждый круг (канон-решение оркестратора:
+	# Пепла с ведьмы не течёт, зона пересоздаётся живой);
+	# collect-then-erase: не мутируем flags во время итерации по нему
+	var wipe_keys: Array = []
+	for k in flags:
+		var ks := String(k)
+		if ks.begins_with("q.") or ks.begins_with("ashen."):
+			wipe_keys.append(k)
+	for k in wipe_keys:
+		flags.erase(k)
+	# мир пересобирается хуком владельца сцены; точка входа — деревня (не пещера,
+	# позитивный вайп по психологическому правилу док), поэтому:
+	in_cave = false
+	pos_valid = false
+	# --- порядок фиксации: сигналы/сейв ДО ng_plus_started, чтобы хук-перезагрузка
+	# сцены не перехватил состояние раньше диска ---
+	quest_changed.emit()  # HUD-квесты + автосейв из _ready
+	save_game()           # явный автосейв: круг не должен «повиснуть» незаписанным
+	ng_plus_started.emit()
+	return w
