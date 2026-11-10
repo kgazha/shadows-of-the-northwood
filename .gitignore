@@ -8,3 +8,8 @@ pixel-rpg/.godot/
 test_*_tmp.*
 
 tools/assets_in/
+sand_*/
+tools/appdata_*/
+tools/export_tpl/
+shots/
+build/
