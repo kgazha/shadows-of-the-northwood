@@ -488,7 +488,9 @@ func take_damage(n: int) -> void:
 	hurt_cd = 0.8
 	_flash_t = 0.35
 	GameState.entered_combat()  # реген «замолкает» на время боя
+	var _hp0 := GameState.hp  # число урона = реально снятые HP (после брони), не входящий урон
 	GameState.hurt(n)
+	DmgNumbers.spawn(global_position + Vector2(0, -12), maxi(0, _hp0 - GameState.hp), "normal")
 	Fx.hit(global_position + Vector2(0, -6), world)
 	if GameState.hp <= 0:
 		cancel_orders()

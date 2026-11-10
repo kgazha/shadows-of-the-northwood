@@ -95,6 +95,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 	if dying:
 		return
 	GameState.entered_combat()  # контакт с врагом — реген паузится
+	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg, "normal")
 	hp -= dmg
 	hurt_t = 0.3
 	velocity = (global_position - from).normalized() * 70.0

@@ -169,6 +169,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:
 		return  # труп не получает урон: XP и quest_changed — ровно один раз (фикс T3)
 	GameState.entered_combat()  # контакт с врагом — реген паузится
+	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg_in, "normal")
 	hp -= dmg_in
 	hurt_t = 0.3
 	velocity = (global_position - from).normalized() * 50.0

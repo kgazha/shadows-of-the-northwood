@@ -73,7 +73,9 @@ static func drink_brewed() -> bool:
 		GameState.toast.emit("Ты и так здрав.")
 		return false
 	GameState.brewed_potions -= 1
+	var _hp0 := GameState.hp  # heal-число = реально восстановленные HP (не «+6» при долечивании до потолка)
 	GameState.heal(GameState.STRONG_POTION_HEAL)
+	DmgNumbers.spawn(Vector2.INF, GameState.hp - _hp0, "heal")
 	GameState.quest_changed.emit()
 	GameState.toast.emit("Крепкое зелье: +%d HP (осталось %d)" % [GameState.STRONG_POTION_HEAL, GameState.brewed_potions])
 	return true
