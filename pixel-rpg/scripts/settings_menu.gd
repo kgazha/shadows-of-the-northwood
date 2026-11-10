@@ -43,15 +43,42 @@ extends CanvasLayer
 ## ответ на «WASD/атака за меню не должны проходить»: полностью выполнить его
 ## без GameState.input_locked при polled-вводе невозможно, а блокировать вовсе
 ## ничего — означало бы стрелять себя по слайдерам и уходить из-под меню в бой.
+##
 ## Клавиатурная навигация по меню отключена (фокус FOCUS_NONE, клавиши
 ## глотаются) — меню мышиное, как модалка создания героя; Esc и клик мимо
 ## панели — закрыть.
+##
+## Секция «Управление» — статичная двухколоночная таблица «действие — клавиша»
+## для первопроходца (удержание VK Play: игрок не должен гадать про ПКМ/J/M).
+## Клавиши взяты ИЗ КОДА, а не из головы: project.godot [input] (move_* —
+## WASD+стрелки, roll — SPACE, attack — ЛКМ, interact — E, potion — Q,
+## skill_1..4 — 1..4, quicksave F5 / quickload F9), click_move.gd (ход по
+## ПКМ), journal.gd (J, закрытие J/Tab/Esc), minimap.gd (M), Esc — это меню.
+## Только Label'ы (IGNORE) — модалка-лок и мышиный контракт не затронуты;
+## плотность шрифта 7 и зазор 1 — панель целиком влезает в 640×360 (мерки qa8).
 
 const CM_PATH := "res://scripts/click_move.gd"
 const CM_CLASS := "ClickMove"
 const MM_PATH := "res://scripts/minimap.gd"
 const MM_CLASS := "Minimap"
 const FRAME_PATH := "res://assets/ui/panel_frame.png"  # та же Kenney 9-slice рамка, что у окон hud
+
+## «Управление»: действие — клавиша. Порядок чтения = частота применения.
+## Ключевые слова клавиш (WASD/SPACE/E/Q/J/M/F5/F9/Esc/ЛКМ/ПКМ) — эталон для
+## qa8; менять можно только ВМЕСТЕ с фактическими обработчиками кода.
+const CONTROLS_TABLE: Array = [
+	["Ход", "WASD / стрелки"],
+	["Ход по клику", "ПКМ"],
+	["Атака", "ЛКМ"],
+	["Кувырок", "SPACE"],
+	["Трогать / диалог", "E"],
+	["Скиллы", "1  2  3  4"],
+	["Зелье из трав", "Q"],
+	["Журнал заданий", "J"],
+	["Миникарта", "M"],
+	["Сохранить / загрузить", "F5 / F9"],
+	["Меню (пауза)", "Esc"],
+]
 
 var dim: ColorRect             # полноэкранная вуаль: открыта -> STOP, скрыта -> IGNORE
 var panel: PanelContainer
@@ -71,6 +98,7 @@ var sv_export: LineEdit        # «Сейв»: readonly-строка экспо�
 var sv_import: LineEdit        # «Сейв»: поле вставки строки импорта
 var sv_apply_btn: Button
 var sv_msg: Label              # тост результата прямо в секции
+var ct_col: VBoxContainer      # правая колонка «Управление» (в _build переставляется в HBox)
 var _open := false
 
 func _ready() -> void:
@@ -252,6 +280,26 @@ func _build() -> void:
 	mm_row.visible = false
 	vb.add_child(mm_row)
 
+	# --- «Управление»: двухколоночная шпаргалка (действие | клавиша) ---
+	# Не в общий список, а в ПРАВУЮ колонку (перестановка в конце _build):
+	# 11 строк вертикально раздували панель до 424 px — за пределы 360.
+	ct_col = VBoxContainer.new()
+	ct_col.add_theme_constant_override("separation", 2)
+	ct_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ct_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	var ct_title := Label.new()
+	ct_title.text = "Управление"
+	ct_title.add_theme_font_size_override("font_size", 9)
+	ct_title.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+	ct_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ct_col.add_child(ct_title)
+	var ct_box := VBoxContainer.new()
+	ct_box.add_theme_constant_override("separation", 1)  # плотная таблица
+	ct_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for r in CONTROLS_TABLE:
+		_key_row(ct_box, String(r[0]), String(r[1]))
+	ct_col.add_child(ct_box)
+
 	# --- «Сейв»: переносной бэкап (SaveVault; RETENTION_NG_PLUS §5.2) ---
 	var sv_title := Label.new()
 	sv_title.text = "Сейв"
@@ -314,11 +362,47 @@ func _build() -> void:
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(hint)
 
+	# Перестановка в конце сборки: панель = ДВЕ КОЛОНКИ — слева привычные
+	# громкости/тумблеры/сейв, справа шпаргалка «Управление». Соотношение
+	# 231x424 (одной колонкой) не влезало в канву 640x360; двумя — высота
+	# остаётся базовой, ширина ~400 (мерки qa8).
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 14)
+	cols.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.remove_child(vb)
+	cols.add_child(vb)
+	vb.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	cols.add_child(ct_col)
+	panel.add_child(cols)
+
 func _row_label(t: String) -> Label:
 	var l := Label.new()
 	l.text = t
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
+
+## Строка таблицы «Управление»: действие слева (шрифт 7), клавиша справа тёплым
+## цветом. Оба — Label IGNORE: в секции нет ни фокусируемых, ни кликабельных
+## элементов — модалка-лок настроек (ввод глотается _input, мышь держит вуаль)
+## остаётся ровно тем, что описано в шапке файла.
+func _key_row(box: VBoxContainer, act: String, key: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var la := Label.new()
+	la.text = act
+	la.add_theme_font_size_override("font_size", 7)
+	la.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	la.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lk := Label.new()
+	lk.text = key
+	lk.add_theme_font_size_override("font_size", 7)
+	lk.add_theme_color_override("font_color", Color(1, 0.93, 0.65))
+	lk.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	lk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(la)
+	row.add_child(lk)
+	box.add_child(row)
 
 ## Строка громкости: подпись — HSlider 0..1 шаг 0.05 — процент.
 ## FOCUS_NONE (меню мышиное); IGNORE только у подписей — сам слайдер остаётся

@@ -162,6 +162,7 @@ func _ready() -> void:
 		hud.show_class_modal(_start_intro)
 	else:
 		_start_intro()
+	if FirstHint.I != null: FirstHint.I.show_hint("controls_shown", "Все клавиши — в Меню (Esc), раздел «Управление».")
 
 func _start_intro() -> void:
 	if not GameState.seen_intro:
