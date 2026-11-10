@@ -19,6 +19,9 @@ var world: Node2D
 var hp_bg: ColorRect            # полоска здоровья (вместо сердец)
 var hp_fill: ColorRect
 var hp_txt: Label
+var mana_bg: ColorRect          # полоска маны — только у мага
+var mana_fill: ColorRect
+var mana_txt: Label
 var xp_bg: ColorRect
 var xp_fill: ColorRect
 var info: Label
@@ -73,6 +76,24 @@ func setup(p_world: Node2D) -> void:
 	hp_txt.add_theme_constant_override("outline_size", 3)
 	hp_txt.position = Vector2(45, 1)
 	hp_bg.add_child(hp_txt)
+	# мана: та же ширина, синий цвет; полоска скрыта, пока max_mana == 0
+	mana_bg = ColorRect.new()
+	mana_bg.color = Color(0.08, 0.08, 0.12, 0.9)
+	mana_bg.size = Vector2(130, 9)
+	mana_bg.custom_minimum_size = Vector2(130, 9)
+	mana_bg.visible = false
+	mana_fill = ColorRect.new()
+	mana_fill.color = Color(0.2, 0.4, 0.85)
+	mana_fill.position = Vector2(1, 1)
+	mana_fill.size = Vector2(128, 7)
+	mana_bg.add_child(mana_fill)
+	mana_txt = Label.new()
+	mana_txt.add_theme_font_size_override("font_size", 7)
+	mana_txt.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
+	mana_txt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	mana_txt.add_theme_constant_override("outline_size", 3)
+	mana_txt.position = Vector2(45, 1)
+	mana_bg.add_child(mana_txt)
 	xp_bg = ColorRect.new()
 	xp_bg.color = Color(0.08, 0.08, 0.1, 0.85)
 	xp_bg.size = Vector2(130, 8)
@@ -87,6 +108,7 @@ func setup(p_world: Node2D) -> void:
 	top.position = Vector2(6, 6)
 	top.add_theme_constant_override("separation", 3)
 	top.add_child(hp_bg)
+	top.add_child(mana_bg)
 	top.add_child(xp_bg)
 	top.add_child(info)
 	top.add_child(quests)
@@ -216,6 +238,14 @@ func refresh() -> void:
 	else:
 		hp_fill.color = Color(0.72, 0.15, 0.18)
 	hp_txt.text = "%d / %d" % [GameState.hp, max_hp]
+	# мана — видна только тем, у кого она есть (маг)
+	if GameState.max_mana > 0:
+		mana_bg.visible = true
+		var mf := clampf(GameState.mana / float(GameState.max_mana), 0.0, 1.0)
+		mana_fill.size = Vector2(maxf(0.0, 128.0 * mf), 7)
+		mana_txt.text = "%d / %d" % [GameState.mana, GameState.max_mana]
+	else:
+		mana_bg.visible = false
 	xp_fill.size = Vector2(maxf(0.0, 128.0 * GameState.xp / float(GameState.xp_next)), 6)
 	info.text = "Ур. %d  Опыт %d/%d  Атака %d" % [GameState.level, GameState.xp, GameState.xp_next, GameState.damage]
 	var q: Array[String] = []
@@ -408,7 +438,8 @@ func refresh_skills() -> void:
 			at.atlas = skill_icons_tex
 			at.region = Rect2(int(sd.icon) * 16, 0, 16, 16)
 			icon.texture = at
-		icon.tooltip_text = "%s — ур. %d, КД %.0f с\n%s" % [sd.name, sd.level, sd.cd, sd.desc]
+		var mc := int(sd.get("mana", 0))
+		icon.tooltip_text = "%s — ур. %d, КД %.0f с%s\n%s" % [sd.name, sd.level, sd.cd, (", энергия %d" % mc) if mc > 0 else "", sd.desc]
 		slot["hot"].text = str(i + 1)
 
 func _update_skill_states() -> void:

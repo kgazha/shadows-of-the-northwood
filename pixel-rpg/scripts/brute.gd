@@ -92,6 +92,7 @@ func _physics_process(delta: float) -> void:
 		world.player.take_damage(2)
 
 func hurt(dmg: int, from: Vector2) -> void:
+	GameState.entered_combat()  # контакт с врагом — реген паузится
 	hp -= dmg
 	hurt_t = 0.3
 	velocity = (global_position - from).normalized() * 50.0

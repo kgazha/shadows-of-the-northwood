@@ -7,9 +7,22 @@ signal stats_changed
 signal quest_changed
 signal toast(text: String)
 signal leveled_up(level: int)
+signal regen_hp_tick
+signal regen_mana_tick
+
+# --- восстановление (B+F): внебойная регенерация + мана мага ---
+const COMBAT_HOLD := 6.0        # сколько секунд считаем «в бою» после контакта
+const HP_REGEN_EVERY := 4.0     # +1 HP каждые 4 с вне боя
+const MANA_REGEN_EVERY := 2.0   # +2 маны каждые 2 с вне боя
+const MANA_REGEN_STEP := 2
 
 var max_hp := 10
 var hp := 10
+var mana := 0
+var max_mana := 0
+var combat_t := 0.0
+var _hp_regen_t := 0.0
+var _mana_regen_t := 0.0
 var level := 1
 var xp := 0
 var xp_next := 20
@@ -56,8 +69,47 @@ func _ready() -> void:
 	leveled_up.connect(func(_l: int) -> void: save_game())
 	quest_changed.connect(func() -> void: save_game())
 
+func _process(delta: float) -> void:
+	combat_t = maxf(0.0, combat_t - delta)
+	if combat_t > 0.0 or hp <= 0:
+		return  # в бою реген нет — только в тишине
+	if hp < max_hp:
+		_hp_regen_t += delta
+		if _hp_regen_t >= HP_REGEN_EVERY:
+			_hp_regen_t = 0.0
+			hp += 1
+			stats_changed.emit()
+			regen_hp_tick.emit()
+	else:
+		_hp_regen_t = 0.0
+	if max_mana > 0 and mana < max_mana:
+		_mana_regen_t += delta
+		if _mana_regen_t >= MANA_REGEN_EVERY:
+			_mana_regen_t = 0.0
+			mana = mini(max_mana, mana + MANA_REGEN_STEP)
+			stats_changed.emit()
+			regen_mana_tick.emit()
+	else:
+		_mana_regen_t = 0.0
+
+## Контакт с врагом (нанесли или получили) — сброс «тишины» регена.
+func entered_combat() -> void:
+	combat_t = COMBAT_HOLD
+
+## Попотратить ману; false — не хватает (с тостом).
+func try_spend_mana(n: int) -> bool:
+	if n <= 0:
+		return true
+	if mana < n:
+		toast.emit("Не хватает энергии!")
+		return false
+	mana -= n
+	stats_changed.emit()
+	return true
+
 func heal_full() -> void:
 	hp = max_hp
+	mana = max_mana
 	stats_changed.emit()
 
 func hurt(n: int) -> void:
@@ -91,6 +143,13 @@ func recalc_max_hp() -> void:
 		hp = max_hp
 	stats_changed.emit()
 
+## Пересчёт макс. маны из класса (0 у не-магов); mana поджимается под потолок.
+func recalc_max_mana() -> void:
+	max_mana = int(Classes.class_data(class_id).get("mana", 0))
+	if mana > max_mana:
+		mana = max_mana
+	stats_changed.emit()
+
 ## Выбор/смена класса: базовые статы пересчитываются, HP полный.
 func set_class(id: String) -> void:
 	if class_id != "":
@@ -102,11 +161,12 @@ func set_class(id: String) -> void:
 		return
 	class_id = id
 	recalc_max_hp()
+	recalc_max_mana()
 	heal_full()
 
 func to_dict() -> Dictionary:
 	return {
-		"max_hp": max_hp, "hp": hp, "level": level, "xp": xp, "xp_next": xp_next,
+		"max_hp": max_hp, "hp": hp, "mana": mana, "level": level, "xp": xp, "xp_next": xp_next,
 		"damage": damage, "has_sword": has_sword, "class_id": class_id,
 		"herbs": herbs, "slime_kills": slime_kills,
 		"elder_quest": elder_quest, "slime_quest": slime_quest,
@@ -145,6 +205,9 @@ func from_dict(d: Dictionary) -> void:
 	player_pos = Vector2(float(d.get("px", 0)), float(d.get("py", 0)))
 	pos_valid = bool(d.get("pos_valid", false))
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp
+	recalc_max_mana()
+	# мана: старый сейв без поля => полная; всегда в пределах потолка класса
+	mana = clampi(int(d.get("mana", max_mana)), 0, max_mana)
 	stats_changed.emit()
 	quest_changed.emit()
 

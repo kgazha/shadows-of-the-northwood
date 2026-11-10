@@ -41,6 +41,13 @@ func _ready() -> void:
 	add_child(anim)
 	apply_class()
 	anim.play("down")
+	# тик регенерации — видимая искра над героем
+	GameState.regen_hp_tick.connect(func() -> void:
+		if is_instance_valid(self):
+			_spark(global_position + Vector2(0, -12), Color(0.45, 0.95, 0.5, 0.9), 5.0))
+	GameState.regen_mana_tick.connect(func() -> void:
+		if is_instance_valid(self):
+			_spark(global_position + Vector2(0, -12), Color(0.4, 0.65, 1.0, 0.9), 5.0))
 
 func class_data() -> Dictionary:
 	return Classes.class_data(GameState.class_id)
@@ -336,6 +343,9 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 		"execute", "mark":
 			if _skill_target() == null:
 				return false  # без цели кулдаун не тратим
+	# мана тратится после проверки цели — неудачный каст не «съедает» энергию
+	if not GameState.try_spend_mana(int(sd.get("mana", 0))):
+		return false
 	skill_cd[i] = float(sd.cd)
 	match sid:
 		"power_strike":
@@ -390,6 +400,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			for e in get_tree().get_nodes_in_group("enemy"):
 				if is_instance_valid(e) and "freeze_t" in e and global_position.distance_to(e.global_position) <= 32.0:
 					e.freeze_t = 3.0
+			GameState.entered_combat()  # заморозка — тоже бой, хоть и без урона
 			GameState.toast.emit("Морозная нова!")
 		"siphon":
 			siphon_t = 5.0
@@ -448,6 +459,7 @@ func take_damage(n: int) -> void:
 		return  # кувырок = i-frames: сквозь удары и снаряды
 	hurt_cd = 0.8
 	_flash_t = 0.35
+	GameState.entered_combat()  # реген «замолкает» на время боя
 	GameState.hurt(n)
 	if GameState.hp <= 0:
 		cancel_orders()
