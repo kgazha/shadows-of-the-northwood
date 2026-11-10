@@ -1,0 +1,29 @@
+{
+  "stands": [
+    { "name": "mb_1", "desc": "Спавны + лучник: телеграф/уррон/упор/LOS/roll-контра/input_locked", "run": ["mb_1.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "mb_2", "desc": "Тенеплёт: материализация/фазы/телепорт/урон/XP", "run": ["mb_2.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "mb_3", "desc": "Мглокрысы: паника/стая/реестр/flee/XP/lock", "run": ["mb_3.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "mb_4", "desc": "GameState: сейв/лоад/XP/флаги/границы", "run": ["mb_4.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "mb_5", "desc": "Сейв-гейт: добитый босс не возрождается", "run": ["mb_5.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "mb_6", "desc": "Стрела и input_locked: висит/оживает/попадание", "run": ["mb_6.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "qa_ng", "desc": "NG+ ядро: формулы/скейл/сброс-перенос/золото/кап", "run": ["qa_ng.tscn"], "parse": { "mode": "xy", "re": "QA_NG_RESULT (\\d+)/(\\d+)" } },
+    { "name": "qa_ng2", "desc": "NG+ UX: пункт Старейшины + строка Круг N в meta_hud", "run": ["qa_ng2.tscn"], "parse": { "mode": "xy", "re": "QA_NG2_RESULT (\\d+)/(\\d+)" } },
+    { "name": "qa_sv", "desc": "SaveVault: roundtrip/битый сейв/отсутствие сейва", "run": ["qa_sv.tscn"], "parse": { "mode": "fails", "re": "QA SV: fails=(\\d+)" } },
+    { "name": "qa_achv_tab", "desc": "SaveVault import-фаззинг + вкладка Достижения", "run": ["qa_q4_main.tscn"], "parse": { "mode": "pf", "re": "SUMMARY \\| PASS=(\\d+) FAIL=(\\d+)" } },
+    { "name": "qa_q3_old", "desc": "Achv/daily/Ash/Altar: вчерашний daily.stamp (seed old)", "run": ["qa_q2_seed_old.tscn", "qa_q3_main.tscn"], "parse": { "mode": "pf", "re": "SUMMARY \\| mode=old \\| PASS=(\\d+) FAIL=(\\d+)" } },
+    { "name": "qa_q3_today", "desc": "Achv/daily/Ash/Altar: сегодняшний daily.stamp (seed today)", "run": ["qa_q2_seed_today.tscn", "qa_q3_main.tscn"], "parse": { "mode": "pf", "re": "SUMMARY \\| mode=today \\| PASS=(\\d+) FAIL=(\\d+)" } },
+    { "name": "qa_z1", "desc": "Зона-2 Пепелище: карта/зона/волны/мобы", "run": ["qa_z1.tscn"], "parse": { "mode": "xy", "re": "QA_Z1 (\\d+)/(\\d+)" } },
+    { "name": "qa_mm", "desc": "Миникарта: покрытие/кадры/зоны", "run": ["qa_mm.tscn"], "parse": { "mode": "xy", "re": "QA_MM (\\d+)/(\\d+)" } },
+    { "name": "qa_bt", "desc": "Ребаланс лута: Loot.on_mob_death sim", "run": ["qa_bt.tscn"], "parse": { "mode": "fails", "re": "QA BT: fails=(\\d+)" } },
+    { "name": "qa_dn", "desc": "DmgNumbers: стыки хоста/пула/координат", "run": ["qa_dn.tscn"], "parse": { "mode": "pf", "re": "QA DN: checks=(\\d+) fails=(\\d+)" } },
+    { "name": "qa_rf", "desc": "Порядок загрузки персистентного состояния в world._ready()", "run": ["qa_rf.tscn"], "parse": { "mode": "multi", "re": "qa_rf s=\\d+ [^0-9]*(\\d+)/(\\d+)" } },
+    { "name": "qa_r1", "desc": "Esc-матрица vs Shop/Journal + ClickMove-контракт", "run": ["qa_r1.tscn"], "parse": { "mode": "fails", "re": "R1 DONE fails=(\\d+)" } },
+    { "name": "qa_r1r2", "desc": "Цепочка r1->r2 (рестарт процесса): босс не возрождён, нет повторного лута", "run": ["qa_r1.tscn", "qa_r2.tscn"], "parse": { "mode": "fails", "re": "R2 DONE fails=(\\d+)" } },
+    { "name": "qa_s1", "desc": "Shop/GearData/save v2 roundtrip/legacy v1", "run": ["qa_s1.tscn"], "parse": { "mode": "fails", "re": "SUMMARY fails=(\\d+)" } },
+    { "name": "qa_s2", "desc": "SettingsMenu: Esc-матрица/слайдеры/ClickMove-запись", "run": ["qa_s2.tscn"], "parse": { "mode": "fails", "re": "S2 DONE fails=(\\d+)" } },
+    { "name": "qa_s4", "desc": "Экономика фарм-цикла mob->loot->sell (20 циклов)", "run": ["qa_s4.tscn"], "parse": { "mode": "fails", "re": "S4 DONE fails=(\\d+)" } },
+    { "name": "qa_s5", "desc": "Спавн пещеры до load_game: мёртвый босс не воскресает", "run": ["qa_s5.tscn"], "parse": { "mode": "fails", "re": "S5 DONE fails=(\\d+)" } },
+    { "name": "qa_s6", "desc": "EV лута архетипов: сим 500 убийств по GearData.LOOT", "run": ["qa_s6.tscn"], "parse": { "mode": "fails", "re": "S6 DONE fails=(\\d+)" } },
+    { "name": "qa_s7", "desc": "Влияние Achv/DmgNumbers на IO автосейвов", "run": ["qa_s7.tscn"], "parse": { "mode": "fails", "re": "S7 DONE fails=(\\d+)" } }
+  ]
+}

@@ -1,0 +1,151 @@
+extends "res://mb_base.gd"
+## Кейс 4: стая мглокрыс — испуг при <=50% живых (один тост, разлёт, чистый реестр).
+## Усилено по вердикту: после разлёта 2 убежавших из 4-стаи (2 убиты) реестр чист;
+## стая с той же id после полного разлёта НЕ рождается panicked.
+## Кейс 5: input_locked/смерть/freeze_t, dying-страж XP.
+
+const SScript := preload("res://scripts/mob_swarmling.gd")
+
+var qa4_pack: Array = []
+
+func _ready() -> void:
+	await boot(save_for(0))
+	await prep()
+	await section_clear_original()
+	await section_panic()
+	await section_registry()
+	await section_dying_xp()
+	await section_lock()
+	done()
+
+func prep() -> void:
+	for s in find_mob(world.village_zone, "slime"):
+		park(s)
+	for a in find_mob(world.village_zone, "mob_archer"):
+		park(a)
+	for w in find_mob(world.dungeon_zone, "mob_wraith"):
+		park(w)
+	park(world.dungeon_zone.boss_node)
+	# герой-стенд подальше от поляны, чтобы поедание/погоня не мешали
+	stub.global_position = world.tile_to_world(Vector2i(24, 24))
+	if not village_tile_walkable(Vector2i(24, 24)):
+		stub.global_position = world.tile_to_world(Vector2i(24, 15))
+	await pump(2)
+
+func spawn_pack(id: String, tiles: Array) -> Array:
+	var out: Array = []
+	for t: Vector2i in tiles:
+		var r = SScript.new()
+		r.swarm_id = id
+		world.village_zone.add_child(r)
+		r.setup(world, t)
+		out.append(r)
+	return out
+
+func section_clear_original() -> void:
+	# зачистка штатной стаи: путь «все убиты» обязан очистить реестр
+	var rats: Array = find_mob(world.village_zone, "mob_swarmling")
+	for r in rats:
+		r.hurt(99, Vector2.ZERO)
+	await pump(3)
+	check("Q: реестр чист после зачистки штатной стаи", not SScript.SWARMS.has("glade_west"))
+
+func section_panic() -> void:
+	var tiles: Array = [Vector2i(6, 16), Vector2i(9, 16), Vector2i(6, 18), Vector2i(10, 18)]
+	qa4_pack = spawn_pack("qa4", tiles)
+	check("Q: стая qa4 заведена (total=4)", int(SScript.SWARMS["qa4"].total) == 4)
+	clear_toasts()
+	qa4_pack[0].hurt(99, Vector2.ZERO)
+	await pump(2)
+	check("Q: 3/4 живых — паники нет", bool(SScript.SWARMS["qa4"].panicked) == false)
+	check("Q: 3/4 живых — тоста испуга нет", n_toast("шарахается") == 0)
+	qa4_pack[1].hurt(99, Vector2.ZERO)
+	await pump(2)
+	check("Q: 2/4 (=50%) — паника случилась", bool(SScript.SWARMS["qa4"].panicked) == true)
+	check("Q: тост испуга ровно один", n_toast("шарахается") == 1)
+	var f1: Vector2 = qa4_pack[2].flee_dir
+	var f2: Vector2 = qa4_pack[3].flee_dir
+	check("Q: выжившие получили векторы разлёта", f1.length_squared() > 0.5 and f2.length_squared() > 0.5)
+	check("Q: разлёт веером (углы различаются)", absf(f1.angle_to(f2)) > 1.0)
+	check("Q: реестр жив при панике (2/4 убегают)", int(SScript.SWARMS["qa4"].alive) == 2)
+
+func section_registry() -> void:
+	# 2 убежавших из 4-стаи (2 убиты): обе растворяются за FLEE_RADIUS — реестр обязан очиститься
+	var id0: int = qa4_pack[2].get_instance_id()
+	var id1: int = qa4_pack[3].get_instance_id()
+	var v0 := false
+	var v1 := false
+	for i in range(240):
+		GameState.hp = GameState.max_hp
+		await get_tree().physics_frame
+		if is_instance_id_valid(id0) and Vector2((instance_from_id(id0) as Node2D).velocity).length() > 55.0:
+			v0 = true
+		if is_instance_id_valid(id1) and Vector2((instance_from_id(id1) as Node2D).velocity).length() > 55.0:
+			v1 = true
+	check("Q: обе испуганные крысы убегают (скорость ~66)", v0 and v1)
+	var chk := func() -> bool:
+		return (not is_instance_id_valid(id0)) and (not is_instance_id_valid(id1))
+	var gone: bool = await until(chk, 1500)
+	check("Q: обе крысы исчезли с карты", gone)
+	await pump(5)
+	check("Q: ПОСЛЕ РАЗЛЁТА 2/2 реестр чист (фикс W2)", not SScript.SWARMS.has("qa4"))
+	check("Q: тост испуга за всё время один", n_toast("шарахается") == 1)
+	# респавн стаи с ТОЙ ЖЕ id после полного разлёта — не рождается panicked
+	var qa4b := spawn_pack("qa4", [Vector2i(6, 16), Vector2i(10, 18)])
+	await pump(2)
+	check("Q: респавн qa4: запись создана заново", SScript.SWARMS.has("qa4") and int(SScript.SWARMS["qa4"].total) == 2)
+	check("Q: респавн qa4 НЕ panicked", bool(SScript.SWARMS["qa4"].panicked) == false)
+	qa4b[0].hurt(99, Vector2.ZERO)
+	qa4b[1].hurt(99, Vector2.ZERO)
+	await pump(3)
+	check("Q: респавн qa4 зачищен («все убиты»)", not SScript.SWARMS.has("qa4"))
+	# эталонный путь «все убиты» — реестр обязан чиститься
+	var pack5 := spawn_pack("qa5", [Vector2i(6, 16), Vector2i(10, 18)])
+	await pump(2)
+	pack5[0].hurt(99, Vector2.ZERO)
+	pack5[1].hurt(99, Vector2.ZERO)
+	await pump(3)
+	check("Q: путь «все убиты» — реестр чист", not SScript.SWARMS.has("qa5"))
+
+func section_dying_xp() -> void:
+	var pack6 := spawn_pack("qa6", [Vector2i(6, 16), Vector2i(9, 16), Vector2i(6, 18)])
+	await pump(2)
+	clear_toasts()
+	var xp0 := GameState.xp
+	pack6[0].hurt(99, Vector2.ZERO)
+	pack6[0].hurt(99, Vector2.ZERO)
+	await pump(2)
+	check("Q: XP за крысу ровно +3", GameState.xp == xp0 + 3)
+	check("Q: тост смерти крысы один", n_toast("Мглокрыс повержен") == 1)
+
+func section_lock() -> void:
+	var pack: Array = []
+	for c in world.village_zone.get_children():
+		var sc: Script = c.get_script()
+		if sc != null and sc.resource_path.contains("mob_swarmling") and String(c.get("swarm_id")) == "qa6":
+			pack.append(c)
+	if pack.is_empty():
+		check("Q: крысы qa6 живы для тестов", false)
+		return
+	# герой рядом — крысы должны были бы преследовать
+	stub.global_position = (pack[0] as Node2D).global_position + Vector2(40.0, 0.0)
+	GameState.input_locked = true
+	var p0: Vector2 = (pack[0] as Node2D).global_position
+	for i in range(90):
+		GameState.hp = GameState.max_hp
+		await get_tree().physics_frame
+	check("Q: input_locked — крысы заморожены", (pack[0] as Node2D).global_position.distance_to(p0) < 0.5)
+	GameState.input_locked = false
+	GameState.hp = 0
+	var p1: Vector2 = (pack[0] as Node2D).global_position
+	for i in range(90):
+		await get_tree().physics_frame
+	GameState.hp = GameState.max_hp
+	check("Q: hp=0 героя — крысы заморожены", (pack[0] as Node2D).global_position.distance_to(p1) < 0.5)
+	# freeze_t
+	var r0 = pack[0]
+	r0.freeze_t = 3.0
+	var p2: Vector2 = r0.global_position
+	await pump(60)
+	check("Q: freeze_t — крыса стоит", r0.global_position.distance_to(p2) < 0.5)
+	check("Q: freeze_t — синий тинт", r0.modulate.b > 0.9 and r0.modulate.r < 0.7)
