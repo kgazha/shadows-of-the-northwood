@@ -75,6 +75,10 @@ func _ready() -> void:
 	var click_move := ClickMove.new()
 	add_child(click_move)
 	ClickMove.I = click_move
+	# Миникарта (M): синглтон Minimap (по образцу ClickMove — экземпляр + static I).
+	var minimap := Minimap.new()
+	add_child(minimap)
+	Minimap.I = minimap
 	var mf := FileAccess.open("res://data/map_village.json", FileAccess.READ)
 	meta = JSON.parse_string(mf.get_as_text())
 	map_rows = meta["grid"]

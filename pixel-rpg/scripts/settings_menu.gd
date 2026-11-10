@@ -47,6 +47,8 @@ extends CanvasLayer
 
 const CM_PATH := "res://scripts/click_move.gd"
 const CM_CLASS := "ClickMove"
+const MM_PATH := "res://scripts/minimap.gd"
+const MM_CLASS := "Minimap"
 const FRAME_PATH := "res://assets/ui/panel_frame.png"  # та же Kenney 9-slice рамка, что у окон hud
 
 var dim: ColorRect             # полноэкранная вуаль: открыта -> STOP, скрыта -> IGNORE
@@ -58,6 +60,9 @@ var sfx_pct: Label
 var cm_row: HBoxContainer      # строка тумблера ПКМ-хода; нет ClickMove -> скрыта
 var cm_btn: Button
 var _cm_api                    # ClickMove: автозагрузка-узел либо GDScript со статиками
+var mm_row: HBoxContainer      # строка тумблера миникарты; нет Minimap -> скрыта
+var mm_btn: Button
+var _mm_api                    # Minimap: GDScript со статиками (паттерн _cm_api)
 var _open := false
 
 func _ready() -> void:
@@ -75,6 +80,7 @@ func open() -> void:
 		return
 	_sync_audio()
 	_refresh_click_move()        # фича могла «прилететь» между открытиями — перепроверка
+	_refresh_minimap()           # фича могла «прилететь» между открытиями — перепроверка
 	_set_open(true)
 	GameState.input_locked = true
 	GameAudio.sfx("ui_click")
@@ -243,6 +249,19 @@ func _build() -> void:
 	cm_row.visible = false
 	vb.add_child(cm_row)
 
+	# тумблер миникарты — виден, только когда фича Minimap реально в проекте
+	mm_row = HBoxContainer.new()
+	mm_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mm_btn = Button.new()
+	mm_btn.toggle_mode = true
+	mm_btn.focus_mode = Control.FOCUS_NONE
+	mm_btn.add_theme_font_size_override("font_size", 8)
+	mm_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	mm_btn.toggled.connect(_on_mm_toggled)
+	mm_row.add_child(mm_btn)
+	mm_row.visible = false
+	vb.add_child(mm_row)
+
 	var reset_btn := Button.new()
 	reset_btn.text = "Сброс"
 	reset_btn.focus_mode = Control.FOCUS_NONE
@@ -344,6 +363,61 @@ func _on_cm_toggled(on: bool) -> void:
 	_cm_refresh_text(on)
 	if _cm_api != null:
 		_cm_api.call("set_on", on)   # персист — ответственность ClickMove
+
+# --- тумблер миникарты (тот же контракт is_on/set_on, что у ClickMove) ---
+
+## Резолв против контракта: узел-автозагрузка -> скрипт class_name Minimap из
+## ГЛОБАЛЬНОГО СПИСКА КЛАССОВ ProjectSettings (ClassDB.class_exists НЕ видит
+## скриптовые классы — проба на 4.7.2) -> проверка файла и статик is_on/set_on.
+## Ничего -> null -> строка скрыта.
+func _resolve_minimap():
+	var node := get_tree().root.get_node_or_null(NodePath(MM_CLASS))
+	if node != null and node.has_method("is_on") and node.has_method("set_on"):
+		return node
+	var known := false
+	for g in ProjectSettings.get_global_class_list():
+		if String((g as Dictionary).get("class", "")) == MM_CLASS:
+			known = true
+			break
+	if not known:
+		return null
+	if not ResourceLoader.exists(MM_PATH):
+		push_warning("Minimap зарегистрирован, но %s отсутствует — тумблер скрыт" % MM_PATH)
+		return null
+	var sc := load(MM_PATH) as GDScript
+	if sc == null:
+		return null
+	var names: Array = []
+	for m in sc.get_script_method_list():
+		names.append(String((m as Dictionary).get("name", "")))
+	if names.has("is_on") and names.has("set_on"):
+		return sc
+	push_warning("Minimap без is_on/set_on — контракт не выполнен, тумблер скрыт")
+	return null
+
+## Вызывается при каждом открытии: фича появляется позже этого хунка.
+func _refresh_minimap() -> void:
+	_mm_api = _resolve_minimap()
+	if _mm_api == null:
+		mm_row.visible = false
+		return
+	var on := false
+	if _mm_api is Node:
+		on = bool(_mm_api.call("is_on"))
+	else:
+		on = bool((_mm_api as GDScript).call("is_on"))
+	mm_btn.set_pressed_no_signal(on)
+	_mm_refresh_text(on)
+	mm_row.visible = true
+
+func _mm_refresh_text(on: bool) -> void:
+	mm_btn.text = "Миникарта (M) — %s" % ("вкл" if on else "выкл")
+
+func _on_mm_toggled(on: bool) -> void:
+	GameAudio.sfx("ui_click")
+	_mm_refresh_text(on)
+	if _mm_api != null:
+		_mm_api.call("set_on", on)   # персист — ответственность Minimap
 
 # --- занятость мира (по чужим окнам не открываемся) ---
 
