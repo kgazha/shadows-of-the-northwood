@@ -93,6 +93,7 @@ func try_interact() -> void:
 		return
 	resting = true
 	rest_t = 0.0
+	GameAudio.sfx("belt")  # шелест снаряги: садимся, отстёгиваем пояс
 	GameState.toast.emit("Ты садишься к огню… (не двигайся и не вступай в бой)")
 
 func _process(delta: float) -> void:
@@ -136,6 +137,7 @@ func _finish() -> void:
 		msg += ", энергия полна"
 	GameState.stats_changed.emit()
 	GameState.quest_changed.emit()  # автосейв: состояние костра не должно потеряться
+	GameAudio.sfx("ui_confirm")  # отдых завершён — «динь-дон»
 	GameState.toast.emit(msg)
 
 func _mark_used() -> void:

@@ -104,8 +104,10 @@ func hurt(dmg: int, from: Vector2) -> void:
 func _die() -> void:
 	dying = true
 	respawn_t = RESPAWN
+	GameAudio.sfx("drop")  # шлепок тела (кожа)
 	GameState.slime_kills += 1
 	GameState.add_xp(7)
+	GameAudio.sfx("coin")  # автораздача опыта — звон монет
 	GameState.toast.emit("Слайм повержен! (+7 опыта)")
 	_roll_mat_drop()
 	GameState.quest_changed.emit()

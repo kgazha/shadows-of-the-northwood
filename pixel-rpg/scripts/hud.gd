@@ -299,9 +299,19 @@ func refresh() -> void:
 		brewed_btn.visible = GameState.class_id != ""
 		brewed_btn.text = "x%d" % GameState.brewed_potions
 
+## Эвристика «отказа»: подстрока в тексте тоста -> звук ui_deny. Специально НЕ
+## включаем «полна» — лагерь отдыхает с тостом «энергия полна» (успех).
+const DENY_MARKS := ["не хватает", "нельзя", "полон", "не удалось", "не найдено",
+	"прерван", "потерян", "и так здрав", "и так полон", "нет. ", "отошёл", "прочь"]
+
 func show_toast(text: String) -> void:
 	toast_lbl.text = text
 	toast_t = 3.0
+	var low := text.to_lower()
+	for m in DENY_MARKS:
+		if low.contains(m):
+			GameAudio.sfx("ui_deny")
+			break
 
 func show_dialog(arr: Array, cb: Callable) -> void:
 	if arr.is_empty():
@@ -451,6 +461,7 @@ func _build_skill_panel(th: Theme) -> void:
 	add_child(potion_btn)
 
 func _on_potion_pressed() -> void:
+	GameAudio.sfx("ui_click")
 	if world != null and world.has_method("drink_potion"):
 		world.drink_potion()
 
@@ -540,7 +551,7 @@ func _build_alch_ui(th: Theme) -> void:
 		btn.text = "%s — %s" % [String(r.get("name", String(rid))), Alch.cost_text(String(rid))]
 		btn.tooltip_text = String(r.get("desc", ""))
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.pressed.connect(Alch.brew.bind(String(rid)))
+		btn.pressed.connect(_on_brew_pressed.bind(String(rid)))
 		vb.add_child(btn)
 		camp_btns[String(rid)] = btn
 	if camp_btns.is_empty():
@@ -554,7 +565,14 @@ func _build_alch_ui(th: Theme) -> void:
 	add_child(camp_panel)
 
 func _on_brewed_pressed() -> void:
+	GameAudio.sfx("ui_click")
 	Alch.drink_brewed()
+
+## Варка по клику: клик — всегда, «динь-дон» — только если сварилось.
+func _on_brew_pressed(rid: String) -> void:
+	GameAudio.sfx("ui_click")
+	if Alch.brew(rid):
+		GameAudio.sfx("ui_confirm")
 
 ## Кадровая часть: панель варки у костра, доступность рецептов, полоса отдыха.
 func _update_camp_ui() -> void:
@@ -629,10 +647,12 @@ func _update_skill_states() -> void:
 
 func _on_skill_slot_input(event: InputEvent, i: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		GameAudio.sfx("ui_click")
 		if world != null and world.player != null:
 			world.player.cast_skill(i, world.get_global_mouse_position())
 
 func _on_leveled_up(lv: int) -> void:
+	GameAudio.sfx("ui_levelup")
 	if GameState.class_id == "":
 		return
 	for sid in Classes.skills_for(GameState.class_id):

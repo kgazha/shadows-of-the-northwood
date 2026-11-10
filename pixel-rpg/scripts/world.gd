@@ -64,6 +64,12 @@ var atmosphere             # scripts/atmosphere.gd: свет/тени/части
 var campfires: Array = []  # scripts/campfire.gd (hud читает для панели варки/полосы отдыха)
 
 func _ready() -> void:
+	# Звук: единственный экземпляр GameAudio создаём ПЕРВЫМ — любой _ready ниже
+	# (hud, slime, campfire) уже может звать GameAudio.sfx(...) без проверки.
+	var audio := GameAudio.new()
+	add_child(audio)
+	GameAudio.I = audio
+	GameAudio.music("forest")
 	var mf := FileAccess.open("res://data/map_village.json", FileAccess.READ)
 	meta = JSON.parse_string(mf.get_as_text())
 	map_rows = meta["grid"]
@@ -586,6 +592,8 @@ func apply_zone(to_cave: bool, teleport: bool = true) -> void:
 	_set_cam_limits(to_cave)
 	if atmosphere != null:
 		atmosphere.zone_changed(to_cave)
+	# музыка по зоне: пещера — своя тема, выход — лес (кроссфейд внутри GameAudio)
+	GameAudio.music("cave" if to_cave else "forest")
 
 func _set_cam_limits(to_cave: bool) -> void:
 	if to_cave and dungeon_zone != null:

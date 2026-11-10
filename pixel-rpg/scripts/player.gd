@@ -25,6 +25,8 @@ var mark_target: Node2D = null        # «Метка охотника»
 var mark_t := 0.0
 var siphon_t := 0.0                   # «Поглощение»: лечение от попаданий снарядов
 var _atk_fx_t: Tween = null           # туин «подачи тела», один на героя
+var _step_t := 0.0                    # таймер звука шага
+var _step_alt := false                # чередование двух сэмплов шага
 
 @onready var world: Node2D = get_parent()
 
@@ -128,7 +130,9 @@ func _physics_process(delta: float) -> void:
 	if velocity != Vector2.ZERO:
 		_set_facing_from(velocity)
 		anim.play(facing)
+		_step_tick(delta)
 	else:
+		_step_t = 0.0  # встал — следующий шаг зазвучит сразу, не «доедет» по таймеру
 		# в покое герой смотрит на курсор — прицел melee-дуги всегда понятен
 		face_to(world.get_global_mouse_position())
 		if anim.animation != facing:
@@ -152,12 +156,22 @@ func _set_facing_from(v: Vector2) -> void:
 	else:
 		facing = "down" if v.y > 0 else "up"
 
+## Шаг: два сэмпла попеременно, лёгкий разброс темпа и высоты — не «швейная машинка».
+func _step_tick(delta: float) -> void:
+	_step_t -= delta
+	if _step_t > 0.0:
+		return
+	_step_t = 0.38
+	_step_alt = not _step_alt
+	GameAudio.sfx("step1" if _step_alt else "step2", 1.0, randf_range(0.9, 1.1))
+
 ## Кувырок: рывок в сторону движения (или к курсору, если стоим).
 ## Во время roll_t герой неуязвим — перекат сквозь врагов и снаряды.
 func start_roll(mv: Vector2) -> void:
 	roll_dir = mv.normalized() if mv != Vector2.ZERO else _aim_dir()
 	roll_t = ROLL_TIME
 	roll_cd = ROLL_CD + ROLL_TIME
+	GameAudio.sfx("roll")  # шорох ткани на старте кувырка
 	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
 	Fx.dust(global_position + roll_dir * 4.0, world)
 	anim.modulate.a = 0.75
@@ -166,6 +180,7 @@ func start_roll(mv: Vector2) -> void:
 func attack_at(p: Vector2) -> void:
 	if attack_cd > 0.0 or roll_t > 0.0:
 		return
+	GameAudio.sfx("attack")  # ровно раз на удар: держание ЛКМ глушит кулдаун выше
 	face_to(p)
 	if String(class_data().kind) == "melee":
 		do_attack()
@@ -350,6 +365,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 	if not GameState.try_spend_mana(int(sd.get("mana", 0))):
 		return false
 	skill_cd[i] = float(sd.cd)
+	GameAudio.sfx("spell")  # файла spell.wav пока нет — тихий пропуск (guarded)
 	match sid:
 		"power_strike":
 			var t := _skill_target()
