@@ -150,7 +150,11 @@ static func absorb(gs: Object, dmg: int) -> int:
 ## Амулет — награда квеста пещеры (has_amulet), в лавке не продаётся.
 ## Формула наследует дух game_state.gd: base * (2 если меч) + (1 если амулет).
 static func player_damage(base: int, gs: Object) -> int:
-	var d := int(round(float(base) * weapon_mult(gs)))
+	# «Мастерство» алтаря Пепла: +10% за покупку (кап 3 = +30%).
+	var f := 0
+	if gs != null:
+		f = mini(int(gs.flags.get("meta.master", 0)), 3)
+	var d := int(round(float(base) * weapon_mult(gs) * (1.0 + 0.10 * f)))
 	if gs != null and bool(gs.get("has_amulet")):
 		d += 1
 	return maxi(1, d)

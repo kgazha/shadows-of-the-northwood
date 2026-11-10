@@ -289,9 +289,9 @@ func add_xp(n: int) -> void:
 
 # --- классы (спринт 2) ---
 
-## Пересчёт макс. HP: класс + 2 за каждый уровень + 4 за амулет.
+## Пересчёт макс. HP: класс + 2 за каждый уровень + 4 за амулет + 4 за «Благословение» алтаря.
 func recalc_max_hp() -> void:
-	max_hp = int(Classes.class_data(class_id).hp) + 2 * (level - 1) + (4 if has_amulet else 0)
+	max_hp = int(Classes.class_data(class_id).hp) + 2 * (level - 1) + (4 if has_amulet else 0) + 4 * int(flags.get("meta.bless", 0))
 	if hp > max_hp:
 		hp = max_hp
 	stats_changed.emit()

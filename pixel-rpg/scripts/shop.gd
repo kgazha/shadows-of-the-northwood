@@ -28,6 +28,23 @@ extends CanvasLayer
 
 static var I: Shop             # синглтон; назначает сам себя в _enter_tree
 
+## «Алтарь Пепла» (§4.2): второй список кнопок внутри уже открытой лавки,
+## валюта — Пепел из res://scripts/ash.gd (резолв ResourceLoader.exists + load:
+## class_name в рантаймовом ClassDB 4.7.2 отсутствует, паттерн settings_menu.gd).
+## Алтарь НЕ модальность: свой lock не берёт, покупка под гейтом _external_lock()
+## — как обычная покупка/продажа. cap=0 — без потолка (bless: шаг цены +2).
+const ASH_PATH := "res://scripts/ash.gd"
+const ALTAR := [
+	{"id": "bless", "name": "Благословение", "desc": "+4 к max HP навсегда", "price": 3, "step": 2, "cap": 0},
+	{"id": "master", "name": "Мастерство", "desc": "+10% к урону героя", "price": 5, "step": 0, "cap": 3},
+	{"id": "purse", "name": "Кошелёк", "desc": "+50 зол. к старту каждого NG+ (эффект вступит с NG+)", "price": 4, "step": 0, "cap": 2},
+	{"id": "greed", "name": "Жадность", "desc": "+25% золота с мобов", "price": 6, "step": 0, "cap": 1},
+	{"id": "feet", "name": "Лёгкие ноги", "desc": "Кулдаун кувырка 0.9 → 0.75 c", "price": 8, "step": 0, "cap": 1},
+]
+
+var altar_head: Label          # заголовок секции алтаря с балансом Пепла (§4.2)
+var altar_btns := {}           # meta id -> Button алтаря
+
 var root: Control              # полноэкранный корень панели; visible = «лавка открыта»
 var dim: ColorRect             # затемнение мира; клик мимо окна закрывает лавку
 var panel: PanelContainer
@@ -124,6 +141,15 @@ func _build() -> void:
 		sbtn.pressed.connect(_on_sell.bind(String(slot)))
 		vb.add_child(sbtn)
 		sell_btns[String(slot)] = sbtn
+	# --- «Алтарь Пепла» (§4.2): вторая витрина, цены в Пепле ---
+	altar_head = _section_label("Пепельный Алтарь:")
+	vb.add_child(altar_head)
+	for e in ALTAR:
+		var abtn := Button.new()
+		abtn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		abtn.pressed.connect(_on_ash_buy.bind(String((e as Dictionary).get("id", ""))))
+		vb.add_child(abtn)
+		altar_btns[String((e as Dictionary).get("id", ""))] = abtn
 	var close_btn := Button.new()
 	close_btn.text = "Закрыть (Esc)"
 	close_btn.pressed.connect(close)
@@ -284,6 +310,62 @@ func _on_sell(slot: String) -> void:
 	GameState.toast.emit("Гриим скупил: %s (+%d зол.)" % [String(GearData.item(gid).get("name", gid)), price])
 	refresh()
 
+# --- «Алтарь Пепла» (§4.2) ---
+
+## Резолв Пепла: class_name в рантаймовом ClassDB 4.7.2 отсутствует —
+## ResourceLoader.exists + load в момент вызова (паттерн settings_menu.gd).
+## null — скрипта нет: алтарь деградирует в отказ (ui_deny), лавка живёт.
+func _ash() -> GDScript:
+	if not ResourceLoader.exists(ASH_PATH):
+		return null
+	return load(ASH_PATH) as GDScript
+
+func _ash_balance() -> int:
+	var sc := _ash()
+	return int(sc.call("balance")) if sc != null else 0
+
+## Цена позиции: base + step * куплено (bless: 3,5,7…; шаг 0 — фикс).
+func _altar_price(e: Dictionary, owned: int) -> int:
+	return int(e.get("price", 0)) + int(e.get("step", 0)) * owned
+
+func _owned(id: String) -> int:
+	return int(GameState.flags.get("meta." + id, 0))  # только .get(): старые сейвы не крашим
+
+func _on_ash_buy(id: String) -> void:
+	if _external_lock():
+		return  # покупка только под СОБСТВЕННЫМ lock лавки (контракт модальности)
+	var e: Dictionary = {}
+	for x in ALTAR:
+		if String((x as Dictionary).get("id", "")) == id:
+			e = x
+			break
+	if e.is_empty():
+		push_warning("Shop: неизвестная позиция алтаря: %s" % id)
+		return
+	var cap := int(e.get("cap", 0))
+	var owned := _owned(id)
+	if cap > 0 and owned >= cap:
+		GameAudio.sfx("ui_deny")
+		GameState.toast.emit("%s: предел (%d/%d)." % [String(e.get("name", id)), owned, cap])
+		return
+	var sc := _ash()
+	if sc == null:
+		GameAudio.sfx("ui_deny")
+		return
+	var price := _altar_price(e, owned)
+	if not bool(sc.call("spend", price)):
+		GameAudio.sfx("ui_deny")
+		GameState.toast.emit("Не хватает Пепла: нужно %d." % price)
+		refresh()
+		return
+	GameState.set_flag("meta." + id, owned + 1)
+	GameState.save_game()  # трата обязана пережить выход (железное правило P1)
+	GameAudio.sfx("ui_confirm")  # паттерн существующего _on_buy
+	var total := _owned(id)
+	var cap_s := "∞" if cap <= 0 else str(cap)
+	GameState.toast.emit("Алтарь: %s (куплено %d/%s)." % [String(e.get("name", id)), total, cap_s])
+	refresh()
+
 # --- витрина ---
 
 func refresh() -> void:
@@ -306,3 +388,31 @@ func refresh() -> void:
 		sbtn.disabled = price <= 0
 		sbtn.text = "%s — %d зол." % [String(GearData.item(gid).get("name", gid)), price] if price > 0 else "— пусто —"
 		sbtn.modulate = Color.WHITE
+	_refresh_altar()
+
+## Витрина алтаря: баланс в заголовке секции, цены в Пепле (пепельный цвет,
+## не золото), подпись «куплено N/M»; предел — кнопка гаснет.
+func _refresh_altar() -> void:
+	if altar_head == null:
+		return
+	var bal := _ash_balance()
+	altar_head.text = "Пепельный Алтарь (пепел: %d):" % bal
+	for x in ALTAR:
+		var e := x as Dictionary
+		var id := String(e.get("id", ""))
+		var abtn: Button = altar_btns.get(id, null)
+		if abtn == null:
+			continue
+		var cap := int(e.get("cap", 0))
+		var owned := _owned(id)
+		var capped := cap > 0 and owned >= cap
+		var price := _altar_price(e, owned)
+		var cap_s := "∞" if cap <= 0 else str(cap)
+		abtn.disabled = capped
+		if capped:
+			abtn.text = "%s  [предел %d/%s]" % [String(e.get("name", id)), owned, cap_s]
+			abtn.modulate = Color(0.6, 0.6, 0.66)
+		else:
+			abtn.text = "%s — %d пепла  [куплено %d/%s]" % [String(e.get("name", id)), price, owned, cap_s]
+			abtn.modulate = Color(0.84, 0.81, 0.75) if bal >= price else Color(0.55, 0.55, 0.6)
+		abtn.tooltip_text = String(e.get("desc", ""))

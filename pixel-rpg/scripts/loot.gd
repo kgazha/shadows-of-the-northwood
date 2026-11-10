@@ -26,6 +26,8 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 			_give_item(GameState, String(e.get("item", "")), maxi(1, int(e.get("qty", 1))))
 	if gold <= 0:
 		return
+	# «Жадность» алтаря Пепла: +25% золота (поверх будущих ng_gold_mult — они встанут ниже).
+	gold = int(round(gold * (1.0 + 0.25 * int(GameState.flags.get("meta.greed", 0)))))
 	GameState.add_gold(gold)
 	GameAudio.sfx("coin")
 	GameState.toast.emit("+%d зол." % gold)

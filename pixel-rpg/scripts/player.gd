@@ -8,6 +8,7 @@ const PROJ := preload("res://scripts/projectile.gd")
 const ROLL_TIME := 0.22     # длительность кувырка
 const ROLL_SPEED := 170.0   # скорость рывка (базовая скорость героя ~55)
 const ROLL_CD := 0.9        # кулдаун после окончания кувырка
+const ROLL_CD_FEET := 0.75  # алтарь «Лёгкие ноги»: КД при meta.feet>=1
 
 var anim: AnimatedSprite2D
 var facing := "down"
@@ -171,7 +172,7 @@ func _step_tick(delta: float) -> void:
 func start_roll(mv: Vector2) -> void:
 	roll_dir = mv.normalized() if mv != Vector2.ZERO else _aim_dir()
 	roll_t = ROLL_TIME
-	roll_cd = ROLL_CD + ROLL_TIME
+	roll_cd = (ROLL_CD_FEET if int(GameState.flags.get("meta.feet", 0)) >= 1 else ROLL_CD) + ROLL_TIME
 	GameAudio.sfx("roll")  # шорох ткани на старте кувырка
 	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
 	Fx.dust(global_position + roll_dir * 4.0, world)
