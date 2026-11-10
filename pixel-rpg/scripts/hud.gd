@@ -365,18 +365,33 @@ func _build_skill_panel(th: Theme) -> void:
 	for i in 4:
 		var sc := Control.new()
 		sc.custom_minimum_size = Vector2(SLOT, SLOT)
+		# Иконка и шторка КД делят ОДИН прямоугольник (2,2,24,24): scale-трюк для
+		# TextureRect съезжал относительно ColorRect — кулдаун «жил рядом» с иконкой.
 		var icon := TextureRect.new()
+		icon.position = Vector2(2, 2)
+		icon.size = Vector2(SLOT - 4.0, SLOT - 4.0)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
-		icon.scale = Vector2(1.5, 1.5)  # 16 px -> 24 px, фильтр nearest из проекта
+		icon.stretch_mode = TextureRect.STRETCH_SCALE  # 16 px -> 24 px, nearest из настроек проекта
 		icon.mouse_filter = Control.MOUSE_FILTER_STOP
 		icon.gui_input.connect(_on_skill_slot_input.bind(i))
 		sc.add_child(icon)
 		var cdc := ColorRect.new()
 		cdc.color = Color(0, 0, 0, 0.65)
 		cdc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cdc.size = Vector2(SLOT, 0)
+		cdc.position = Vector2(2, 2)
+		cdc.size = Vector2(SLOT - 4.0, 0)
 		sc.add_child(cdc)
+		var cdnum := Label.new()  # секунды кулдауна — по центру иконки
+		cdnum.position = Vector2(2, 2)
+		cdnum.size = Vector2(SLOT - 4.0, SLOT - 4.0)
+		cdnum.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cdnum.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cdnum.add_theme_font_size_override("font_size", 12)
+		cdnum.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+		cdnum.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		cdnum.add_theme_constant_override("outline_size", 4)
+		cdnum.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sc.add_child(cdnum)
 		var lvl := Label.new()
 		lvl.add_theme_font_size_override("font_size", 7)
 		lvl.add_theme_color_override("font_color", Color(1, 0.75, 0.4))
@@ -394,7 +409,7 @@ func _build_skill_panel(th: Theme) -> void:
 		hot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		sc.add_child(hot)
 		hb.add_child(sc)
-		skill_slots.append({"root": sc, "icon": icon, "cd": cdc, "lvl": lvl, "hot": hot})
+		skill_slots.append({"root": sc, "icon": icon, "cd": cdc, "cdn": cdnum, "lvl": lvl, "hot": hot})
 	skill_panel.theme = th
 	add_child(skill_panel)
 	# зелье из трав — справа от панели скиллов
@@ -454,10 +469,13 @@ func _update_skill_states() -> void:
 		slot["icon"].modulate = Color(0.45, 0.45, 0.5) if locked else Color.WHITE
 		slot["lvl"].text = ("замк. ур.%d" % int(sd.level)) if locked else ""
 		var frac := 0.0
+		var cd_left := 0.0
 		if p != null and float(p.skill_cd[i]) > 0.0:
-			frac = clampf(float(p.skill_cd[i]) / float(sd.cd), 0.0, 1.0)
-		# шторка уходит снизу вверх: тёмной остаётся верхняя часть
-		slot["cd"].size = Vector2(SLOT, SLOT * frac)
+			cd_left = float(p.skill_cd[i])
+			frac = clampf(cd_left / float(sd.cd), 0.0, 1.0)
+		# шторка лежит точно на иконке и уходит снизу вверх: тёмной остаётся верхняя часть
+		slot["cd"].size = Vector2(SLOT - 4.0, (SLOT - 4.0) * frac)
+		slot["cdn"].text = str(ceili(cd_left)) if frac > 0.0 else ""
 
 func _on_skill_slot_input(event: InputEvent, i: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
