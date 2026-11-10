@@ -378,7 +378,10 @@ func from_dict(d: Dictionary) -> void:
 			if cn >= 64:
 				push_warning("campfires_used: больше 64 ключей — остаток отброшен")
 				break
-			campfires_used[String(ck)] = cu[ck]
+			# N4 (адверсариал): значения — только bool-резолвер _flag: JSON-мусор
+			# ("abc", null, словарь) => false, число => nonzero; в словаре живут
+			# строго bool; campfire.gd читает тем же _flag — каналы не разойдутся.
+			campfires_used[String(ck)] = _flag(cu[ck], false)
 			cn += 1
 	# сундуки: массив строк-ид; битые элементы молча пропускаем
 	chests_used = []
@@ -397,10 +400,11 @@ func from_dict(d: Dictionary) -> void:
 	# legacy-миграция: старый сейв с мечом => weapon="sword" (если слот пуст)
 	if has_sword and String(gear["weapon"]) == "":
 		gear["weapon"] = "sword"
-	# M2 (QA): обратная синхронизация — меч в gear всегда означает has_sword,
-	# иначе сейвы с gear.weapon="sword" + has_sword:false расходятся каналами.
-	if String(gear["weapon"]) == "sword":
-		has_sword = true
+	# N3 (адверсариал): единый источник правды — gear.weapon (канон equip_item,
+	# M1); has_sword — производное зеркало. Обоюдно-несогласованные каналы
+	# ("has_sword":true + weapon:"axe" — «призрачный меч») не переживают лоад;
+	# прежняя M2-обратная синхронизация покрывается этой же строкой.
+	has_sword = String(gear["weapon"]) == "sword"
 	flags = {}
 	var fd: Variant = d.get("flags", {})
 	if typeof(fd) == TYPE_DICTIONARY:

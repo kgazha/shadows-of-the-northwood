@@ -30,7 +30,9 @@ func setup(p_world: Node2D, id: String, tile: Vector2i) -> void:
 	world = p_world
 	camp_id = id
 	position = world.tile_to_world(tile)
-	used = bool(GameState.campfires_used.get(id, false))
+	# N4: общий bool-резолвер сейва (тот же _flag, что и лоадер game_state.gd);
+	# «== true» не годится — String==bool роняет GDScript, bool("abc")==true жжёт костёр.
+	used = GameState._flag(GameState.campfires_used.get(id, false), false)
 	var spr := Sprite2D.new()
 	_anim = AnimatedSprite2D.new()
 	var fr := SpriteFrames.new()
@@ -152,6 +154,9 @@ func _mark_used() -> void:
 
 func _on_enter(b: Node) -> void:
 	if b.is_in_group("player"):
+		# N2 (адверсариал): контактного урона у костра нет — только отдых; если
+		# урон когда-либо появится, наносить строго через player.take_damage():
+		# гейт hurt_cd (0.8 c) живёт внутри него, обход = дубли урона за кадр.
 		world.near.append(self)
 
 func _on_exit(b: Node) -> void:
