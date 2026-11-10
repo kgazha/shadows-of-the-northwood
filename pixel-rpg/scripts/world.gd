@@ -451,6 +451,16 @@ func _update_cursor() -> void:
 		Input.set_custom_mouse_cursor(cur_move, Input.CURSOR_ARROW, Vector2(8, 8))
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Софтлок-страховка: блокировка ввода обязана жить только под открытым
+	# диалогом или модалкой. Если оба окна закрыты, «разлок» был потерян
+	# (несработавший колбэк фейда, панель, закрытая не через advance()): ветка
+	# ниже глушила весь ввод — E только листал бы диалог, F5/F9 не доходили,
+	# движение гейтилось в player.gd. input_locked при этом не сериализуется,
+	# так что залипание переживало быструю загрузку и снималось только
+	# рестартом процесса. Снимаем его при первом же вводе и обрабатываем
+	# событие штатно (F9, например, сразу сработает).
+	if GameState.input_locked and not hud.is_dialog_open() and not hud.is_modal_open():
+		GameState.input_locked = false
 	if GameState.input_locked:
 		var advance_input: bool = event.is_action_pressed("interact") or event.is_action_pressed("attack") \
 			or event.is_action_pressed("ui_accept") \
