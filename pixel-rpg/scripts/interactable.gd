@@ -1,6 +1,6 @@
 extends Area2D
-## ÐÐ½ÑÐµÑÐ°ÐºÑÐ¸Ð²Ð½ÑÐ¹ Ð¾Ð±ÑÐµÐºÑ: ÑÑÐ°Ð²Ð° Ð¸Ð»Ð¸ ÑÑÐ½Ð´ÑÐº.
-## Ð¢ÑÐ°Ð²Ñ â Ð²Ð¾Ð·Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ÑÐ¹ ÑÐµÑÑÑÑ (Ð·ÐµÐ»ÑÑ): ÑÐµÑÐµÐ· ~50 Ñ Ð¾ÑÑÐ°ÑÑÐ°ÑÑ Ð½Ð° Ð¼ÐµÑÑÐµ.
+## Интерактивный объект: трава или сундук.
+## Травы — возобновляемый ресурс (зелья): через ~50 с отрастают на месте.
 
 const HERB_RESPAWN := 50.0
 
@@ -30,14 +30,14 @@ func setup(p_world: Node2D, p_kind: String, tile: Vector2i) -> void:
 	body_exited.connect(_on_exit)
 	refresh_used()
 
-## Ð¡ÑÐ½Ð´ÑÐº ÑÐ¶Ðµ Ð¾ÑÐºÑÑÑ Ð² Ð¿ÑÐ¾ÑÐ»Ð¾Ð¹ ÑÐµÑÑÐ¸Ð¸ â Ð²Ð¾ÑÑÑÐ°Ð½Ð°Ð²Ð»Ð¸Ð²Ð°ÐµÐ¼ ÑÐ¾ÑÑÐ¾ÑÐ½Ð¸Ðµ Ð¸Ð· ÑÐµÐ¹Ð²Ð° (ÑÐ¸ÐºÑ T2).
-## ÐÑÐ·ÑÐ²Ð°ÐµÑÑÑ Ð¸ Ð¿Ð¾ÑÐ»Ðµ load_game(): ÑÑÑÐ½Ð¾ÑÑÐ¸ Ð¼Ð¸ÑÐ° ÑÑÑÐ¾ÑÑÑÑ Ð´Ð¾ ÑÑÐµÐ½Ð¸Ñ ÑÐµÐ¹Ð²Ð°.
+## Сундук уже открыт в прошлой сессии — восстанавливаем состояние из сейва (фикс T2).
+## Вызывается и после load_game(): сущности мира строятся до чтения сейва.
 func refresh_used() -> void:
 	if kind == "chest" and not used and GameState.chest_used(_uid()):
 		used = true
 		spr.texture = _atlas(14)
 
-## Ð£ÑÑÐ¾Ð¹ÑÐ¸Ð²ÑÐ¹ id Ð¾Ð±ÑÐµÐºÑÐ°: ÑÐ¸Ð¿+ÑÐ°Ð¹Ð» Ð¸Ð· map-Ð¼ÐµÑÑ, Ð½Ð°Ð¿ÑÐ¸Ð¼ÐµÑ "chest@37,21".
+## Устойчивый id объекта: тип+тайл из map-меты, например "chest@37,21".
 func _uid() -> String:
 	return "%s@%d,%d" % [kind, tile_xy.x, tile_xy.y]
 
@@ -49,21 +49,21 @@ func _atlas(tile_index: int) -> AtlasTexture:
 
 func get_hint() -> String:
 	if kind == "herb":
-		return "ÐÐ·ÑÑÑ ÑÑÐ°Ð²Ñ" if not used else "Ð¢ÑÐ°Ð²Ð° ÐµÑÑ Ð½Ðµ Ð¾ÑÑÐ¾ÑÐ»Ð°"
-	return "ÐÑÐºÑÑÑÑ ÑÑÐ½Ð´ÑÐº" if not used else "ÐÑÑÑÐ¾Ð¹ ÑÑÐ½Ð´ÑÐº"
+		return "Взять траву" if not used else "Трава ещё не отросла"
+	return "Открыть сундук" if not used else "Пустой сундук"
 
 func try_interact() -> void:
 	if used:
 		return
 	if kind == "herb":
 		if GameState.elder_quest == 0:
-			GameState.toast.emit("Ð Ð°Ð½Ð¾Ð²Ð°ÑÐ¾. Ð¡Ð½Ð°ÑÐ°Ð»Ð° Ð¿Ð¾Ð³Ð¾Ð²Ð¾ÑÐ¸ ÑÐ¾ ÑÑÐ°ÑÐµÐ¹ÑÐ¸Ð½Ð¾Ð¹.")
+			GameState.toast.emit("Рановато. Сначала поговори со старейшиной.")
 			return
 		GameState.herbs += 1
-		GameState.toast.emit("Ð¢ÑÐ°Ð²Ð° ÑÐ¾Ð±ÑÐ°Ð½Ð° (Ð²ÑÐµÐ³Ð¾: %d). Q â Ð¸ÑÐ¿Ð¸ÑÑ ÑÐ½Ð°Ð´Ð¾Ð±ÑÑ (+3 HP)" % GameState.herbs)
+		GameState.toast.emit("Трава собрана (всего: %d). Q — испить снадобья (+3 HP)" % GameState.herbs)
 		GameState.quest_changed.emit()
 		if GameState.elder_quest == 1 and GameState.herbs >= 3:
-			GameState.toast.emit("ÐÐ¾ÑÑÐ°ÑÐ¾ÑÐ½Ð¾! ÐÑÐ½ÐµÑÐ¸ ÑÑÐ°ÑÐµÐ¹ÑÐ¸Ð½Ðµ.")
+			GameState.toast.emit("Достаточно! Отнеси старейшине.")
 		used = true
 		_respawn_t = HERB_RESPAWN
 		spr.visible = false
@@ -71,10 +71,10 @@ func try_interact() -> void:
 	else:
 		used = true
 		GameState.has_sword = true
-		GameState.chest_mark_used(_uid())  # Â«ÑÑÐ½Ð´ÑÐº Ð¾ÑÐºÑÑÑÂ» Ð² ÑÐµÐ¹Ð² (ÑÐ¸ÐºÑ T2)
-		GameState.toast.emit("ÐÐ°Ð¹Ð´ÐµÐ½ ÐÐµÐ»ÐµÐ·Ð½ÑÐ¹ Ð¼ÐµÑ! Ð£ÑÐ¾Ð½ x2")
+		GameState.chest_mark_used(_uid())  # «сундук открыт» в сейв (фикс T2)
+		GameState.toast.emit("Найден Железный меч! Урон x2")
 		GameState.stats_changed.emit()
-		GameState.quest_changed.emit()  # Ð°Ð²ÑÐ¾ÑÐµÐ¹Ð²: Ð¼ÐµÑ Ð¸ ÑÐ¾ÑÑÐ¾ÑÐ½Ð¸Ðµ ÑÑÐ½Ð´ÑÐºÐ°
+		GameState.quest_changed.emit()  # автосейв: меч и состояние сундука
 		spr.texture = _atlas(14)
 		world.near.erase(self)
 
