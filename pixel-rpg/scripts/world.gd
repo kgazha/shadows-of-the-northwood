@@ -674,7 +674,11 @@ func transition_to(to_cave: bool, after: Callable = Callable()) -> void:
 	t.tween_callback(func():
 		if after.is_valid():
 			after.call()
-		else:
+		elif not hud.is_dialog_open():
+			# Хвост фейда не имеет права отпирать ввод, если поверх перехода
+			# открылся диалог (например, смерть в момент затемнения): иначе
+			# панель останется видимой при разблокированном вводе и advance()
+			# станет недостижим — лок снимет только закрытие диалога.
 			GameState.input_locked = false)
 
 func enter_cave() -> void:

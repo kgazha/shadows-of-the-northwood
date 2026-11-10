@@ -39,6 +39,9 @@ var li := 0
 var typing := false
 var chars_shown := 0.0
 var on_end: Callable = Callable()
+# on_end прерванных (перетёртых поверх) диалогов: побочные эффекты уже
+# начавшихся реплик не должны теряться — дождутся закрытия текущего
+var pending_ends: Array[Callable] = []
 var portraits_tex: Texture2D
 var portraits2_tex: Texture2D
 # --- спринт 2 ---
@@ -331,6 +334,10 @@ func show_dialog(arr: Array, cb: Callable) -> void:
 		return
 	lines = arr
 	li = 0
+	# Диалог поверх открытого диалога (например, смерть во время квестовой
+	# реплики): старый on_end не выбрасываем — он отработает при закрытии.
+	if panel.visible and on_end.is_valid():
+		pending_ends.append(on_end)
 	on_end = cb
 	GameState.input_locked = true
 	panel.visible = true
@@ -376,10 +383,14 @@ func advance() -> void:
 	if li >= lines.size():
 		panel.visible = false
 		GameState.input_locked = false
-		var cb := on_end
+		var cbs := pending_ends.duplicate()
+		pending_ends.clear()
+		if on_end.is_valid():
+			cbs.append(on_end)
 		on_end = Callable()
-		if cb.is_valid():
-			cb.call()
+		for c in cbs:
+			if c.is_valid():
+				c.call()
 	else:
 		_show_line()
 
