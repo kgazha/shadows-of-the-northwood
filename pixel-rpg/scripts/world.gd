@@ -166,18 +166,15 @@ func _spawn_entities() -> void:
 		var npc = npc_script.new()
 		village_zone.add_child(npc)
 		npc.setup(self, String(e[0]), Vector2i(int(e[1]), int(e[2])))
-		npc.input_event.connect(_on_area_pick.bind(npc))  # ЛКМ по NPC = дойти и взаимодействовать
 	var it_script := load("res://scripts/interactable.gd")
 	for e: Array in meta.get("herbs", []):
 		var herb = it_script.new()
 		village_zone.add_child(herb)
 		herb.setup(self, "herb", Vector2i(int(e[0]), int(e[1])))
-		herb.input_event.connect(_on_area_pick.bind(herb))
 	for e: Array in meta.get("chests", []):
 		var chest = it_script.new()
 		village_zone.add_child(chest)
 		chest.setup(self, "chest", Vector2i(int(e[0]), int(e[1])))
-		chest.input_event.connect(_on_area_pick.bind(chest))
 	var slime_script := load("res://scripts/slime.gd")
 	for e: Array in meta.get("slimes", []):
 		var slime = slime_script.new()
@@ -189,10 +186,6 @@ func _build_cave() -> void:
 	cave_zone.add_child(dz)
 	dz.setup(self)
 	dungeon_zone = dz
-	# интерактив пещеры (отшельник, лестница, дверь, сундук) — тоже кликабелен мышью
-	for ch in dz.get_children():
-		if ch.has_method("get_hint") and "input_event" in ch:
-			ch.input_event.connect(_on_area_pick.bind(ch))
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
 
@@ -200,7 +193,6 @@ func _build_cave_entrance() -> void:
 	var stairs := CaveStairs.new()
 	village_zone.add_child(stairs)
 	stairs.setup(self, CAVE_ENTRANCE_TILE)
-	stairs.input_event.connect(_on_area_pick.bind(stairs))
 
 func _build_fade() -> void:
 	var cl := CanvasLayer.new()
@@ -256,15 +248,6 @@ func _update_cursor() -> void:
 	else:
 		Input.set_custom_mouse_cursor(cur_move, Input.CURSOR_ARROW, Vector2(8, 8))
 
-## ЛКМ по интерактиву (Area2D с get_hint) — дойти и try_interact().
-func _on_area_pick(_vp: Node, ev: InputEvent, _shape: int, obj) -> void:
-	if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-		if GameState.input_locked or hud.is_dialog_open() or hud.is_modal_open():
-			return
-		if is_instance_valid(obj):
-			player.command_interact(obj)
-		get_viewport().set_input_as_handled()
-
 func _unhandled_input(event: InputEvent) -> void:
 	if GameState.input_locked:
 		var advance_input: bool = event.is_action_pressed("interact") or event.is_action_pressed("attack") \
@@ -295,18 +278,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			GameState.toast.emit("Игра загружена (F9)")
 		else:
 			GameState.toast.emit("Сохранение не найдено")
-	# --- мышь-приказы и скиллы (спринт 2) ---
-	elif event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			var e := _enemy_at(get_global_mouse_position())
-			if e != null:
-				player.command_attack(e)
-			else:
-				player.command_move(get_global_mouse_position())
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			player.cancel_orders()
-	elif event.is_action_pressed("ui_cancel"):
-		player.cancel_orders()
+	# --- скиллы и зелье (атака ЛКМ опрашивается в player.gd) ---
 	elif event.is_action_pressed("potion"):
 		drink_potion()
 	else:

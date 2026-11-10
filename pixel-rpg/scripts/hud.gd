@@ -324,10 +324,11 @@ func _build_skill_panel(th: Theme) -> void:
 		push_warning("Нет ассета: assets/skill_icons.png — панель скиллов без иконок")
 	skill_panel = PanelContainer.new()
 	skill_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	# прижато к самому низу экрана, чтобы не закрывать поле боя
 	skill_panel.offset_left = -70
 	skill_panel.offset_right = 70
-	skill_panel.offset_top = -92
-	skill_panel.offset_bottom = -64
+	skill_panel.offset_top = -40
+	skill_panel.offset_bottom = -4
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 4)
 	skill_panel.add_child(hb)
@@ -372,8 +373,8 @@ func _build_skill_panel(th: Theme) -> void:
 	potion_btn.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	potion_btn.offset_left = 76
 	potion_btn.offset_right = 124
-	potion_btn.offset_top = -90
-	potion_btn.offset_bottom = -66
+	potion_btn.offset_top = -40
+	potion_btn.offset_bottom = -4
 	potion_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	potion_btn.tooltip_text = "Лесное зелье: +3 HP (Q или клик)"
 	if ResourceLoader.exists("res://assets/tiles.png"):

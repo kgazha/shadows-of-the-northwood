@@ -1,30 +1,23 @@
 extends CharacterBody2D
-## Герой спринта 2: управление мышью (приказы идти/атаковать/взаимодействовать),
-## класс из classes_data.gd, автоатака (мили — do_attack, дальние — снаряд),
-## скиллы 1-4 с кулдаунами. WASD убран.
+## Герой: WASD-движение, прицел мышью (ЛКМ — атака в сторону курсора),
+## кувырок на пробеле (i-frames), класс из classes_data.gd, скиллы 1-4.
 
 const Classes := preload("res://scripts/classes_data.gd")
 const PROJ := preload("res://scripts/projectile.gd")
 
-const LEASH := 160.0        # погоня за целью дальше этой точки от приказа — отмена
-const ARRIVE := 3.0         # точность прихода в точку приказа
-const INTERACT_DIST := 14.0 # дистанция, с которой выполняем try_interact
-const CANCEL_RATIO := 0.35  # прошли меньше CANCEL_RATIO желаемого — упёрлись, отмена
+const ROLL_TIME := 0.22     # длительность кувырка
+const ROLL_SPEED := 170.0   # скорость рывка (базовая скорость героя ~55)
+const ROLL_CD := 0.9        # кулдаун после окончания кувырка
 
 var anim: AnimatedSprite2D
 var facing := "down"
 var attack_cd := 0.0
 var hurt_cd := 0.0
 var _flash_t := 0.0
-
-# --- приказы мышью ---
-var move_target := Vector2.INF     # идти в точку
-var attack_target: Node2D = null   # догнать и бить
-var attack_origin := Vector2.INF   # точка отмены по leash
-var interact_target = null         # дойти и try_interact()
-var path: Array = []               # waypoints мировых точек (A* по тайлам)
-var _repath_t := 0.0
-var _stuck_t := 0.0
+# --- кувырок ---
+var roll_t := 0.0
+var roll_cd := 0.0
+var roll_dir := Vector2.RIGHT
 # --- скиллы ---
 var skill_cd := [0.0, 0.0, 0.0, 0.0]  # НЕ сериализуются
 var pending_mult := 1.0               # «Мощный удар»: множитель следующего мили-удара
@@ -79,45 +72,18 @@ func _build_frames(tex: Texture2D) -> void:
 			fr.add_frame(dir_name, at, 0.0)
 	anim.sprite_frames = fr
 
-# --- приказы (вызывает world из обработчиков мыши) ---
+# --- приказы удалены: прямое управление WASD + мышь-прицел ---
 
-func command_move(p: Vector2) -> void:
-	cancel_orders()
-	move_target = p
-	path = world.build_path(global_position, p)
-
-func command_attack(e: Node2D) -> void:
-	cancel_orders()
-	attack_target = e
-	attack_origin = global_position
-
-func command_interact(obj) -> void:
-	cancel_orders()
-	interact_target = obj
-	if obj != null and obj is Node2D:
-		path = world.build_path(global_position, (obj as Node2D).global_position)
-
+## Сброс «заряженных» состояний (смерть и пр.).
 func cancel_orders() -> void:
-	move_target = Vector2.INF
-	attack_target = null
-	interact_target = null
-	attack_origin = Vector2.INF
 	pending_mult = 1.0
-	path = []
-
-## Куда бежим прямо сейчас: ближайший waypoint пути, иначе — прямая к цели.
-func _next_step_want(goal: Vector2) -> Vector2:
-	while not path.is_empty() and global_position.distance_to(path[0]) < 3.0:
-		path.remove_at(0)
-	if not path.is_empty():
-		return global_position.direction_to(path[0])
-	return global_position.direction_to(goal)
 
 func _physics_process(delta: float) -> void:
 	attack_cd = maxf(0.0, attack_cd - delta)
 	hurt_cd = maxf(0.0, hurt_cd - delta)
 	_flash_t = maxf(0.0, _flash_t - delta)
 	siphon_t = maxf(0.0, siphon_t - delta)
+	roll_cd = maxf(0.0, roll_cd - delta)
 	if mark_t > 0.0:
 		mark_t -= delta
 		if mark_t <= 0.0:
@@ -131,105 +97,78 @@ func _physics_process(delta: float) -> void:
 
 	if GameState.input_locked:
 		velocity = Vector2.ZERO
+		roll_t = 0.0
 		move_and_slide()
 		return
 
-	_execute_orders(delta)
+	# --- кувырок (активная фаза: перекрывает обычный ход) ---
+	if roll_t > 0.0:
+		roll_t = maxf(0.0, roll_t - delta)
+		velocity = roll_dir * ROLL_SPEED
+		_set_facing_from(roll_dir)
+		anim.play(facing)
+		if roll_t == 0.0:
+			anim.modulate.a = 1.0
+		move_and_slide()
+		return
 
+	# --- WASD-ход ---
+	var mv := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	velocity = mv * float(class_data().speed)
 	if velocity != Vector2.ZERO:
-		if absf(velocity.x) >= absf(velocity.y):
-			facing = "right" if velocity.x > 0 else "left"
-		else:
-			facing = "down" if velocity.y > 0 else "up"
+		_set_facing_from(velocity)
 		anim.play(facing)
 	else:
+		# в покое герой смотрит на курсор — прицел melee-дуги всегда понятен
+		face_to(world.get_global_mouse_position())
 		if anim.animation != facing:
 			anim.play(facing)
 		anim.frame = 0
 		anim.pause()
-	if Input.is_action_just_pressed("attack"):
-		do_attack()
+	move_and_slide()
 
-## Исполнение активного приказа. Приоритет: атака > взаимодействие > идти в точку.
-## Ход — по A*-пути вокруг стен; враг близко и видно напрямую — идём прямо.
-func _execute_orders(delta: float) -> void:
-	var want := Vector2.ZERO
-	var goal := Vector2.INF  # финальная точка приказа (для перестроения пути)
-	if attack_target != null:
-		if not is_instance_valid(attack_target):
-			attack_target = null
-		elif attack_origin != Vector2.INF and global_position.distance_squared_to(attack_origin) > LEASH * LEASH:
-			attack_target = null  # цель убежала за leash — отмена
-		else:
-			var d := global_position.distance_to(attack_target.global_position)
-			face_to(attack_target.global_position)
-			if d <= float(class_data().radius):
-				_attack_in_range()
-			else:
-				goal = attack_target.global_position
-				if d <= float(class_data().radius) + 26.0 and world.line_clear(global_position, goal):
-					path = []  # цель видна — прямая без обхода
-					want = global_position.direction_to(goal)
-				else:
-					_repath_t -= delta
-					if _repath_t <= 0.0:
-						_repath_t = 0.45
-						path = world.build_path(global_position, goal)
-					want = _next_step_want(goal)
-	if want == Vector2.ZERO and interact_target != null:
-		if not is_instance_valid(interact_target):
-			interact_target = null
-			path = []
-		else:
-			var di := global_position.distance_to(interact_target.global_position)
-			if di <= INTERACT_DIST:
-				var it = interact_target
-				interact_target = null
-				path = []
-				if it.has_method("try_interact"):
-					it.try_interact()
-			else:
-				goal = interact_target.global_position
-				want = _next_step_want(goal)
-	if want == Vector2.ZERO and move_target != Vector2.INF and attack_target == null and interact_target == null:
-		var dm := global_position.distance_to(move_target)
-		if dm <= ARRIVE:
-			move_target = Vector2.INF
-			path = []
-		else:
-			goal = move_target
-			want = _next_step_want(goal)
-	velocity = want * float(class_data().speed)
-	if want != Vector2.ZERO:
-		var prev := global_position
-		move_and_slide()
-		# упёрлись: путь есть — перестроить; пути нет — отменить приказ (старое поведение)
-		var moved := global_position.distance_to(prev)
-		if moved < float(class_data().speed) * delta * CANCEL_RATIO:
-			_stuck_t += delta
-			if _stuck_t > 0.45:
-				_stuck_t = 0.0
-				if goal != Vector2.INF and not path.is_empty():
-					path = world.build_path(global_position, goal)
-				elif attack_target == null:
-					move_target = Vector2.INF
-					interact_target = null
-					path = []
-		else:
-			_stuck_t = 0.0
+	# --- атака удержанием ЛКМ в сторону курсора (не кликаем сквозь UI) ---
+	if roll_t <= 0.0 and Input.is_action_pressed("attack") \
+			and get_viewport().gui_get_hovered_control() == null:
+		attack_at(world.get_global_mouse_position())
+
+	# --- кувырок на пробеле ---
+	if Input.is_action_just_pressed("roll") and roll_cd <= 0.0 and roll_t <= 0.0:
+		start_roll(mv)
+
+func _set_facing_from(v: Vector2) -> void:
+	if absf(v.x) >= absf(v.y):
+		facing = "right" if v.x > 0 else "left"
 	else:
-		move_and_slide()
+		facing = "down" if v.y > 0 else "up"
 
-func _attack_in_range() -> void:
-	if attack_cd > 0.0:
+## Кувырок: рывок в сторону движения (или к курсору, если стоим).
+## Во время roll_t герой неуязвим — перекат сквозь врагов и снаряды.
+func start_roll(mv: Vector2) -> void:
+	roll_dir = mv.normalized() if mv != Vector2.ZERO else _aim_dir()
+	roll_t = ROLL_TIME
+	roll_cd = ROLL_CD + ROLL_TIME
+	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
+	_spark(global_position + roll_dir * 6.0, Color(0.8, 0.72, 0.55, 0.7), 5.0)
+	anim.modulate.a = 0.75
+
+## Атака в мировую точку: встать лицом и ударить/выстрелить в её сторону.
+func attack_at(p: Vector2) -> void:
+	if attack_cd > 0.0 or roll_t > 0.0:
 		return
+	face_to(p)
 	if String(class_data().kind) == "melee":
 		do_attack()
 	else:
 		attack_cd = float(class_data().attack_speed)
-		var dir := global_position.direction_to(attack_target.global_position)
+		var dir := global_position.direction_to(p)
 		_recoil_fx(dir)
 		fire_projectile(dir)
+
+## Направление прицела: от героя к курсору (в Standby — лицом).
+func _aim_dir() -> Vector2:
+	var d := world.get_global_mouse_position() - global_position
+	return d.normalized() if d.length() > 2.0 else facing_dir()
 
 ## Отдача дальнобойщика: корпус слегка отводит назад от выстрела.
 func _recoil_fx(dir: Vector2) -> void:
@@ -372,7 +311,7 @@ func fire_projectile(dir: Vector2, mult := 1.0, pierce := false, aoe := 0.0, spr
 	var idx := sprite if sprite >= 0 else int(class_data().projectile)
 	if idx < 0:
 		return
-	var tgt := attack_target if attack_target != null and is_instance_valid(attack_target) else null
+	var tgt := _skill_target()
 	var d := dmg_vs(tgt, mult) if tgt != null else int(round(float(GameState.damage) * mult))
 	var muzzle := global_position + dir * 8.0
 	var pd = PROJ.new()
@@ -460,10 +399,8 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 				get_tree().create_timer(0.5 * (k + 1)).timeout.connect(_firestorm_tick)
 	return true
 
-## Цель скилла: активная цель автоатаки или ближайший враг в радиусе класса.
+## Цель скилла: ближайший враг в радиусе класса.
 func _skill_target() -> Node2D:
-	if attack_target != null and is_instance_valid(attack_target):
-		return attack_target
 	var best: Node2D = null
 	var bd := float(class_data().radius)
 	for e in get_tree().get_nodes_in_group("enemy"):
@@ -476,9 +413,7 @@ func _skill_target() -> Node2D:
 	return best
 
 func _shoot_dir() -> Vector2:
-	if attack_target != null and is_instance_valid(attack_target):
-		return global_position.direction_to(attack_target.global_position)
-	return facing_dir()
+	return _aim_dir()
 
 func _rain_marker(p: Vector2) -> void:
 	var m := ColorRect.new()
@@ -509,8 +444,8 @@ func _firestorm_tick() -> void:
 # --- получение урона ---
 
 func take_damage(n: int) -> void:
-	if hurt_cd > 0.0 or GameState.hp <= 0:
-		return
+	if hurt_cd > 0.0 or roll_t > 0.0 or GameState.hp <= 0:
+		return  # кувырок = i-frames: сквозь удары и снаряды
 	hurt_cd = 0.8
 	_flash_t = 0.35
 	GameState.hurt(n)
