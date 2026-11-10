@@ -34,7 +34,9 @@ func _exit_tree() -> void:
 func _ready() -> void:
 	# §2 #10 wealth: проверяем на существующем сигнале — 0 стоимости по кадрам.
 	GameState.gold_changed.connect(_check_wealth)
+	GameState.ng_plus_started.connect(_on_ng_plus)  # §D ачивки NG+ цикла
 	_daily()  # разово при старте
+	_check_ng()  # старый сейв с ng.wave>0 — перепроверка на месте
 
 # --- общий механизм наград (§2: награда ровно при первом анлоке) ---
 
@@ -77,6 +79,7 @@ static func grant_ash(n: int) -> bool:
 	if sc == null:
 		return false
 	sc.call("add", n)
+	_check_ng()  # §D: свежий Пепел — перепроверка фактов цикла (идемпотентно)
 	GameState.save_game()
 	return true
 
@@ -106,6 +109,16 @@ static func _title(id: String) -> String:
 			return "Травник"
 		"hardcore":
 			return "Не на жизнь, а на смерть"
+		"ng_second":
+			return "Второй заход"
+		"ng_vet":
+			return "Ветеран Пепелища"
+		"ng_finale":
+			return "Финальный круг"
+		"ng_magnat":
+			return "Аш-магнат"
+		"ng_crowns":
+			return "Все венцы"
 	return id
 
 ## Суммарный счётчик вида "ach.n.<kind>" (инкремент + set_flag); возвращает новое
@@ -166,6 +179,29 @@ func _check_wealth() -> void:
 	# #10 wealth: gold >= 300 на руках.
 	if GameState.gold >= 300:
 		unlock("wealth", 0, 1)
+
+## §D цикл NG+ (#13–#17): факты — только флаги, бой не трогаем. Волны — ng.wave,
+## венец финала — ng.boss_5 (brute.gd пишет флаг ДО своей награды — факт фиксится
+## независимо от респавнов), баланс — meta.ash. Счётчиков нет; анлок идемпотентен
+## (флаг ставится до наград), поэтому зовём на каждом удобном перепроверочном
+## событии: вход в круг, старт узла, каждая выдача Пепла.
+static func _check_ng() -> void:
+	var w := clampi(int(_f("ng.wave", 0)), 0, GameState.NG_WAVE_CAP)
+	if w >= 1:
+		unlock("ng_second", 0, 1)
+	if w >= 3:
+		unlock("ng_vet", 0, 2)
+	if w >= 5:
+		unlock("ng_finale", 0, 3)
+	if int(_f("meta.ash", 0)) >= 20:
+		unlock("ng_magnat", 0, 2)
+	if int(_f("ng.boss_5", 0)) >= 1:
+		unlock("ng_crowns", 0, 3)
+
+## Хук сигнала GameState.ng_plus_started (world.gd коннектит Achv раньше своего
+## перезагружающего лямбда-хука — ачивки снимаются до перезагрузки сцены).
+func _on_ng_plus() -> void:
+	_check_ng()
 
 # --- ежедневная награда (§3): разово при старте, молча в тех же сутки/откате ---
 # GameState.save_game() ниже и save_game() внутри grant_ash — единственные
