@@ -101,14 +101,17 @@ func _update() -> void:
 	var ash_vis := bal > 0 or meta_open
 	_ash_lbl.visible = ash_vis
 	_ash_lbl.text = "Пепел: %d" % bal
-	# 2) Ежедневная серия: только при streak>0
-	var daily_vis := streak > 0 and stamp > 0.0
-	_daily_lbl.visible = daily_vis
-	if daily_vis:
-		if today:
-			_daily_lbl.text = "Сегодня ✓ (%d/7)" % streak
-			_daily_lbl.add_theme_color_override("font_color", COL_DAILY_OK)
-		else:
-			_daily_lbl.text = "Пропуск — серия сброшена"
-			_daily_lbl.add_theme_color_override("font_color", COL_DAILY_MISS)
-	visible = ng_vis or ash_vis or daily_vis
+	# 2) Ежедневная серия: видима с первой игры (H4-аудит удержания): до первого
+	# клейма — нейтральное превью «0/7» (крючок на 7-й день виден сразу), дальше
+	# счётчик ведёт себя как раньше.
+	_daily_lbl.visible = true
+	if stamp <= 0.0:
+		_daily_lbl.text = "Ежедневно: 0/7"
+		_daily_lbl.add_theme_color_override("font_color", COL_ASH)
+	elif today:
+		_daily_lbl.text = "Сегодня ✓ (%d/7)" % streak
+		_daily_lbl.add_theme_color_override("font_color", COL_DAILY_OK)
+	else:
+		_daily_lbl.text = "Пропуск — серия сброшена"
+		_daily_lbl.add_theme_color_override("font_color", COL_DAILY_MISS)
+	visible = true  # daily-строка постоянна ⇒ узел видим всегда
