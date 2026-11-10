@@ -220,6 +220,7 @@ func to_dict() -> Dictionary:
 	}
 
 func from_dict(d: Dictionary) -> void:
+	var had_hp: bool = d.has("hp")  # различаем «сохранённое здоровье» и «здоровья нет в сейве»
 	max_hp = int(d.get("max_hp", 10))
 	hp = int(d.get("hp", max_hp))
 	level = int(d.get("level", 1))
@@ -256,6 +257,10 @@ func from_dict(d: Dictionary) -> void:
 	pos_valid = bool(d.get("pos_valid", false))
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp
 	recalc_max_mana()
+	if not had_hp:
+		# в сейве не было поля hp (старые/усечённые сейвы) — герой полон СЕГОДНЯ,
+		# уже после классового пересчёта: иначе старт ниже потолка класса (QA-кейс 10)
+		hp = max_hp
 	# мана: старый сейв без поля => полная; всегда в пределах потолка класса
 	mana = clampi(int(d.get("mana", max_mana)), 0, max_mana)
 	stats_changed.emit()

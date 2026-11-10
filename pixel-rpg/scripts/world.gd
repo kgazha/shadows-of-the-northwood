@@ -116,6 +116,7 @@ func _ready() -> void:
 			player.global_position = GameState.player_pos
 		player.apply_class()
 		hud.refresh_skills()
+		_resync_campfires()
 	if GameState.class_id == "":
 		# новые игры: сначала выбор героя, интро — после (в _start_intro)
 		hud.show_class_modal(_start_intro)
@@ -240,6 +241,22 @@ func campfire_near() -> Node2D:
 				bd = d
 				best = n
 	return best
+
+## Канон состояния костров — GameState.campfires_used. После любой загрузки сейва
+## (старт игры, F9) гасим незакрытые каналы и сверяем флаг used с визуалом:
+## иначе посреди канала F9 оставляет «фантомный» отдых, который потом лечит и
+## сжигает костёр, расходясь с сейвом (QA-кейс 2), а на старте костры строятся
+## до load_game и не знают, что сейв уже считает их пеплом.
+func _resync_campfires() -> void:
+	for cf in campfires:
+		cf.resting = false
+		cf.rest_t = 0.0
+		var u := bool(GameState.campfires_used.get(cf.camp_id, false))
+		if u != cf.used:
+			cf.used = u
+			cf._set_state_visual()
+		if u:
+			near.erase(cf)
 
 func _build_cave() -> void:
 	var dz = load("res://scripts/dungeon_zone.gd").new()
@@ -439,6 +456,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				player.global_position = GameState.player_pos
 			player.apply_class()
 			hud.refresh_skills()
+			_resync_campfires()
 			GameState.toast.emit("Игра загружена (F9)")
 		else:
 			GameState.toast.emit("Сохранение не найдено")
