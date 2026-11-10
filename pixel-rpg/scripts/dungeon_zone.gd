@@ -53,11 +53,10 @@ func setup(p_world: Node2D) -> void:
 	else:
 		push_warning("Нет ассета: assets/dungeon_tiles.png — пещера построена без тайлов")
 	_build_walls()
-	# дверь уже была открыта в прошлой сессии — убираем тайл и коллизию сразу
-	if GameState.door_opened:
-		for d: Array in m.get("door", []):
-			if d.size() == 2:
-				unlock_door(Vector2i(int(d[0]), int(d[1])))
+	# world.gd зовёт GameState.load_game() уже ПОСЛЕ постройки пещеры: сейв может
+	# отметить дверь открытой после сборки — дотягиваем состояние по факту.
+	GameState.stats_changed.connect(_sync_door)
+	_sync_door()
 	_spawn_entities(m)
 
 func tile_to_world(t: Vector2i) -> Vector2:
@@ -100,7 +99,11 @@ func _build_tiles() -> void:
 		for x in map_w:
 			var ch := row[x]
 			if CHAR_TO_TILE.has(ch):
-				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(int(CHAR_TO_TILE[ch]), 0))
+				var idx := int(CHAR_TO_TILE[ch])
+				# дверь уже открыта в прошлой сессии — тайл 3 -> 0, как сундук 11 -> 12
+				if idx == 3 and GameState.door_opened:
+					idx = 0
+				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
 	# амулет уже взят — сундук рисуем открытым (dungeon_tiles.png, тайл 12)
 	if chest_tile.x >= 0 and GameState.has_amulet:
 		tilemap.set_cell(chest_tile, 0, Vector2i(12, 0))
@@ -124,6 +127,8 @@ func _build_walls() -> void:
 				continue
 			var idx := int(CHAR_TO_TILE[ch])
 			if idx in BLOCKING:
+				if idx == 3 and GameState.door_opened:
+					continue  # открытая дверь: блок не строим — иначе ниша запечатана
 				var cs := CollisionShape2D.new()
 				var sh := RectangleShape2D.new()
 				sh.size = Vector2(TILE, TILE)
@@ -139,6 +144,17 @@ func unlock_door(t: Vector2i) -> void:
 	if _door_shapes.has(t):
 		_door_shapes[t].queue_free()
 		_door_shapes.erase(t)
+
+## Дверь открыта по сохранённому состоянию: тайл 3 -> 0 и снимаем блок.
+## Идемпотентно — нужно и при сборке, и когда сейв догрузился уже после неё.
+func _sync_door() -> void:
+	if not GameState.door_opened:
+		return
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in row.length():
+			if row[x] == "L":
+				unlock_door(Vector2i(x, y))
 
 func _spawn_entities(m: Dictionary) -> void:
 	var her: Array = m.get("hermit", [])
