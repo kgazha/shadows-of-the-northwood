@@ -164,8 +164,11 @@ const C = {
   // --- огонь: угольки, не мультяшные ---
   fire: [230, 138, 60], fireL: [255, 204, 120], fireXL: [255, 236, 180], fireD: [180, 80, 40], fireDD: [116, 46, 30],
   // --- подземелье: холодный сланец ---
-  floor: [56, 56, 68], floorD: [44, 44, 56], floorS: [34, 34, 44], floorL: [72, 72, 86], floorXL: [90, 90, 104], floorDD: [24, 24, 34],
-  brick: [48, 48, 60], brickL: [62, 62, 76], brickTop: [86, 86, 102], mortar: [26, 26, 36],
+  floor: [60, 62, 76], floorD: [48, 50, 64], floorS: [38, 40, 52], floorL: [80, 82, 98], floorXL: [104, 106, 124], floorDD: [28, 30, 42],
+  brick: [44, 46, 58], brickL: [60, 62, 78], brickTop: [100, 102, 122], mortar: [26, 26, 36],
+  // единый контур блокеров пещеры (силуэт: тёмный контур + светлый верх, как leafDD/rockDD в деревне)
+  caveOut: [16, 17, 27], cJoint: [34, 36, 48], cRustPlate: [96, 58, 36],
+  cChest: [162, 128, 90], cChestD: [86, 64, 42], cChestXL: [184, 148, 104],
   stone: [72, 74, 88], stoneL: [96, 98, 112], stoneXL: [126, 128, 142], stoneD: [50, 52, 66], stoneDD: [36, 38, 50],
   rg: [88, 90, 104], rgL: [122, 124, 138], rgD: [60, 62, 76],
   step: [66, 68, 82], stepL: [106, 108, 124], stepD: [42, 44, 56],
@@ -546,15 +549,16 @@ function brickBase(t) {
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
     const band = Math.floor(y / 4);
     let c = nz(x, y, 3, 7, 2, 17) < 3 ? C.brickL : C.brick;
-    if (y % 4 === 0) c = C.mortar;
-    if ((x + (band % 2) * 4) % 8 === 0 && y % 4 !== 0) c = C.mortar;
-    if (y % 4 === 1 && nz(x, y, 5, 11, band + 3, 19) === 0) c = C.brickTop;                    // тёплая кромка камня
-    if (y % 4 === 3) c = mixC(c, C.mortar, .35);                                                // тень под камнем
+    if (y % 4 === 0) c = C.caveOut;                                                                // тёмный шов = контур кладки
+    if ((x + (band % 2) * 4) % 8 === 0 && y % 4 !== 0) c = C.cJoint;                               // вертикальные стыки
+    if (y % 4 === 1 && nz(x, y, 5, 11, band + 3, 19) === 0) c = C.brickTop;                        // тёплая кромка камня
+    if (y % 4 === 3) c = mixC(c, C.caveOut, .45);                                                  // тень под камнем
     t.set(x, y, c);
   }
-  t.rect(0, 0, 16, 1, C.brickTop); t.rect(0, 1, 16, 1, C.stoneL);
-  t.rect(0, 15, 16, 1, C.mortar);
-  for (let x = 0; x < 16; x++) {                                                               // мох на нижних камнях
+  t.rect(0, 0, 16, 1, C.caveOut);                                                                  // верхний контур
+  t.rect(1, 1, 4, 1, C.brickTop); t.set(1, 1, C.stoneXL);                                          // светлый угол свода
+  t.rect(0, 15, 16, 1, C.caveOut);                                                                 // контактная тень у пола
+  for (let x = 0; x < 16; x++) {                                                                   // мох на нижних камнях
     if (nz(x, 13, 9, 7, 4, 5) === 0) t.set(x, 13, C.cMossD);
     if (nz(x, 12, 9, 7, 9, 7) === 0) t.set(x, 12, C.cMoss);
     if (nz(x, 14, 9, 7, 2, 6) === 0) t.set(x, 14, C.cMoss);
@@ -585,10 +589,10 @@ function genDungeonTiles() {
   s.blit(t, 16);
   // 2 — каменная стена
   t = put(); brickBase(t); s.blit(t, 32);
-  // 3 — запертая дверь: ржавая пластина с заклёпками, руны, скважина
+  // 3 — запертая дверь: тёмная ржавая пластина с контуром, светлая кромка, руны, скважина
   t = put(); brickBase(t);
-  t.rect(5, 4, 6, 9, C.rust); t.frame(5, 4, 6, 9, C.rustD);
-  t.set(6, 5, C.rustL); t.set(7, 5, C.rustL); t.set(6, 6, C.rustL);
+  t.rect(5, 4, 6, 9, C.cRustPlate); t.frame(5, 4, 6, 9, C.caveOut);
+  t.rect(6, 5, 2, 1, C.rustL); t.set(6, 6, C.rustL);
   t.set(9, 11, C.rustD); t.set(10, 11, C.rustD); t.set(10, 10, C.rustD);
   t.set(5, 4, C.rustL); t.set(9, 4, C.rustD); t.set(5, 12, C.rustD);                           // заклёпки
   t.set(7, 4, C.rustL);
@@ -618,34 +622,41 @@ function genDungeonTiles() {
   t.rect(0, 0, 3, 2, C.floorS); t.rect(13, 0, 3, 2, C.floorS);
   t.rect(0, 0, 1, 16, C.stoneDD); t.rect(15, 0, 1, 16, C.stoneDD);
   s.blit(t, 80);
-  // 6 — колонна с обвитой цепью
-  t = put();
-  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
-    t.set(x, y, nz(x, y, 13, 29, 3, 13) < 2 ? C.floorS : C.floorD);
-  t.rect(3, 0, 10, 2, C.stoneL); t.rect(3, 1, 10, 1, C.stone);
-  t.set(3, 0, C.stoneXL); t.set(12, 1, C.stoneD);
+  // 6 — колонна: тёмный ствол на светлом полу, чёткий контур + светлая капитель + цепь
+  t = put(); floorBase(t);
+  t.rect(3, 0, 10, 1, C.stoneXL);                                                              // светлая капитель
+  t.rect(3, 1, 10, 1, C.stone);
+  for (const [x, y] of [[2, 0], [13, 0], [2, 1], [13, 1]]) t.set(x, y, C.caveOut);
   for (let y = 2; y < 13; y++) for (let x = 5; x < 11; x++) {
-    let c = C.stone;
+    let c = C.stoneDD;
     if (nz(x, y, 11, 17, 4, 29) === 0) c = C.stoneD;
     t.set(x, y, c);
   }
-  t.rect(5, 2, 1, 11, C.stoneXL); t.rect(10, 2, 1, 11, cool(C.stone, .55));
-  t.rect(5, 4, 6, 1, C.ironD);                                                                  // звенья цепи
+  t.rect(4, 2, 1, 11, C.caveOut); t.rect(11, 2, 1, 11, C.caveOut);                             // боковой контур
+  t.rect(5, 2, 1, 11, C.stoneD); t.rect(10, 2, 1, 11, C.voidP2);                               // грань света/тени
+  t.rect(5, 4, 6, 1, C.ironD);                                                                 // звенья цепи
   for (let x = 5; x <= 10; x += 2) t.set(x, 4, C.iron);
   t.set(5, 5, C.ironL); t.set(6, 5, C.ironD); t.set(5, 6, C.iron); t.set(6, 6, C.ironDD);      // висящее звено
   t.set(9, 7, C.rustD); t.set(10, 8, C.rust);                                                  // потёки ржавчины
-  t.rect(3, 13, 10, 3, C.stoneL); t.rect(3, 15, 10, 1, C.stoneD);
-  t.set(3, 13, C.stoneXL); t.set(12, 14, C.stoneD);
+  t.rect(3, 13, 10, 2, C.stoneDD); t.rect(3, 14, 10, 1, C.cJoint);                               // постамент
+  for (const [x, y] of [[2, 13], [13, 13], [2, 14], [13, 14]]) t.set(x, y, C.caveOut);
+  t.rect(3, 15, 10, 1, C.caveOut);                                                                // тень на полу
+  t.set(1, 15, C.caveOut); t.set(2, 15, C.caveOut); t.set(13, 15, C.caveOut); t.set(14, 15, C.caveOut);
   s.blit(t, 96);
-  // 7 — обломки
+  // 7 — обломки: тёмный щебень на прожжённом пятне пола, светлые кромки верхних обломков
   t = put(); floorBase(t);
-  const lump = (x, y, w, h) => {
-    t.rect(x, y, w, h, C.rg); t.rect(x + 1, y - 1, w - 2, 1, C.rg);
-    t.set(x, y, C.rgL); t.set(x + 1, y - 1, C.rgL); t.set(x + 2, y - 1, C.rgL);
-    t.rect(x, y + h - 1, w, 1, cool(C.rg, .5)); t.set(x + w - 1, y, C.rgD);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const dx = (x - 8) / 7.0, dy = (y - 10.2) / 5.2;
+    if (dx * dx + dy * dy <= 1) t.set(x, y, nz(x, y, 7, 5, 8, 13) < 5 ? C.floorDD : C.cJoint);
+  }
+  const lump = (x, y, w, h, hl) => {
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++)
+      t.set(xx, yy, nz(xx, yy, 9, 11, 6, 23) < 3 ? C.stoneD : C.stoneDD);
+    if (hl) t.rect(x, y, w - 2, 1, C.rgL);                                                        // светлая кромка
+    t.rect(x, y + h - 1, w, 1, C.caveOut);                                                        // контур внизу
+    t.set(x + w - 1, y, C.caveOut); t.set(x - 1, y + h - 1, C.caveOut);
   };
-  lump(3, 9, 5, 4); lump(9, 6, 5, 4); lump(11, 12, 3, 2); lump(2, 4, 3, 2);
-  t.set(7, 5, C.rgD); t.set(8, 11, C.rgD); t.set(14, 9, C.rgL);
+  lump(2, 8, 6, 5, true); lump(9, 5, 6, 5, true); lump(11, 12, 4, 3, false); lump(2, 3, 4, 3, false);
   s.blit(t, 112);
   // 8 — кости: череп с трещиной, бедро, рёбра
   t = put(); floorBase(t);
@@ -669,30 +680,33 @@ function genDungeonTiles() {
   t.rect(2, 12, 1, 2, C.mStem); t.rect(1, 10, 3, 1, C.mCap); t.rect(1, 11, 3, 1, C.mCapD);
   for (const [x, y] of [[3, 4], [12, 4], [5, 2], [13, 7], [2, 8], [10, 2]]) t.set(x, y, C.spore);
   s.blit(t, 144);
-  // 10 — алтарь: руны, свечи, парящее фиолетовое ядро
+  // 10 — алтарь: светлый камень на тёмном фоне, руны, свечи, парящее фиолетовое ядро
   t = put(); floorBase(t);
-  t.rect(3, 11, 10, 4, C.stone); t.rect(3, 14, 10, 1, C.stoneDD);                              // нижняя ступень
-  t.set(3, 11, C.stoneXL); t.set(12, 12, C.stoneD);
-  t.rect(5, 8, 6, 3, C.stoneL); t.rect(9, 8, 2, 3, cool(C.stone, .5));
-  t.rect(4, 6, 8, 2, C.stoneXL); t.rect(4, 7, 8, 1, C.stoneL);                                 // плита
+  for (const [x, y] of [[2, 11], [13, 11], [2, 12], [13, 12], [2, 13], [13, 13], [2, 14], [13, 14]]) t.set(x, y, C.caveOut);
+  t.rect(3, 15, 10, 1, C.caveOut);                                                                // тень на полу
+  t.rect(3, 11, 10, 4, C.stoneL); t.rect(3, 14, 10, 1, C.stoneD);                                 // нижняя ступень
+  t.rect(12, 11, 1, 4, cool(C.stoneL, .6)); t.rect(3, 11, 1, 4, C.stoneXL);                       // тень/грань
+  t.rect(5, 8, 6, 3, C.stone); t.rect(9, 8, 2, 3, cool(C.stone, .5));
+  t.rect(4, 8, 8, 1, C.caveOut);                                                                  // тень под плитой
+  t.rect(4, 6, 8, 2, C.stoneXL); t.rect(4, 7, 8, 1, C.stoneL);                                    // плита
   t.set(5, 9, C.glowD); t.set(6, 9, C.glow); t.set(7, 10, C.glowD); t.set(9, 9, C.glowD); t.set(10, 9, C.glow); // руны
-  t.rect(7, 3, 2, 2, C.glowL); t.rect(6, 3, 1, 2, C.glow); t.rect(9, 3, 1, 2, C.glow);         // ядро
+  t.rect(7, 3, 2, 2, C.glowL); t.rect(6, 3, 1, 2, C.glow); t.rect(9, 3, 1, 2, C.glow);            // ядро
   t.set(7, 2, C.glow); t.set(8, 2, C.glow);
   t.set(6, 2, C.glowD); t.set(9, 2, C.glowD); t.set(5, 4, C.glowD); t.set(10, 4, C.glowD);
-  t.set(4, 2, C.glow); t.set(11, 1, C.glow); t.set(6, 0, C.glowD); t.set(9, 0, C.glowD);       // вспышки
-  t.rect(2, 5, 1, 3, C.bone); t.set(2, 4, C.fireL); t.set(2, 3, C.fire);                       // свеча слева
-  t.rect(13, 6, 1, 2, C.bone); t.set(13, 5, C.fireL); t.set(13, 4, C.fire);                    // свеча справа
+  t.set(4, 2, C.glow); t.set(11, 1, C.glow); t.set(6, 0, C.glowD); t.set(9, 0, C.glowD);          // вспышки
+  t.rect(2, 5, 1, 3, C.bone); t.set(2, 4, C.fireL); t.set(2, 3, C.fire);                          // свеча слева
+  t.rect(13, 6, 1, 2, C.bone); t.set(13, 5, C.fireL); t.set(13, 4, C.fire);                       // свеча справа
   s.blit(t, 160);
-  // 11 — алтарный сундук: кованый, с замком
+  // 11 — алтарный сундук: светлое дерево, кованый, с замком; тёмный контур со всех сторон
   t = put(); floorBase(t);
-  t.rect(2, 5, 12, 3, C.trunk); t.rect(3, 5, 10, 1, C.trunkL); t.rect(2, 7, 12, 1, C.trunkD);  // крышка
-  t.rect(2, 8, 12, 7, C.wood); t.frame(2, 8, 12, 7, C.woodD);
-  t.rect(2, 14, 12, 1, cool(C.wood, .55));
-  for (let y = 5; y < 15; y++) { t.set(3, y, C.bandM); t.set(12, y, C.bandMD); }
-  t.rect(2, 8, 12, 1, C.bandM); t.rect(2, 9, 12, 1, C.bandMD);
-  t.set(3, 5, C.bandML); t.set(2, 8, C.bandML); t.set(12, 8, C.bandMD);
-  t.set(3, 10, C.bandML); t.set(12, 12, C.bandMD);                                             // заклёпки
-  t.rect(7, 9, 2, 4, C.goldD); t.frame(7, 9, 2, 4, C.goldDD); t.set(7, 9, C.goldL);            // латунный замок
+  t.rect(2, 2, 12, 4, C.cChest); t.rect(2, 2, 12, 1, C.cChestXL); t.rect(2, 4, 12, 1, C.cChestD); // светлая крышка
+  t.rect(2, 6, 12, 1, C.caveOut);                                                                // тень под крышкой
+  t.rect(2, 7, 12, 7, C.cChest); t.frame(2, 7, 12, 7, C.cChestD);                                // корпус
+  t.rect(1, 7, 1, 8, C.caveOut); t.rect(14, 7, 1, 8, C.caveOut);                                 // тёмные бока
+  t.rect(2, 14, 12, 1, C.caveOut);                                                               // ножки/тень
+  t.rect(5, 7, 1, 6, mixC(C.cChestD, C.cChest, .5)); t.rect(10, 7, 1, 6, mixC(C.cChestD, C.cChest, .5)); // волокна дерева
+  t.set(3, 8, C.bandML); t.set(12, 8, C.bandML); t.set(3, 12, C.bandM); t.set(12, 12, C.bandM);  // заклёпки
+  t.rect(7, 9, 2, 3, C.goldD); t.set(7, 9, C.goldL);                                             // латунный замок
   t.set(7, 11, C.openDark); t.set(8, 11, C.openDark);
   s.blit(t, 176);
   // 12 — алтарный сундук открыт: фиолетовое свечение внутри
@@ -727,15 +741,21 @@ function genDungeonTiles() {
   };
   s.blit(lever(false), 13 * 16);
   s.blit(lever(true), 14 * 16);
-  // 15 — пустота: почти чёрная, едва различимые фиолетовые прожилки
+  // 15 — пустота: тёмный обод каменных слоёв + полка контура, чёрное тело с прожилками и спорами
   t = put();
-  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+  for (let x = 0; x < 16; x++) {
+    t.set(x, 0, nz(x, 0, 7, 3, 1, 5) < 2 ? C.stoneDD : C.caveOut);
+    t.set(x, 1, nz(x, 1, 7, 3, 3, 9) < 2 ? C.stoneD : C.stoneDD);
+    t.set(x, 2, C.caveOut);
+  }
+  for (let y = 3; y < 16; y++) for (let x = 0; x < 16; x++) {
     let c = C.voidB;
     const v = nz(x, y, 13, 29, 7, 31);
     if (v < 4) c = C.voidP;
     if (v === 0 && nz(x, y, 31, 41, 11, 7) < 2) c = C.voidP2;
     t.set(x, y, c);
   }
+  for (const [x, y] of [[3, 5], [9, 6], [13, 4]]) t.set(x, y, C.glow);                           // споры бездны
   s.blit(t, 15 * 16);
   s.save('dungeon_tiles.png');
 }

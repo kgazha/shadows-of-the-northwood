@@ -18,6 +18,15 @@ const BLOCK_SHAPES := {
 	12: [11, 10, 0, 1],   # валун: тело камня, не углы клетки
 	13: [6, 5, 0, 3],     # указатель: лишь столб у земли
 }
+## То же для пещерных тайлов (индексы dungeon_zone.CHAR_TO_TILE, см. CAVE-скан
+## qa_c2): колонна/обломки/сундук не занимают клетку целиком — полный коллайдер
+## ставил бы невидимые стены вдоль проходов.
+const CAVE_BLOCK_SHAPES := {
+	6: [10, 16, 0, 0],    # колонна: ствол с постаментом (капитель визуально уже)
+	7: [12, 10, 0, 1],    # обломки: куча в центре, углы клетки проходимы
+	11: [13, 12, 0, 1],   # алтарный сундук: корпус без углов
+}
+const DZ := preload("res://scripts/dungeon_zone.gd")
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 ## Костры-привалы (id -> тайл): у дороги к торговцу, в травяном поле слаймов,
@@ -27,6 +36,11 @@ const CAMPFIRE_SPOTS := {
 	"cf_forest": Vector2i(12, 19),
 	"cf_cave": Vector2i(38, 18),
 }
+
+## Мобы пещеры — «отпрыски гнили» тремя ярусами по глубине (расстояние от входа
+## в тайл Чебышёва): чем глубже, тем плотнее и сильнее. Пик сложности — босс.
+const CAVE_MOB_BANDS := {1: [4, 7], 2: [8, 11], 3: [12, 999]}
+const CAVE_MOB_CAPS := {1: 3, 2: 4, 3: 5}
 
 var map_rows: Array = []
 var map_w := 0
@@ -227,6 +241,8 @@ func _build_cave() -> void:
 	dz.setup(self)
 	dungeon_zone = dz
 	_spawn_cave_embers()
+	_apply_cave_shapes(dz)
+	_spawn_cave_mobs()
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
 
@@ -238,6 +254,98 @@ func _spawn_cave_embers() -> void:
 		var e := Fx.ember_bed(Vector2(t.x * TILE + 8, t.y * TILE + 10))
 		if e != null:
 			cave_zone.add_child(e)
+
+## Коллайдеры «мелких» пещерных блокеров: dungeon_zone строит их полными тайлами,
+## а CAVE_BLOCK_SHAPES задаёт видимую форму — правим после setup().
+func _apply_cave_shapes(dz) -> void:
+	var walls: Node = dz.get_node_or_null("Walls")
+	if walls == null:
+		return
+	for child in walls.get_children():
+		if not (child is CollisionShape2D):
+			continue
+		var cs: CollisionShape2D = child
+		var tx := int((cs.position.x - 8.0) / float(TILE))
+		var ty := int((cs.position.y - 8.0) / float(TILE))
+		if ty < 0 or ty >= dz.map_rows.size() or tx < 0 or tx >= String(dz.map_rows[ty]).length():
+			continue
+		var ch: String = String(dz.map_rows[ty])[tx]
+		if not DZ.CHAR_TO_TILE.has(ch):
+			continue
+		var idx := int(DZ.CHAR_TO_TILE[ch])
+		if not CAVE_BLOCK_SHAPES.has(idx):
+			continue
+		var spec: Array = CAVE_BLOCK_SHAPES[idx]
+		var sh := RectangleShape2D.new()
+		sh.size = Vector2(float(spec[0]), float(spec[1]))
+		cs.shape = sh
+		cs.position = Vector2(tx * TILE + 8 + float(spec[2]), ty * TILE + 8 + float(spec[3]))
+
+## Детерминированный спавн мобов по ярусам глубины (см. CAVE_MOB_BANDS/CAPS):
+## тайлы проходимы, подальше от «точек интереса», не в узких коридорах, с
+## интервалом ≥2. Плотность ограничена(cap), состав — см. brute.TIERS.
+func _spawn_cave_mobs() -> void:
+	if dungeon_zone == null:
+		return
+	var dz = dungeon_zone
+	var sp: Vector2i = dz.spawn_tile
+	var pois: Array = [[sp, 4], [dz.chest_tile, 2], [dz.door_tile, 1]]
+	if dz.stairs_node != null:
+		pois.append([_node_tile(dz.stairs_node), 2])
+	if dz.hermit_node != null:
+		pois.append([_node_tile(dz.hermit_node), 2])
+	if dz.boss_node != null:
+		pois.append([_node_tile(dz.boss_node), 3])
+	var counts := {1: 0, 2: 0, 3: 0}
+	var placed: Array = []
+	for y in dz.map_h:
+		var row := String(dz.map_rows[y])
+		for x in row.length():
+			var ch: String = row[x]
+			if ch != "." and ch != ",":
+				continue
+			var d := maxi(absi(x - sp.x), absi(y - sp.y))
+			if d < 4:
+				continue
+			var tier := 1
+			if d > 7:
+				tier = 2
+			if d > 11:
+				tier = 3
+			if counts[tier] >= int(CAVE_MOB_CAPS[tier]):
+				continue
+			if d < int(CAVE_MOB_BANDS[tier][0]):
+				continue
+			if (x * 31 + y * 17) % 3 != 0:
+				continue
+			var t := Vector2i(x, y)
+			if not dz.cell_walkable(t) or _near_cave_poi(t, pois) or _near_placed(placed, t):
+				continue
+			var m = load("res://scripts/brute.gd").new()
+			m.boss = false
+			m.tier = tier
+			dz.add_child(m)
+			m.setup(self, t)
+			counts[tier] += 1
+			placed.append(t)
+
+func _node_tile(n: Node2D) -> Vector2i:
+	return Vector2i(int(n.position.x / float(TILE)), int((n.position.y - 2.0) / float(TILE)))
+
+func _near_cave_poi(t: Vector2i, pois: Array) -> bool:
+	for p: Array in pois:
+		var pt: Vector2i = p[0]
+		if pt.x < 0:
+			continue
+		if maxi(absi(t.x - pt.x), absi(t.y - pt.y)) <= int(p[1]):
+			return true
+	return false
+
+func _near_placed(list: Array, t: Vector2i) -> bool:
+	for q: Vector2i in list:
+		if maxi(absi(t.x - q.x), absi(t.y - q.y)) < 2:
+			return true
+	return false
 
 func _build_cave_entrance() -> void:
 	var stairs := CaveStairs.new()
