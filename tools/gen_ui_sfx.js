@@ -3,22 +3,25 @@
 /*
  * gen_ui_sfx.js — детерминированный синтез UI-звуков для «Теней Северного Леса».
  *
- *Original, CC0. Гипер-короткие 16-bit mono WAV 44100 Гц, пик ровно -3 dBFS.
- * Никаких внешних файлов: тот же seed -> тот же побайтовый результат.
+ *Original, CC0. Синтез: 16-bit mono WAV 44100 Гц, пик ровно -3 dBFS; на выходе
+ * — .ogg (ffmpeg libvorbis -qscale:a 5), т.к. веб-экспорт фильтрует *.wav.
+ * Никаких внешних файлов: тот же seed -> тот же побайтовый WAV-эталон.
+ * (Финальный .ogg побайтово детерминирован для одной сборки ffmpeg.)
  *
- * Запуск:  node tools/gen_ui_sfx.js [исходящая_папка]
+ * Запуск:  node tools/gen_ui_sfx.js [исходящая_папка]   (нужен ffmpeg в PATH)
  * По умолчанию: <папка со скриптом>/assets_in/sfx_ui/
  *
- * Файлы:
- *   ui_click.wav    — щелчок: шум 8 мс, экспоненциальное затухание, полосовой
+ * Файлы (на выходе — .ogg):
+ *   ui_click.ogg    — щелчок: шум 8 мс, экспоненциальное затухание, полосовой
  *                     фильтр ~2 кГц (biquad BQF, Q~2.2)
- *   ui_confirm.wav  — «динь-дон»: две восходящие ноты мажорной терции (C5->E5),
+ *   ui_confirm.ogg  — «динь-дон»: две восходящие ноты мажорной терции (C5->E5),
  *                     синус + чуть треугольника, ~150 мс нота+хвост
- *   ui_deny.wav     — низкий короткий гул 120 мс (110 Гц со съездом, лёгкая AM)
- *   ui_levelup.wav  — мажорное арпеджио C5-E5-G5-C6, ~400 мс
+ *   ui_deny.ogg     — низкий короткий гул 120 мс (110 Гц со съездом, лёгкая AM)
+ *   ui_levelup.ogg  — мажорное арпеджио C5-E5-G5-C6, ~400 мс
  */
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const SR = 44100;
 const PEAK = Math.pow(10, -3 / 20); // -3 dBFS от полного масштаба
@@ -190,22 +193,34 @@ function main() {
     : path.join(__dirname, 'assets_in', 'sfx_ui');
   fs.mkdirSync(outDir, { recursive: true });
   const jobs = [
-    ['ui_click.wav', genClick()],
-    ['ui_confirm.wav', genConfirm()],
-    ['ui_deny.wav', genDeny()],
-    ['ui_levelup.wav', genLevelup()],
+    ['ui_click', genClick()],
+    ['ui_confirm', genConfirm()],
+    ['ui_deny', genDeny()],
+    ['ui_levelup', genLevelup()],
   ];
   let fail = 0;
   for (const [name, samples] of jobs) {
-    const file = path.join(outDir, name);
-    fs.writeFileSync(file, toWav(samples));
-    const v = verify(file);
-    const ok = v.errs.length === 0 && v.peakDb > -3.05 && v.peakDb < -2.95;
+    const tmp = path.join(outDir, name + '.tmp.wav');
+    const ogg = path.join(outDir, name + '.ogg');
+    fs.writeFileSync(tmp, toWav(samples));
+    const v = verify(tmp); // самопроверка эталонного WAV (пик/заголовки)
+    let oggErr = null;
+    try {
+      execFileSync('ffmpeg',
+        ['-y', '-hide_banner', '-loglevel', 'error', '-i', tmp,
+         '-c:a', 'libvorbis', '-qscale:a', '5', ogg],
+        { stdio: 'inherit' });
+    } catch (e) {
+      oggErr = 'ffmpeg: ' + e.message;
+    }
+    fs.unlinkSync(tmp); // WAV — только внутренний эталон, в репо живёт .ogg
+    const ok = v.errs.length === 0 && v.peakDb > -3.05 && v.peakDb < -2.95 && !oggErr;
     if (!ok) fail++;
     console.log(
-      (ok ? 'OK  ' : 'FAIL') + ' ' + name.padEnd(14) +
-      v.durMs + ' мс  пик ' + v.peakDb.toFixed(2) + ' dBFS  RMS ' + v.rmsDb.toFixed(2) +
-      ' dBFS' + (v.errs.length ? '  [' + v.errs.join('; ') + ']' : '')
+      (ok ? 'OK  ' : 'FAIL') + ' ' + (name + '.ogg').padEnd(16) +
+      v.durMs + ' мс  пик(wav) ' + v.peakDb.toFixed(2) + ' dBFS  RMS ' + v.rmsDb.toFixed(2) +
+      ' dBFS' + (v.errs.length ? '  [' + v.errs.join('; ') + ']' : '') +
+      (oggErr ? '  [' + oggErr + ']' : '')
     );
   }
   console.log('Выход: ' + outDir);

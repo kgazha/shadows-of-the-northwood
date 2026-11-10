@@ -6,7 +6,7 @@ extends Node
 ## user://audio_cfg.json. Любое отсутствующее имя/файл — тихий пропуск, игра
 ## не падает (guarded ResourceLoader.exists + кэш потоков).
 ## Kenney RPG-сэмплы: CC0, https://github.com/Boyquotes/kenney-rpg-audio-for-godot ;
-## ui_*.wav — собственный синтез (tools/gen_ui_sfx.js), original, CC0.
+## ui_*.ogg — собственный синтез (tools/gen_ui_sfx.js + ffmpeg libvorbis), original, CC0.
 
 ## Реестр эффектов: имя -> путь. Файл может отсутствовать (например "spell"
 ## готовит другая команда) — play_sfx это переживает молча.
@@ -21,11 +21,11 @@ const SFX := {
 	"belt": "res://assets/sfx/belt_handle_1.ogg",
 	"book": "res://assets/sfx/book_open.ogg",
 	"potion": "res://assets/sfx/metal_pot_2.ogg",
-	"ui_click": "res://assets/sfx/ui_click.wav",
-	"ui_confirm": "res://assets/sfx/ui_confirm.wav",
-	"ui_deny": "res://assets/sfx/ui_deny.wav",
-	"ui_levelup": "res://assets/sfx/ui_levelup.wav",
-	"spell": "res://assets/sfx/spell.wav",
+	"ui_click": "res://assets/sfx/ui_click.ogg",
+	"ui_confirm": "res://assets/sfx/ui_confirm.ogg",
+	"ui_deny": "res://assets/sfx/ui_deny.ogg",
+	"ui_levelup": "res://assets/sfx/ui_levelup.ogg",
+	"spell": "res://assets/sfx/spell.ogg",
 }
 ## Реестр музыкальных тем (assets/music, готовые бесшовные лупы «loop-tail»).
 const MUSIC := {
