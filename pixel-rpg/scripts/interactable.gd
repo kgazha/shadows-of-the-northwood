@@ -75,6 +75,7 @@ func try_interact() -> void:
 		GameState.toast.emit("Найден Железный меч! Урон x2")
 		GameState.stats_changed.emit()
 		GameState.quest_changed.emit()  # автосейв: меч и состояние сундука
+		Loot.chest_reward(GameState)  # золото/зелье (loot.gd)
 		spr.texture = _atlas(14)
 		world.near.erase(self)
 

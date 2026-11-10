@@ -9,6 +9,7 @@ const Campfire := preload("res://scripts/campfire.gd")
 const NAMES := {
 	"hero": "Герой", "elder": "Старейшина", "merchant": "Торговец",
 	"farmer": "Фермер", "hermit": "Отшельник Геральд", "narr": "",
+	"smith": "Кузнец Гриим",
 }
 const PORTRAITS := {"hero": 0, "elder": 40, "merchant": 80}
 const PORTRAIT_SIZE := 40

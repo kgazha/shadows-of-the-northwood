@@ -112,6 +112,8 @@ func _ready() -> void:
 	add_child(hud)
 	hud.setup(self)
 	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
+	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
+	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
 	if GameState.load_game():
 		apply_zone(GameState.in_cave, false)
 		if GameState.pos_valid:
@@ -212,6 +214,10 @@ func _spawn_entities() -> void:
 		var npc = npc_script.new()
 		village_zone.add_child(npc)
 		npc.setup(self, String(e[0]), Vector2i(int(e[1]), int(e[2])))
+	# Кузнец Гриим (лавка): фиксированная точка, тайл 'g' walkable
+	var smith = npc_script.new()
+	village_zone.add_child(smith)
+	smith.setup(self, "smith", Vector2i(26, 13))
 	var it_script := load("res://scripts/interactable.gd")
 	for e: Array in meta.get("herbs", []):
 		var herb = it_script.new()
@@ -767,6 +773,8 @@ func talk(id: String) -> void:
 						start_dialogue("hermit_after")
 				_:
 					start_dialogue("hermit_after")
+		"smith":
+			start_dialogue("smith", func(): Shop.open())
 		_:
 			start_dialogue(id)
 

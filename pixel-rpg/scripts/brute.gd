@@ -187,6 +187,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 			GameState.add_xp(kill_xp)
 			GameState.toast.emit("Отпрыск гнили повержен! (+%d XP)" % kill_xp)
 			_roll_mat_drop()
+		Loot.on_mob_death("boss" if boss else "brute", global_position)
 		GameState.quest_changed.emit()
 		queue_free()
 

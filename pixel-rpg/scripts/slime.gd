@@ -110,6 +110,7 @@ func _die() -> void:
 	GameAudio.sfx("coin")  # автораздача опыта — звон монет
 	GameState.toast.emit("Слайм повержен! (+7 опыта)")
 	_roll_mat_drop()
+	Loot.on_mob_death("slime", global_position)
 	GameState.quest_changed.emit()
 	if GameState.slime_quest == 1 and GameState.slime_kills == 3:
 		GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")

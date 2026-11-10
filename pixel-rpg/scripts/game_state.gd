@@ -41,7 +41,7 @@ var has_sword := false
 ## канон — флаги has_sword/has_amulet + класс.
 var damage: int:
 	get:
-		return int(Classes.class_data(class_id).dmg) * (2 if has_sword else 1) + (1 if has_amulet else 0)
+		return GearData.player_damage(int(Classes.class_data(class_id).dmg), self)
 	set(_value):
 		pass
 var herbs := 0
@@ -137,6 +137,7 @@ func heal_full() -> void:
 	stats_changed.emit()
 
 func hurt(n: int) -> void:
+	n = GearData.absorb(self, n)  # броня: кожа -1, кольчуга -2 (не ниже 1)
 	if hp <= 0:
 		return
 	hp = max(0, hp - n)
