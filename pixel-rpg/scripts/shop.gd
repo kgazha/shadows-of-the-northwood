@@ -7,9 +7,24 @@ extends CanvasLayer
 ## (mouse_filter=IGNORE) и не светится поверх мира — smoke-прогон её «не видит».
 ## Открытие/закрытие из любого кода: Shop.open()/close() (хук — реплика кузнеца).
 ## Синглтон по образцу GameAudio: статический I захватывается в _enter_tree.
-## Esc, пока лавка открыта, закрывает только лавку; клавиши и клики мира
-## перехватываются, пока открыто окно (ввод игры не «протекает» в лавку и
-## наоборот). Ключи InputMap не регистрируются — project.godot не трогаем.
+##
+## Лавка модальна по образцу SettingsMenu: открытие из свободной игры ставит
+## GameState.input_locked (мир замирает: player.gd гейтит ход/кувырок/атаку,
+## world.gd — E/F5/F9/скиллы, мобы паузятся). Снимается ровно свой lock:
+## * поверх чужого окна/чужого lock не открываемся (_busy -> ui_deny), поэтому
+##   close()/_exit_tree() никогда не снимают «чужой» lock;
+## * пока лавка открыта все события глотаются в _unhandled_input (Esc закрывает
+##   только лавку) — до world-софтлок-страховки (world.gd снимает lock при
+##   закрытых окнах hud) не доходит ничего, разлока не происходит;
+## * _process() — watchdog: возвращает lock, если внешний код всё же снял его
+##   (advance() диалога снимает input_locked безусловно; курсор за краем окна);
+## * если поверх лавки встало чужое окно (квестовый диалог, смерть) или чужой
+##   lock — лавка перестаёт перехватывать ввод (_external_lock), окно работает;
+##   после его закрытия watchdog возвращает lock лавке;
+## * покупка/продажа доступны под СОБСТВЕННЫМ lock (иначе лавка не торговала бы),
+##   но блокируются при чужом;
+## * GameAudio input_locked не гейтится — музыка/звуки под лавкой не молчат.
+## Ключи InputMap не регистрируются — project.godot не трогаем.
 
 static var I: Shop             # синглтон; назначает сам себя в _enter_tree
 
@@ -20,12 +35,16 @@ var gold_lbl: Label
 var buy_btns := {}             # item id -> Button («купить и надеть»)
 var sell_btns := {}            # slot -> Button («продать надетое»)
 var ui_frame_tex: Texture2D    # 9-slice рамка (assets/ui/panel_frame.png), опц.
+var _holds_lock := false       # input_locked сейчас принадлежит лавке, а не кому-то ещё
 
 func _enter_tree() -> void:
 	if I == null:
 		I = self
 
 func _exit_tree() -> void:
+	# Выход из сцены с открытой лавкой не должен оставлять висячий lock:
+	# снимаем только если lock был наш и поверх не стоит чужое окно.
+	_release_lock()
 	if I == self:
 		I = null
 
@@ -38,8 +57,12 @@ func _ready() -> void:
 # --- статические обёртки: хукам не нужна проверка I в каждом вызове ---
 
 static func open() -> void:
-	if I != null and I.root != null:
-		I._set_open(true)
+	if I == null or I.root == null:
+		return
+	if I._busy():  # чужой диалог/модалка/журнал/lock — не открываемся (как SettingsMenu)
+		GameAudio.sfx("ui_deny")
+		return
+	I._set_open(true)
 
 static func close() -> void:
 	if I != null and I.root != null:
@@ -139,29 +162,88 @@ func _set_open(v: bool) -> void:
 		# player.gd не бьёт, когда под курсором есть Control); скрытая — IGNORE
 		root.mouse_filter = Control.MOUSE_FILTER_STOP if v else Control.MOUSE_FILTER_IGNORE
 		GameAudio.sfx("ui_confirm" if v else "ui_click")
+		if v:
+			_acquire_lock()
+		else:
+			_release_lock()
 	if v:
 		refresh()
+
+func _acquire_lock() -> void:
+	# Вызываемся только из состояния «не занято» (статический open() проверил
+	# _busy): lock ставится поверх свободной игры и принадлежит теперь лавке.
+	GameState.input_locked = true
+	_holds_lock = true
+
+## Вернуть lock, который поставила лавка. Если поверх успело встать чужое окно
+## и lock «перешёл» к нему — не трогаем: снимет сам владелец (advance/модалка).
+func _release_lock() -> void:
+	if _holds_lock and not _ui_windows_open():
+		GameState.input_locked = false
+	_holds_lock = false
+
+## Страховка (паттерн SettingsMenu): если внешний код снял lock (безусловный
+## разлок в конце диалога, просочившееся за край окна событие + world-страховка) —
+## возвращаем, пока лавка открыта и чужие окна чисты.
+func _process(_delta: float) -> void:
+	if root != null and root.visible and not GameState.input_locked and not _ui_windows_open():
+		GameState.input_locked = true
+		_holds_lock = true
+
+# --- владение вводом (паттерн SettingsMenu) ---
+
+## Чужие окна у родителя-world: диалог/модалка hud, журнал. Слабая типизация:
+## hud через get(), без предположений о порядке создания узлов.
+func _ui_windows_open() -> bool:
+	var p := get_parent()
+	if p == null:
+		return false
+	var h = p.get("hud")
+	if h == null or not is_instance_valid(h):
+		return false
+	if h.has_method("is_dialog_open") and h.is_dialog_open():
+		return true
+	if h.has_method("is_modal_open") and h.is_modal_open():
+		return true
+	for c in p.get_children():
+		if c is Journal and c.is_open():
+			return true
+	return false
+
+## Ввод/лок, принадлежащий не лавке: чужое окно либо lock, который ставили не мы.
+func _external_lock() -> bool:
+	return _ui_windows_open() or (GameState.input_locked and not _holds_lock)
+
+## Открытию мешает любой чужой владелец ввода.
+func _busy() -> bool:
+	return GameState.input_locked or _ui_windows_open()
+
+# --- ввод ---
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_open():
 		return  # закрытая лавка не перехватывает ничего: Esc/J/всё остальное — игре
-	if GameState.input_locked:
-		return  # поверх лавки встал диалог (например, смерть) — не глушим листание
-	# открытая лавка модальная по вводу: клавиши мира (скиллы, зелье, E) гасим,
-	# Esc закрывает только лавку (в InputMap ничего не регистрировали)
+	if _external_lock():
+		return  # поверх лавки встало чужое окно/lock (диалог, смерть) — не глушим его
+	# открытая лавка модальна по вводу: клавиши мира (скиллы, зелье, E, F9) гасим,
+	# Esc закрывает только лавку (в InputMap ничего не регистрировали). Глотаем
+	# всё, включая release-события: до world-страховки не доходит ничего,
+	# собственный lock не «мигает» и не снимается чужими ветками world.gd.
 	if event.is_action_pressed("ui_cancel"):
 		close()
 	get_viewport().set_input_as_handled()
 
 func _on_dim_input(event: InputEvent) -> void:
+	if _external_lock():
+		return  # поверх лавки чужое окно — клики принадлежат ему
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		close()
 
 # --- сделки ---
 
 func _on_buy(id: String) -> void:
-	if GameState.input_locked:
-		return
+	if _external_lock():
+		return  # покупка разрешена только под СОБСТВЕННЫМ lock лавки
 	var it := GearData.item(id)
 	var slot := String(it.get("slot", ""))
 	if not GameState.gear.has(slot):
@@ -187,8 +269,8 @@ func _on_buy(id: String) -> void:
 	refresh()
 
 func _on_sell(slot: String) -> void:
-	if GameState.input_locked:
-		return
+	if _external_lock():
+		return  # аналогично покупке: только под своим lock
 	var gid := GearData.equipped_id(GameState, slot)
 	var price := GearData.sell_price(gid)
 	if price <= 0:
