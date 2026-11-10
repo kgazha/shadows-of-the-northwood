@@ -556,6 +556,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		GameState.player_pos = player.global_position
 		GameState.pos_valid = true
 		if GameState.save_game():
+			GameAudio.sfx("ui_confirm")  # F5-успех (аудио-аудит)
 			GameState.toast.emit("Игра сохранена (F5)")
 		else:
 			GameState.toast.emit("Не удалось сохранить")
@@ -569,6 +570,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			player.apply_class()
 			hud.refresh_skills()
 			_apply_chest_states()  # сундуки после F9-загрузки (фикс T2)
+			GameAudio.sfx("ui_confirm")  # F9-успех (аудио-аудит)
 			GameState.toast.emit("Игра загружена (F9)")
 		else:
 			GameState.toast.emit("Сохранение не найдено")
@@ -947,6 +949,7 @@ func _show_key_fx() -> void:
 	t.tween_callback(spr.queue_free)
 
 func on_player_death() -> void:
+	GameAudio.sfx("drop")  # смерть героя: тот же «шлепок кожи», что у мобов (аудио-аудит)
 	if FirstHint.I != null: FirstHint.I.show_hint("death", "Смерть — не конец: воскреснешь обновлённым, всё собранное остаётся.")
 	start_dialogue("death", func(): respawn_player())
 

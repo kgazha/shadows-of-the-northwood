@@ -219,6 +219,7 @@ static func refresh(gs) -> void:
 			STATUS_ACTIVE:
 				if is_complete(gs, id):
 					gs.set_flag(FLAG_PREFIX + id, STATUS_DONE)
+					GameAudio.sfx("book")  # закрытие side-квеста: шелест журнала (аудио-аудит)
 					gs.toast.emit("Квест выполнен: %s!" % String(def.get("title", id)))
 					gs.quest_changed.emit()
 			_:

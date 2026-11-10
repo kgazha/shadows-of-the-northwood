@@ -341,6 +341,7 @@ class CaveDoor:
 		zone.unlock_door(tile)
 		GameState.door_opened = true
 		GameState.save_game()
+		GameAudio.sfx("belt")  # «защёлкнул древний замок»: клац пряжки поясного idiom
 		GameState.toast.emit("Защёлкнул древний замок — дверь открыта")
 		queue_free()
 	func _on_enter(b: Node) -> void:

@@ -61,6 +61,7 @@ static func brew(rid: String) -> bool:
 		_:
 			push_warning("Рецепт без эффекта: %s" % rid)
 			return false
+	GameAudio.sfx("potion")  # сварено: бульканье котелка (metal_pot_2), разово, вне цикла
 	GameState.quest_changed.emit()  # трата материалов переживает перезапуск
 	Achv.on_brew()  # ачивки «Алхимик» / «10 варок» (achv.gd)
 	return true

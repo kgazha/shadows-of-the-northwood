@@ -70,6 +70,7 @@ func try_interact() -> void:
 		if in_combat:
 			picked = maxi(COMBAT_HERB_MIN, ceili(HERB_PICK * COMBAT_HERB_MULT))
 		GameState.herbs += picked
+		GameAudio.sfx("step2", 1.0, randf_range(1.15, 1.35))  # шорох среза травы (аудио-аудит)
 		if in_combat:
 			# один тост: HUD показывает только последний, два подряд не годятся
 			GameState.toast.emit("На шуму боя не до трав! Собрано +%d (всего: %d)" % [picked, GameState.herbs])

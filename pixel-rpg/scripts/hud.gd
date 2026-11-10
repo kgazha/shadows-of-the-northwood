@@ -810,6 +810,7 @@ func _pick_class(id: String) -> void:
 	modal.visible = false
 	modal_shown = false
 	GameState.input_locked = false
+	GameAudio.sfx("ui_confirm")  # герой создан: ровно раз за игру (аудио-аудит)
 	GameState.toast.emit("Герой создан: %s. Путь выбран — назад не повернуть!" % String(Classes.CLASSES[id].name))
 	refresh_skills()
 	if class_chosen_cb.is_valid():
