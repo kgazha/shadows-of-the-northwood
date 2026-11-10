@@ -21,7 +21,7 @@ extends CanvasLayer
 ##
 ## Перехват ввода пока меню открыто — осознанно модалный режим, как штатные
 ## диалоги/модалка выбора класса (меню НЕ на весь экран, но мир за ним
-## замирает). Причина: WASD/кувырок/атака в player.gd ПОLLятся
+## замирает). Причина: WASD/кувырок/атака в player.gd полляются
 ## (Input.get_vector / is_action_pressed в _physics_process), поэтому
 ## set_input_as_handled над ними бессилен — событие «съедено», а опрос всё
 ## равно читает зажатую клавишу. Единственный штатный рычаг в игре —
@@ -297,18 +297,17 @@ func _on_reset() -> void:
 
 # --- тумблер «Ход по правому клику» (внешний контракт ClickMove) ---
 
-## Резолв против контракта по порядку: автозагрузка-узел -> статический скрипт
-## class_name ClickMove (ClassDB.class_exists — подсказка, грузим всё равно
-## только после ResourceLoader.exists: preload отсутствующего файла = мёртвый
-## скрипт). Ничего -> null -> строка скрыта.
+## Резолв против контракта по порядку: автозагрузка-узел -> скрипт по пути
+## со статиками (preload отсутствующего файла = мёртвый скрипт, потому только
+## ResourceLoader.exists + load в момент открытия). QA на 4.7.2.stable: классы
+## class_name в рантаймовом ClassDB ОТСУТСТВУЮТ (ClassDB.class_exists("ClickMove")
+## == false при живом скрипте со статиками), поэтому ClassDB здесь не приврата.
+## Ничего -> null -> строка скрыта.
 func _resolve_click_move():
 	var node := get_tree().root.get_node_or_null(NodePath(CM_CLASS))
 	if node != null and node.has_method("is_on") and node.has_method("set_on"):
 		return node
-	if not ClassDB.class_exists(CM_CLASS):
-		return null
 	if not ResourceLoader.exists(CM_PATH):
-		push_warning("ClickMove зарегистрирован, но %s отсутствует — тумблер скрыт" % CM_PATH)
 		return null
 	var sc := load(CM_PATH) as GDScript
 	if sc == null:
