@@ -7,12 +7,14 @@ const HERB_RESPAWN := 50.0
 var world: Node2D
 var kind := "herb"
 var used := false
+var tile_xy := Vector2i.ZERO
 var spr: Sprite2D
 var _respawn_t := 0.0
 
 func setup(p_world: Node2D, p_kind: String, tile: Vector2i) -> void:
 	world = p_world
 	kind = p_kind
+	tile_xy = tile
 	position = world.tile_to_world(tile)
 	spr = Sprite2D.new()
 	spr.texture = _atlas(11 if kind == "herb" else 10)
@@ -26,6 +28,18 @@ func setup(p_world: Node2D, p_kind: String, tile: Vector2i) -> void:
 	collision_mask = 1
 	body_entered.connect(_on_enter)
 	body_exited.connect(_on_exit)
+	refresh_used()
+
+## Сундук уже открыт в прошлой сессии — восстанавливаем состояние из сейва (фикс T2).
+## Вызывается и после load_game(): сущности мира строятся до чтения сейва.
+func refresh_used() -> void:
+	if kind == "chest" and not used and GameState.chest_used(_uid()):
+		used = true
+		spr.texture = _atlas(14)
+
+## Устойчивый id объекта: тип+тайл из map-меты, например "chest@37,21".
+func _uid() -> String:
+	return "%s@%d,%d" % [kind, tile_xy.x, tile_xy.y]
 
 func _atlas(tile_index: int) -> AtlasTexture:
 	var at := AtlasTexture.new()
@@ -56,8 +70,10 @@ func try_interact() -> void:
 	else:
 		used = true
 		GameState.has_sword = true
+		GameState.chest_mark_used(_uid())  # «сундук открыт» в сейв (фикс T2)
 		GameState.toast.emit("Найден Железный меч! Урон x2")
 		GameState.stats_changed.emit()
+		GameState.quest_changed.emit()  # автосейв: меч и состояние сундука
 		spr.texture = _atlas(14)
 		world.near.erase(self)
 

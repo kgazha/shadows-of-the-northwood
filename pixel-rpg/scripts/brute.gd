@@ -41,6 +41,9 @@ var freeze_t := 0.0
 var charge_t := 2.5
 var rush_t := 0.0
 var rush_dir := Vector2.ZERO
+## Страж повторной смерти: queue_free откладывается до конца кадра, и залп
+## (volley) успевал «убить» моба 2–3 раза — двойной XP и quest_changed (фикс T3).
+var dying := false
 var home := Vector2.ZERO
 var wander_t := 0.0
 var wander_dir := Vector2.ZERO
@@ -98,6 +101,8 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	modulate = base_tint
 
 func _physics_process(delta: float) -> void:
+	if dying:
+		return
 	hurt_t = maxf(0.0, hurt_t - delta)
 	freeze_t = maxf(0.0, freeze_t - delta)
 	if hurt_t > 0.0:
@@ -149,11 +154,15 @@ func _physics_process(delta: float) -> void:
 		player.take_damage(dmg)
 
 func hurt(dmg_in: int, from: Vector2) -> void:
+	if dying:
+		return  # труп не получает урон: XP и quest_changed — ровно один раз (фикс T3)
 	GameState.entered_combat()  # контакт с врагом — реген паузится
 	hp -= dmg_in
 	hurt_t = 0.3
 	velocity = (global_position - from).normalized() * 50.0
 	if hp <= 0:
+		dying = true
+		remove_from_group("enemy")  # мёртвый моб больше не бьёт и не целивается
 		if boss:
 			GameState.boss_defeated = true
 			GameState.add_xp(BOSS_XP)

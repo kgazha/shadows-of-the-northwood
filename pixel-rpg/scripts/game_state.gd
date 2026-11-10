@@ -50,6 +50,8 @@ var materials := {"suhotsvet": 0, "zhim": 0}
 var brewed_potions := 0
 ## Костры-привалы: id -> true, если уже использован (одноразовые).
 var campfires_used := {}
+## Открытые сундуки: id вида "chest@x,y" (тип+тайл из map-меты). Переживают перезапуск.
+var chests_used: Array = []
 ## Квесты: 0 = не начат, 1 = активен, 2 = выполнен
 var elder_quest := 0
 var slime_quest := 0
@@ -161,6 +163,63 @@ func try_spend_materials(cost: Dictionary) -> bool:
 		materials[String(mid)] = mat_count(String(mid)) - int(cost[mid])
 	return true
 
+# --- сундуки (персист «сундук открыт») ---
+
+func chest_used(uid: String) -> bool:
+	return chests_used.has(uid)
+
+func chest_mark_used(uid: String) -> void:
+	if not chests_used.has(uid):
+		chests_used.append(uid)
+
+# --- безопасный разбор полей сейва (ни одно поле не должно уронить парсер) ---
+
+## Число из поля сейва: null/битое/строка-не-число => default.
+static func _num(v: Variant, def: int) -> int:
+	match typeof(v):
+		TYPE_INT:
+			return int(v)
+		TYPE_FLOAT:
+			if is_nan(v) or is_inf(v):
+				return def
+			return int(v)
+		TYPE_STRING:
+			var s := String(v)
+			if s.is_valid_int():
+				return int(s)
+			if s.is_valid_float():
+				return int(float(s))
+			return def
+		_:
+			return def
+
+## Вещественное из поля сейва: null/битое => default.
+static func _numf(v: Variant, def: float) -> float:
+	match typeof(v):
+		TYPE_INT:
+			return float(v)
+		TYPE_FLOAT:
+			return def if is_nan(v) or is_inf(v) else float(v)
+		TYPE_STRING:
+			var s := String(v)
+			return float(s) if s.is_valid_float() else def
+		_:
+			return def
+
+## Флаг из поля сейва: null/битое => default.
+static func _flag(v: Variant, def: bool) -> bool:
+	match typeof(v):
+		TYPE_BOOL:
+			return bool(v)
+		TYPE_INT, TYPE_FLOAT:
+			return _num(v, 0) != 0
+		_:
+			return def
+
+## Строка из поля сейва: null/битое => default.
+static func _str(v: Variant, def: String) -> String:
+	return String(v) if typeof(v) == TYPE_STRING else def
+
 func add_xp(n: int) -> void:
 	xp += n
 	while xp >= xp_next:
@@ -216,53 +275,61 @@ func to_dict() -> Dictionary:
 		"seen_boss_intro": seen_boss_intro, "boss_defeated": boss_defeated,
 		"materials": materials.duplicate(), "brewed": brewed_potions,
 		"campfires_used": campfires_used.duplicate(),
+		"chests_used": chests_used.duplicate(),
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
 	}
 
 func from_dict(d: Dictionary) -> void:
-	var had_hp: bool = d.has("hp")  # различаем «сохранённое здоровье» и «здоровья нет в сейве»
-	max_hp = int(d.get("max_hp", 10))
-	hp = int(d.get("hp", max_hp))
-	level = int(d.get("level", 1))
-	xp = int(d.get("xp", 0))
-	xp_next = int(d.get("xp_next", 20))
+	# Порядок (фикс T8): сначала class/уровень/флаги -> recalc статов ->
+	# и только потом hp/mana из сейва (иначе hp считается от «старого» max_hp=10).
+	level = clampi(_num(d.get("level", 1), 1), 1, 99)
+	xp = maxi(0, _num(d.get("xp", 0), 0))
+	xp_next = maxi(1, _num(d.get("xp_next", 20), 20))
 	# damage — производный, из справочника классов (legacy-поле сейва игнорируется)
-	class_id = String(d.get("class_id", "warrior"))  # старый сейв без класса => воин
-	has_sword = bool(d.get("has_sword", false))
-	herbs = int(d.get("herbs", 0))
-	slime_kills = int(d.get("slime_kills", 0))
-	elder_quest = int(d.get("elder_quest", 0))
-	slime_quest = int(d.get("slime_quest", 0))
-	seen_intro = bool(d.get("seen_intro", false))
+	class_id = _str(d.get("class_id", "warrior"), "warrior")  # старый сейв без класса => воин
+	has_sword = _flag(d.get("has_sword", false), false)
+	herbs = maxi(0, _num(d.get("herbs", 0), 0))
+	slime_kills = maxi(0, _num(d.get("slime_kills", 0), 0))
+	elder_quest = clampi(_num(d.get("elder_quest", 0), 0), 0, 2)
+	slime_quest = clampi(_num(d.get("slime_quest", 0), 0), 0, 2)
+	seen_intro = _flag(d.get("seen_intro", false), false)
 	# новые поля: СТАРЫЕ сейвы грузятся через значения по умолчанию
-	cave_state = int(d.get("cave_state", 0))
-	has_key = bool(d.get("has_key", false))
-	has_amulet = bool(d.get("has_amulet", false))
-	door_opened = bool(d.get("door_opened", false))
-	in_cave = bool(d.get("in_cave", false))
-	seen_cave_intro = bool(d.get("seen_cave_intro", false))
-	seen_boss_intro = bool(d.get("seen_boss_intro", false))
-	if bool(d.get("boss_defeated", false)):
+	cave_state = clampi(_num(d.get("cave_state", 0), 0), 0, 4)
+	has_key = _flag(d.get("has_key", false), false)
+	has_amulet = _flag(d.get("has_amulet", false), false)
+	door_opened = _flag(d.get("door_opened", false), false)
+	in_cave = _flag(d.get("in_cave", false), false)
+	seen_cave_intro = _flag(d.get("seen_cave_intro", false), false)
+	seen_boss_intro = _flag(d.get("seen_boss_intro", false), false)
+	if _flag(d.get("boss_defeated", false), false):
 		cave_state = maxi(cave_state, 2)
 	# привалы и алхимия: СТАРЫЕ сейвы без этих полей => пустой рюкзак, костры целы
 	materials = {"suhotsvet": 0, "zhim": 0}
 	var md: Variant = d.get("materials", {})
 	if typeof(md) == TYPE_DICTIONARY:
 		for mid in materials:
-			materials[mid] = clampi(int(md.get(mid, 0)), 0, MAT_CAP)
-	brewed_potions = clampi(int(d.get("brewed", 0)), 0, BREWED_CAP)
+			materials[mid] = clampi(_num(md.get(mid, 0), 0), 0, MAT_CAP)
+	brewed_potions = clampi(_num(d.get("brewed", 0), 0), 0, BREWED_CAP)
 	var cu: Variant = d.get("campfires_used", {})
 	campfires_used = cu.duplicate() if typeof(cu) == TYPE_DICTIONARY else {}
-	player_pos = Vector2(float(d.get("px", 0)), float(d.get("py", 0)))
-	pos_valid = bool(d.get("pos_valid", false))
+	# сундуки: массив строк-ид; битые элементы молча пропускаем
+	chests_used = []
+	var chu: Variant = d.get("chests_used", [])
+	if typeof(chu) == TYPE_ARRAY:
+		for cid in chu:
+			if typeof(cid) == TYPE_STRING and chests_used.size() < 64:
+				chest_mark_used(String(cid))
+	player_pos = Vector2(_numf(d.get("px", 0.0), 0.0), _numf(d.get("py", 0.0), 0.0))
+	pos_valid = _flag(d.get("pos_valid", false), false)
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp
 	recalc_max_mana()
-	if not had_hp:
-		# в сейве не было поля hp (старые/усечённые сейвы) — герой полон СЕГОДНЯ,
-		# уже после классового пересчёта: иначе старт ниже потолка класса (QA-кейс 10)
-		hp = max_hp
+	# hp: из сейва (клампы под потолок класса); нет/битое — ПОЛНЫЙ максимум класса,
+	# а не дефолт «старого» max_hp=10 (фикс T8).
+	var hpv := _num(d.get("hp", -1), -1)
+	hp = clampi(hpv, 0, max_hp) if hpv >= 0 else max_hp
 	# мана: старый сейв без поля => полная; всегда в пределах потолка класса
-	mana = clampi(int(d.get("mana", max_mana)), 0, max_mana)
+	var manav := _num(d.get("mana", -1), -1)
+	mana = clampi(manav, 0, max_mana) if manav >= 0 else max_mana
 	stats_changed.emit()
 	quest_changed.emit()
 

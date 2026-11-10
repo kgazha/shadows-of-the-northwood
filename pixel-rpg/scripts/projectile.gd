@@ -27,7 +27,7 @@ func setup(from: Vector2, dir: Vector2, p_speed: float, p_dmg: int, sprite_idx: 
 	# стрела и призрак смотрят по направлению полёта; шары — нет
 	rotation = dirv.angle() if sprite_idx == 0 or sprite_idx == 3 else 0.0
 	collision_layer = 0
-	collision_mask = 4  # только враги
+	collision_mask = 4 | 2  # враги + стены (фикс T9: раньше стрелы прошивали стены насквозь)
 	var cs := CollisionShape2D.new()
 	var sh := CircleShape2D.new()
 	sh.radius = 3.0
@@ -54,6 +54,7 @@ func _physics_process(delta: float) -> void:
 
 func _on_hit(b: Node) -> void:
 	if not b.is_in_group("enemy") or not b.has_method("hurt"):
+		queue_free()  # стена/преграда: снаряд гаснет (фикс T9: вешался только return — прошивал насквозь)
 		return
 	var id := b.get_instance_id()
 	if _hits.has(id):

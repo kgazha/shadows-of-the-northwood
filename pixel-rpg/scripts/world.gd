@@ -116,7 +116,7 @@ func _ready() -> void:
 			player.global_position = GameState.player_pos
 		player.apply_class()
 		hud.refresh_skills()
-		_resync_campfires()
+		_apply_chest_states()  # сундуки из сейва (спавн был до load_game) — фикс T2
 	if GameState.class_id == "":
 		# новые игры: сначала выбор героя, интро — после (в _start_intro)
 		hud.show_class_modal(_start_intro)
@@ -241,22 +241,6 @@ func campfire_near() -> Node2D:
 				bd = d
 				best = n
 	return best
-
-## Канон состояния костров — GameState.campfires_used. После любой загрузки сейва
-## (старт игры, F9) гасим незакрытые каналы и сверяем флаг used с визуалом:
-## иначе посреди канала F9 оставляет «фантомный» отдых, который потом лечит и
-## сжигает костёр, расходясь с сейвом (QA-кейс 2), а на старте костры строятся
-## до load_game и не знают, что сейв уже считает их пеплом.
-func _resync_campfires() -> void:
-	for cf in campfires:
-		cf.resting = false
-		cf.rest_t = 0.0
-		var u := bool(GameState.campfires_used.get(cf.camp_id, false))
-		if u != cf.used:
-			cf.used = u
-			cf._set_state_visual()
-		if u:
-			near.erase(cf)
 
 func _build_cave() -> void:
 	var dz = load("res://scripts/dungeon_zone.gd").new()
@@ -456,7 +440,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				player.global_position = GameState.player_pos
 			player.apply_class()
 			hud.refresh_skills()
-			_resync_campfires()
+			_apply_chest_states()  # сундуки после F9-загрузки (фикс T2)
 			GameState.toast.emit("Игра загружена (F9)")
 		else:
 			GameState.toast.emit("Сохранение не найдено")
@@ -534,6 +518,13 @@ func _find_npc(id: String) -> Node2D:
 		if n.get("npc_id") != null and n.get("npc_id") == id:
 			return n
 	return null
+
+func _apply_chest_states() -> void:
+	# сущности спавнятся до GameState.load_game() — применяем сохранённое
+	# состояние сундуков после загрузки (фикс T2: «оживание» открытого сундука)
+	for n in village_zone.get_children():
+		if n.get("kind") != null and n.get("kind") == "chest" and n.has_method("refresh_used"):
+			n.refresh_used()
 
 func _nearest_herb() -> Node2D:
 	if player == null:
@@ -677,8 +668,10 @@ func talk(id: String) -> void:
 					if GameState.herbs >= 3:
 						start_dialogue("elder_done", func():
 							GameState.elder_quest = 2
+							GameState.herbs = 0  # травы реально отданы (фикс T6)
 							GameState.add_xp(25)
-							GameState.heal_full())
+							GameState.heal_full()
+							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
 					else:
 						start_dialogue("elder_progress")
 				_:
@@ -693,7 +686,8 @@ func talk(id: String) -> void:
 					if GameState.slime_kills >= 3:
 						start_dialogue("merchant_done", func():
 							GameState.slime_quest = 2
-							GameState.add_xp(30))  # урон теперь от класса/меча/амулета
+							GameState.add_xp(30)  # урон теперь от класса/меча/амулета
+							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
 					else:
 						start_dialogue("merchant_progress")
 				_:

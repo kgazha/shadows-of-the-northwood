@@ -110,6 +110,7 @@ func _physics_process(delta: float) -> void:
 	if GameState.input_locked:
 		velocity = Vector2.ZERO
 		roll_t = 0.0
+		anim.modulate.a = 1.0  # прерванный диалогом кувырок: не залипаем полупрозрачным (фикс T5)
 		move_and_slide()
 		return
 
@@ -388,8 +389,12 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			face_to(t.global_position)
 			_lunge_fx(facing_dir(), 8.0)
 			_slash_fx(Color(1.0, 0.45, 0.35, 0.95))
-			var mx := 12.0 if t.is_in_group("boss") else 3.0
-			if float(t.hp) <= mx * 0.25:
+			# Честный порог (фикс T10): <=25% макс. HP цели, минимум 1 HP.
+			# max_hp читаем у врага, если он его задаёт; иначе константы slime/brute.
+			var mhp := 12.0 if t.is_in_group("boss") else 3.0
+			if t.get("max_hp") != null:
+				mhp = float(t.get("max_hp"))
+			if int(t.hp) <= maxi(1, int(mhp * 0.25)):
 				t.hurt(999, global_position)  # казнён
 			else:
 				melee_hit(1.5, Vector2.INF, 13.0, t)
