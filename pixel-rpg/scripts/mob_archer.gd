@@ -260,6 +260,16 @@ class Arrow extends Area2D:
 		body_entered.connect(_on_hit)
 
 	func _physics_process(delta: float) -> void:
+		# пауза мира (меню/диалог): стрела висит в воздухе — не летит и life не тикает;
+		# мониторинг гасим, чтобы висящая стрела не задела цель в момент разблокировки
+		if GameState.input_locked:
+			if monitoring:
+				monitoring = false
+				monitorable = false
+			return
+		if not monitoring:
+			monitoring = true
+			monitorable = true
 		position += dirv * speed * delta
 		life -= delta
 		if life <= 0.0:
