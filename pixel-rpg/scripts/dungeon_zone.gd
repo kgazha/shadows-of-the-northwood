@@ -63,6 +63,20 @@ func setup(p_world: Node2D) -> void:
 func tile_to_world(t: Vector2i) -> Vector2:
 	return Vector2((t.x + 0.5) * TILE, (t.y + 0.5) * TILE + 2.0)
 
+## Проходимость клетки пещеры для поиска пути (дверь — с учётом door_opened).
+func cell_walkable(t: Vector2i) -> bool:
+	if t.x < 0 or t.y < 0 or t.y >= map_h or t.x >= map_w:
+		return false
+	var row := String(map_rows[t.y])
+	if t.x >= row.length():
+		return false
+	var ch := row[t.x]
+	if ch == "L":
+		return GameState.door_opened
+	if not CHAR_TO_TILE.has(ch):
+		return true
+	return not (int(CHAR_TO_TILE[ch]) in BLOCKING)
+
 func _atlas(index: int) -> AtlasTexture:
 	var at := AtlasTexture.new()
 	at.atlas = load(TEX_PATH)

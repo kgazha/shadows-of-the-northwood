@@ -22,6 +22,9 @@ var move_target := Vector2.INF     # идти в точку
 var attack_target: Node2D = null   # догнать и бить
 var attack_origin := Vector2.INF   # точка отмены по leash
 var interact_target = null         # дойти и try_interact()
+var path: Array = []               # waypoints мировых точек (A* по тайлам)
+var _repath_t := 0.0
+var _stuck_t := 0.0
 # --- скиллы ---
 var skill_cd := [0.0, 0.0, 0.0, 0.0]  # НЕ сериализуются
 var pending_mult := 1.0               # «Мощный удар»: множитель следующего мили-удара
@@ -80,6 +83,7 @@ func _build_frames(tex: Texture2D) -> void:
 func command_move(p: Vector2) -> void:
 	cancel_orders()
 	move_target = p
+	path = world.build_path(global_position, p)
 
 func command_attack(e: Node2D) -> void:
 	cancel_orders()
@@ -89,6 +93,8 @@ func command_attack(e: Node2D) -> void:
 func command_interact(obj) -> void:
 	cancel_orders()
 	interact_target = obj
+	if obj != null and obj is Node2D:
+		path = world.build_path(global_position, (obj as Node2D).global_position)
 
 func cancel_orders() -> void:
 	move_target = Vector2.INF
@@ -96,6 +102,15 @@ func cancel_orders() -> void:
 	interact_target = null
 	attack_origin = Vector2.INF
 	pending_mult = 1.0
+	path = []
+
+## Куда бежим прямо сейчас: ближайший waypoint пути, иначе — прямая к цели.
+func _next_step_want(goal: Vector2) -> Vector2:
+	while not path.is_empty() and global_position.distance_to(path[0]) < 3.0:
+		path.remove_at(0)
+	if not path.is_empty():
+		return global_position.direction_to(path[0])
+	return global_position.direction_to(goal)
 
 func _physics_process(delta: float) -> void:
 	attack_cd = maxf(0.0, attack_cd - delta)
@@ -135,8 +150,10 @@ func _physics_process(delta: float) -> void:
 		do_attack()
 
 ## Исполнение активного приказа. Приоритет: атака > взаимодействие > идти в точку.
+## Ход — по A*-пути вокруг стен; враг близко и видно напрямую — идём прямо.
 func _execute_orders(delta: float) -> void:
 	var want := Vector2.ZERO
+	var goal := Vector2.INF  # финальная точка приказа (для перестроения пути)
 	if attack_target != null:
 		if not is_instance_valid(attack_target):
 			attack_target = null
@@ -148,34 +165,57 @@ func _execute_orders(delta: float) -> void:
 			if d <= float(class_data().radius):
 				_attack_in_range()
 			else:
-				want = (attack_target.global_position - global_position).normalized()
+				goal = attack_target.global_position
+				if d <= float(class_data().radius) + 26.0 and world.line_clear(global_position, goal):
+					path = []  # цель видна — прямая без обхода
+					want = global_position.direction_to(goal)
+				else:
+					_repath_t -= delta
+					if _repath_t <= 0.0:
+						_repath_t = 0.45
+						path = world.build_path(global_position, goal)
+					want = _next_step_want(goal)
 	if want == Vector2.ZERO and interact_target != null:
 		if not is_instance_valid(interact_target):
 			interact_target = null
+			path = []
 		else:
 			var di := global_position.distance_to(interact_target.global_position)
 			if di <= INTERACT_DIST:
 				var it = interact_target
 				interact_target = null
+				path = []
 				if it.has_method("try_interact"):
 					it.try_interact()
 			else:
-				want = (interact_target.global_position - global_position).normalized()
+				goal = interact_target.global_position
+				want = _next_step_want(goal)
 	if want == Vector2.ZERO and move_target != Vector2.INF and attack_target == null and interact_target == null:
 		var dm := global_position.distance_to(move_target)
 		if dm <= ARRIVE:
 			move_target = Vector2.INF
+			path = []
 		else:
-			want = (move_target - global_position).normalized()
+			goal = move_target
+			want = _next_step_want(goal)
 	velocity = want * float(class_data().speed)
 	if want != Vector2.ZERO:
 		var prev := global_position
 		move_and_slide()
-		# line movement: упёрся в стену — приказ «идти/взаимодействовать» отменяется
+		# упёрлись: путь есть — перестроить; пути нет — отменить приказ (старое поведение)
 		var moved := global_position.distance_to(prev)
-		if moved < float(class_data().speed) * delta * CANCEL_RATIO and attack_target == null:
-			move_target = Vector2.INF
-			interact_target = null
+		if moved < float(class_data().speed) * delta * CANCEL_RATIO:
+			_stuck_t += delta
+			if _stuck_t > 0.45:
+				_stuck_t = 0.0
+				if goal != Vector2.INF and not path.is_empty():
+					path = world.build_path(global_position, goal)
+				elif attack_target == null:
+					move_target = Vector2.INF
+					interact_target = null
+					path = []
+		else:
+			_stuck_t = 0.0
 	else:
 		move_and_slide()
 

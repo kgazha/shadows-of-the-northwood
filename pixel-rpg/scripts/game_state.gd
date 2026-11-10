@@ -93,18 +93,16 @@ func recalc_max_hp() -> void:
 
 ## Выбор/смена класса: базовые статы пересчитываются, HP полный.
 func set_class(id: String) -> void:
+	if class_id != "":
+		# класс выбирается один раз на этапе создания героя и больше не меняется
+		push_warning("Класс уже выбран — смена невозможна")
+		return
 	if not Classes.CLASSES.has(id):
 		push_warning("Неизвестный класс: %s" % id)
 		return
 	class_id = id
 	recalc_max_hp()
 	heal_full()
-
-## Сброс прогресса перед сменой класса (скиллы откроются заново).
-func reset_progress_for_class_change() -> void:
-	level = 1
-	xp = 0
-	xp_next = 20
 
 func to_dict() -> Dictionary:
 	return {

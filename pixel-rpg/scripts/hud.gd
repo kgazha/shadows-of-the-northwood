@@ -1,6 +1,6 @@
 extends CanvasLayer
-## HUD: сердца HP, полоса опыта, задания, диалоги с эффектом печати, тосты,
-## модалка «Выбери героя» и панель скиллов (спринт 2).
+## HUD: полоска HP, полоса опыта, задания, диалоги с эффектом печати, тосты,
+## этап создания героя (модалка выбора класса) и панель скиллов (спринт 2).
 
 const Classes := preload("res://scripts/classes_data.gd")
 
@@ -16,7 +16,9 @@ const PORTRAITS2_INDEX := {"hermit": 0}
 const SLOT := 28.0  # размер слота иконки скилла
 
 var world: Node2D
-var heart_row: HBoxContainer
+var hp_bg: ColorRect            # полоска здоровья (вместо сердец)
+var hp_fill: ColorRect
+var hp_txt: Label
 var xp_bg: ColorRect
 var xp_fill: ColorRect
 var info: Label
@@ -32,14 +34,12 @@ var li := 0
 var typing := false
 var chars_shown := 0.0
 var on_end: Callable = Callable()
-var hearts_tex: Texture2D
 var portraits_tex: Texture2D
 var portraits2_tex: Texture2D
 # --- спринт 2 ---
 var skill_icons_tex: Texture2D
 var skill_panel: PanelContainer
 var skill_slots: Array = []     # словари {root, icon, cd, lvl_lbl}
-var switch_btn: Button
 var potion_btn: Button          # зелье из трав (Q)
 var marker: Polygon2D           # стрелка к цели квеста
 var marker_t := 0.0
@@ -49,7 +49,6 @@ var class_chosen_cb := Callable()
 
 func setup(p_world: Node2D) -> void:
 	world = p_world
-	hearts_tex = load("res://assets/heart.png")
 	portraits_tex = load("res://assets/portraits.png")
 	# portraits2.png рисует параллельная команда — может отсутствовать, это штатно
 	if ResourceLoader.exists("res://assets/portraits2.png"):
@@ -58,8 +57,22 @@ func setup(p_world: Node2D) -> void:
 		push_warning("Нет ассета: assets/portraits2.png — отшельник без портрета")
 	var th := Theme.new()
 	th.default_font_size = 8
-	heart_row = HBoxContainer.new()
-	heart_row.add_theme_constant_override("separation", 2)
+	hp_bg = ColorRect.new()
+	hp_bg.color = Color(0.08, 0.08, 0.1, 0.9)
+	hp_bg.size = Vector2(130, 9)
+	hp_bg.custom_minimum_size = Vector2(130, 9)
+	hp_fill = ColorRect.new()
+	hp_fill.color = Color(0.72, 0.15, 0.18)
+	hp_fill.position = Vector2(1, 1)
+	hp_fill.size = Vector2(128, 7)
+	hp_bg.add_child(hp_fill)
+	hp_txt = Label.new()
+	hp_txt.add_theme_font_size_override("font_size", 7)
+	hp_txt.add_theme_color_override("font_color", Color(1, 0.92, 0.86))
+	hp_txt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	hp_txt.add_theme_constant_override("outline_size", 3)
+	hp_txt.position = Vector2(45, 1)
+	hp_bg.add_child(hp_txt)
 	xp_bg = ColorRect.new()
 	xp_bg.color = Color(0.08, 0.08, 0.1, 0.85)
 	xp_bg.size = Vector2(130, 8)
@@ -73,7 +86,7 @@ func setup(p_world: Node2D) -> void:
 	var top := VBoxContainer.new()
 	top.position = Vector2(6, 6)
 	top.add_theme_constant_override("separation", 3)
-	top.add_child(heart_row)
+	top.add_child(hp_bg)
 	top.add_child(xp_bg)
 	top.add_child(info)
 	top.add_child(quests)
@@ -194,22 +207,15 @@ func _update_marker(delta: float) -> void:
 	marker.visible = true
 
 func refresh() -> void:
-	for c in heart_row.get_children():
-		c.queue_free()
-	var hearts := int(ceil(GameState.max_hp / 2.0))
-	for i in hearts:
-		var tr := TextureRect.new()
-		var at := AtlasTexture.new()
-		at.atlas = hearts_tex
-		if GameState.hp >= (i + 1) * 2:
-			at.region = Rect2(0, 0, 7, 6)
-		elif GameState.hp == i * 2 + 1:
-			at.region = Rect2(0, 0, 4, 6)
-		else:
-			at.region = Rect2(0, 0, 7, 6)
-			tr.modulate = Color(0.3, 0.15, 0.18, 0.9)
-		tr.texture = at
-		heart_row.add_child(tr)
+	var max_hp := maxi(GameState.max_hp, 1)
+	var frac := clampf(GameState.hp / float(max_hp), 0.0, 1.0)
+	hp_fill.size = Vector2(maxf(0.0, 128.0 * frac), 7)
+	# при низком здоровье полоса краснеет и чуть «пульсирует» оттенком
+	if frac <= 0.3:
+		hp_fill.color = Color(0.95, 0.22, 0.18)
+	else:
+		hp_fill.color = Color(0.72, 0.15, 0.18)
+	hp_txt.text = "%d / %d" % [GameState.hp, max_hp]
 	xp_fill.size = Vector2(maxf(0.0, 128.0 * GameState.xp / float(GameState.xp_next)), 6)
 	info.text = "Ур. %d  Опыт %d/%d  Атака %d" % [GameState.level, GameState.xp, GameState.xp_next, GameState.damage]
 	var q: Array[String] = []
@@ -360,15 +366,6 @@ func _build_skill_panel(th: Theme) -> void:
 		skill_slots.append({"root": sc, "icon": icon, "cd": cdc, "lvl": lvl, "hot": hot})
 	skill_panel.theme = th
 	add_child(skill_panel)
-	# кнопка смены класса — правый верхний угол
-	switch_btn = Button.new()
-	switch_btn.text = "Сменить класс"
-	switch_btn.add_theme_font_size_override("font_size", 8)
-	switch_btn.position = Vector2(548, 6)
-	switch_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	switch_btn.pressed.connect(_on_class_switch)
-	switch_btn.theme = th
-	add_child(switch_btn)
 	# зелье из трав — справа от панели скиллов
 	potion_btn = Button.new()
 	potion_btn.add_theme_font_size_override("font_size", 8)
@@ -393,13 +390,11 @@ func _on_potion_pressed() -> void:
 	if world != null and world.has_method("drink_potion"):
 		world.drink_potion()
 
-## Перестроить иконки под текущий класс (после выбора/смены класса, загрузки сейва).
+## Перестроить иконки под текущий класс (после создания героя, загрузки сейва).
 func refresh_skills() -> void:
 	var has := GameState.class_id != ""
 	if skill_panel != null:
 		skill_panel.visible = has
-	if switch_btn != null:
-		switch_btn.visible = has
 	if not has:
 		return
 	var sids: Array = Classes.skills_for(GameState.class_id)
@@ -445,7 +440,7 @@ func _on_leveled_up(lv: int) -> void:
 		if int(sd.level) == lv:
 			GameState.toast.emit("Новый навык: %s!" % sd.name)
 
-# --- модалка «Выбери героя» ---
+# --- этап создания героя (выбор класса, необратим) ---
 
 func _build_class_modal(th: Theme) -> void:
 	modal = Control.new()
@@ -464,11 +459,18 @@ func _build_class_modal(th: Theme) -> void:
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(vb)
 	var title := Label.new()
-	title.text = "Выбери героя"
+	title.text = "Создание героя"
 	title.add_theme_font_size_override("font_size", 14)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(title)
+	var subtitle := Label.new()
+	subtitle.text = "Выбор класса необратим — герой создаётся один раз"
+	subtitle.add_theme_font_size_override("font_size", 8)
+	subtitle.add_theme_color_override("font_color", Color(0.85, 0.75, 0.6))
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(subtitle)
 	var cards := HBoxContainer.new()
 	cards.add_theme_constant_override("separation", 10)
 	cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -543,17 +545,8 @@ func _pick_class(id: String) -> void:
 	modal.visible = false
 	modal_shown = false
 	GameState.input_locked = false
-	GameState.toast.emit("Класс выбран: %s" % String(Classes.CLASSES[id].name))
+	GameState.toast.emit("Герой создан: %s. Путь выбран — назад не повернуть!" % String(Classes.CLASSES[id].name))
 	refresh_skills()
 	if class_chosen_cb.is_valid():
 		class_chosen_cb.call()
 	class_chosen_cb = Callable()
-
-func _on_class_switch() -> void:
-	if is_dialog_open() or modal_shown:
-		GameState.toast.emit("Сейчас нельзя сменить класс")
-		return
-	GameState.reset_progress_for_class_change()
-	GameState.stats_changed.emit()
-	GameState.toast.emit("Внимание: уровень и опыт будут сброшены до 1!")
-	show_class_modal()

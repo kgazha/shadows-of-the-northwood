@@ -5,6 +5,7 @@ extends Node2D
 ## переход — затемнение, смена видимости зон и телепорт героя.
 
 const TILE := 16
+const Nav := preload("res://scripts/nav.gd")
 const CHAR_TO_TILE := {
 	"g": 0, "G": 1, "f": 2, "d": 3, "w": 4, "t": 5, "W": 6, "R": 7,
 	"D": 8, "#": 9, "r": 12, "s": 13, "T": 15,
@@ -392,6 +393,47 @@ func _nearest_herb() -> Node2D:
 				bd = d
 				best = h
 	return best
+
+# --- навигация: путь в обход препятствий ---
+
+func _village_walkable(t: Vector2i) -> bool:
+	if t.x < 0 or t.y < 0 or t.y >= map_h or t.x >= map_w:
+		return false
+	var row := String(map_rows[t.y])
+	if t.x >= row.length():
+		return false
+	var ch := row[t.x]
+	if not CHAR_TO_TILE.has(ch):
+		return true
+	return not (int(CHAR_TO_TILE[ch]) in BLOCKING)
+
+func _active_nav() -> Dictionary:
+	if GameState.in_cave and dungeon_zone != null:
+		return {"w": dungeon_zone.map_w, "h": dungeon_zone.map_h, "walk": dungeon_zone.cell_walkable, "base": CAVE_OFFSET}
+	return {"w": map_w, "h": map_h, "walk": _village_walkable, "base": Vector2.ZERO}
+
+static func _world_to_tile(p: Vector2, base: Vector2) -> Vector2i:
+	var l := p - base
+	return Vector2i(int(floor(l.x / TILE)), int(floor(l.y / TILE)))
+
+## Мирные точки -> массив мировых точек пути (пусто — прямая/недостижимо).
+func build_path(from_w: Vector2, to_w: Vector2) -> Array:
+	var ctx := _active_nav()
+	var st := _world_to_tile(from_w, ctx["base"])
+	var gt := _world_to_tile(to_w, ctx["base"])
+	var raw: Array = Nav.astar(ctx["walk"], int(ctx["w"]), int(ctx["h"]), st, gt)
+	if raw.is_empty():
+		return []
+	var simp: Array = Nav.simplify(raw, ctx["walk"])
+	var out: Array = []
+	for t: Vector2i in simp:
+		out.append(ctx["base"] + tile_to_world(t))
+	return out
+
+## Прямая линия свободна (для «короткой дистанции — без обхода»).
+func line_clear(a: Vector2, b: Vector2) -> bool:
+	var ctx := _active_nav()
+	return Nav.los(_world_to_tile(a, ctx["base"]), _world_to_tile(b, ctx["base"]), ctx["walk"])
 
 # --- переход между зонами ---
 
