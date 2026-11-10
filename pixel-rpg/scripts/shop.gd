@@ -359,6 +359,7 @@ func _on_ash_buy(id: String) -> void:
 		refresh()
 		return
 	GameState.set_flag("meta." + id, owned + 1)
+	if FirstHint.I != null: FirstHint.I.show_hint("ash", "Пепел — валюта алтаря: усиления покупаются навсегда, даже между жизнями.")
 	GameState.save_game()  # трата обязана пережить выход (железное правило P1)
 	GameAudio.sfx("ui_confirm")  # паттерн существующего _on_buy
 	var total := _owned(id)

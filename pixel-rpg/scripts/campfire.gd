@@ -128,6 +128,7 @@ func _cancel(msg: String) -> void:
 func _finish() -> void:
 	resting = false
 	rest_t = 0.0
+	if FirstHint.I != null: FirstHint.I.show_hint("campfire", "Костёр вернул силы. Отдыхай перед дорогой — пещера ошибок не прощает.")
 	if SINGLE_USE:
 		_mark_used()
 		Achv.on_campfire_used()  # ачивка «Трёх костров» (achv.gd)

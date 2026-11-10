@@ -91,6 +91,7 @@ func try_interact() -> void:
 		GameState.quest_changed.emit()  # автосейв: меч и состояние сундука
 		Loot.chest_reward(GameState)  # золото/зелье (loot.gd)
 		Achv.on_chest_opened()  # ачивка «Клад» (achv.gd)
+		if FirstHint.I != null: FirstHint.I.show_hint("chest", "В сундуках — оружие и золото. Они прячутся по всей округе.")
 		spr.texture = _atlas(14)
 		world.near.erase(self)
 

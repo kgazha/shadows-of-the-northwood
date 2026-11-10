@@ -85,6 +85,10 @@ func _ready() -> void:
 	var minimap := Minimap.new()
 	add_child(minimap)
 	Minimap.I = minimap
+	# Подсказки первопроходцу: синглтон FirstHint (паттерн ClickMove/Minimap).
+	var first_hint := FirstHint.new()
+	add_child(first_hint)
+	FirstHint.I = first_hint
 	var mf := FileAccess.open("res://data/map_village.json", FileAccess.READ)
 	meta = JSON.parse_string(mf.get_as_text())
 	map_rows = meta["grid"]
@@ -831,6 +835,7 @@ func enter_ashen() -> void:
 	transition_to_area("ashen", func():
 		if first:
 			GameState.set_flag("ashen.intro_seen", "1")
+			if FirstHint.I != null: FirstHint.I.show_hint("ashen", "Пепелище опаснее пещеры: силы тут не жалеют. Отступай к аршине.")
 			if dialogues.has("ashen_intro"):
 				start_dialogue("ashen_intro")
 				if not hud.is_dialog_open():
@@ -941,6 +946,7 @@ func _show_key_fx() -> void:
 	t.tween_callback(spr.queue_free)
 
 func on_player_death() -> void:
+	if FirstHint.I != null: FirstHint.I.show_hint("death", "Смерть — не конец: воскреснешь обновлённым, всё собранное остаётся.")
 	start_dialogue("death", func(): respawn_player())
 
 func respawn_player() -> void:
