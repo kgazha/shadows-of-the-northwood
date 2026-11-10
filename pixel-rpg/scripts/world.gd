@@ -834,7 +834,7 @@ func exit_cave() -> void:
 func enter_ashen() -> void:
 	if active_area == "ashen":
 		return
-	var first: bool = String(GameState.flags.get("ashen.intro_seen", "")) != "1"
+	var first: bool = str(GameState.flags.get("ashen.intro_seen", "")) != "1"
 	transition_to_area("ashen", func():
 		if first:
 			GameState.set_flag("ashen.intro_seen", "1")

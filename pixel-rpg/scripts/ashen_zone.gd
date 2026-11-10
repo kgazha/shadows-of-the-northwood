@@ -152,7 +152,7 @@ func _spawn_entities(meta: Dictionary) -> void:
 		p.setup(self, Vector2i(int(ep[0]), int(ep[1])))
 		portal_node = p
 	# сундук награды — персист по флагу, без has_sword-побочного эффекта деревенского сундука
-	if String(GameState.flags.get("ashen.chest", "")) != "taken" \
+	if str(GameState.flags.get("ashen.chest", "")) != "taken" \
 			and chest_tile.x >= 0:
 		var c := AshenChest.new()
 		add_child(c)
@@ -192,7 +192,7 @@ func _spawn_entities(meta: Dictionary) -> void:
 			wr.setup(world, Vector2i(int(wcoord[0]), int(wcoord[1])))
 			wr.self_modulate = TINT_WRAITH
 	# мини-босс: «Ведьма Пепелища» — живёт до смерти, персист по флагу
-	if String(GameState.flags.get("ashen.boss", "")) != "dead" and boss_tile.x >= 0:
+	if str(GameState.flags.get("ashen.boss", "")) != "dead" and boss_tile.x >= 0:
 		var witch = load("res://scripts/mob_boss2.gd").new()
 		add_child(witch)
 		witch.setup(world, boss_tile)
@@ -274,7 +274,7 @@ class AshenChest:
 	func get_hint() -> String:
 		return "Открыть сундук"
 	func try_interact() -> void:
-		if used or String(GameState.flags.get("ashen.chest", "")) == "taken":
+		if used or str(GameState.flags.get("ashen.chest", "")) == "taken":
 			return
 		used = true
 		GameState.set_flag("ashen.chest", "taken")

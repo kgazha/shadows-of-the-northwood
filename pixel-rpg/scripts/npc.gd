@@ -35,7 +35,7 @@ func try_interact() -> void:
 	# до конца диалога — это задумано (новый круг начинается сразу).
 	if npc_id == "elder":
 		var wave := GameState.ng_wave()
-		if String(GameState.flags.get("ashen.boss", "")) == "dead":
+		if str(GameState.flags.get("ashen.boss", "")) == "dead":
 			if wave < GameState.NG_WAVE_CAP:
 				world.hud.show_dialog([
 					{"who": "elder", "text": "Пепел ведьмы ещё не остыл... Круг замкнулся, герой."},

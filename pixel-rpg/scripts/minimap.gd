@@ -248,7 +248,7 @@ func _rebuild_pois() -> void:
 		# Взятый сундук снимает свой узел (queue_free) — блипа нет; флаг ashen.chest
 		# закрывает и отложенный кадр до фактического удаления узла.
 		if az.chest_node != null and is_instance_valid(az.chest_node) \
-				and String(GameState.flags.get("ashen.chest", "")) != "taken":
+				and str(GameState.flags.get("ashen.chest", "")) != "taken":
 			_pois.append({"t": _tile_of(az.chest_node.global_position, _zone_base(), ts), "c": C_CHEST, "s": 3})
 		return  # Ведьма и мобы — живой цикл группы "enemy" в paint()
 	elif _zone == "cave":
