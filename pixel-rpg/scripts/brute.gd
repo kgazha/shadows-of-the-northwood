@@ -179,6 +179,10 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 		if boss:
 			GameState.boss_defeated = true
 			Achv.on_boss_death()  # ачивки «Убийца босса» / «хардкор» (achv.gd)
+			# §4.1: +3 Пепла ровно один раз за круг — гейт флагом ng.boss_0
+			if int(GameState.flags.get("ng.boss_0", 0)) == 0:
+				GameState.set_flag("ng.boss_0", 1)
+				Achv.grant_ash(3)
 			GameState.add_xp(BOSS_XP)
 			GameState.toast.emit("Гниль отступает!")
 			# tension смолкла: возвращаем тему пещеры, только если герой ещё в ней;

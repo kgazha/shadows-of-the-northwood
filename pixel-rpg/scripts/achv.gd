@@ -12,9 +12,10 @@ extends Node
 
 static var I: Achv               # синглтон; назначает сам себя в _enter_tree
 
-## «Пепел» (мета-валюта §4) ещё не реализован — награды в Пепле временно
-## конвертируются золотом: 1 Пепел = ASH_GOLD золота. Временная мера до P1.
-const ASH_GOLD := 15
+## «Пепел» (мета-валюта §4) выдаётся скриптом res://scripts/ash.gd. class_name в
+## рантаймовом ClassDB 4.7.2 отсутствует (паттерн settings_menu.gd) — резолвим
+## через ResourceLoader.exists + load.
+const ASH_PATH := "res://scripts/ash.gd"
 
 ## Подменный «сейчас» для headless-тестов (0 — реальные часы).
 static var test_now := 0.0
@@ -41,17 +42,42 @@ static func _f(key: String, def: Variant) -> Variant:
 	return GameState.flags.get(key, def)  # только .get(): старые сейвы не ломаем
 
 ## Анлок по id из таблицы §2: повторно — false без награды (идемпотентность).
-## Награду в Пепле временно выдаём золотом (см. ASH_GOLD).
+## Золотая часть — add_gold, пепельная — grant_ash (только при первом анлоке).
 static func unlock(id: String, gold: int, ash: int) -> bool:
 	var key := "ach." + id
 	if bool(_f(key, false)):
 		return false
 	GameState.set_flag(key, true)
-	var total := gold + ASH_GOLD * ash
-	if total > 0:
-		GameState.add_gold(total)  # gold_changed → автосейв: флаги уедут в сейв
+	if gold > 0:
+		GameState.add_gold(gold)  # gold_changed → автосейв: флаги уедут в сейв
+	var ash_ok := grant_ash(ash)
 	GameAudio.sfx("ui_levelup")
-	GameState.toast.emit("Достижение: %s (+%d зол.)" % [_title(id), total])
+	var reward := ""
+	if gold > 0:
+		reward = "+%d зол." % gold
+	if ash_ok:
+		reward += (", " if reward != "" else "") + "+%d пепла" % ash
+	var msg := "Достижение: " + _title(id)
+	if reward != "":
+		msg += " (%s)" % reward
+	GameState.toast.emit(msg)
+	return true
+
+## Выдача «Пепла» (§4.1): класс по class_name в ClassDB 4.7.2 не резолвится —
+## ResourceLoader.exists + load (паттерн settings_menu.gd) и статический вызов
+## Ash.add(n). После КАЖДОЙ успешной выдачи — GameState.save_game(): для Пепла
+## нет автосейва через gold_changed. false — начисления не было.
+static func grant_ash(n: int) -> bool:
+	n = int(n)
+	if n <= 0:
+		return false
+	if not ResourceLoader.exists(ASH_PATH):
+		return false
+	var sc := load(ASH_PATH) as GDScript
+	if sc == null:
+		return false
+	sc.call("add", n)
+	GameState.save_game()
 	return true
 
 static func _title(id: String) -> String:
@@ -142,8 +168,9 @@ func _check_wealth() -> void:
 		unlock("wealth", 0, 1)
 
 # --- ежедневная награда (§3): разово при старте, молча в тех же сутки/откате ---
-# GameState.save_game() ниже — единственный легальный прямой вызов сейва из
-# фичи: set_flag автосейв не триггерит, а stamp обязан пережить выход.
+# GameState.save_game() ниже и save_game() внутри grant_ash — единственные
+# легальные прямые вызовы сейва из фичи: set_flag автосейв не триггерит, а
+# stamp/Пепел обязаны пережить выход.
 
 func _daily() -> void:
 	var now := _now()
@@ -192,8 +219,8 @@ func _grant_daily(day: int) -> void:
 			GameState.add_xp(10)
 			text = "+50 зол., +10 опыта"
 		7:
-			gold = 80 + ASH_GOLD * 2  # «2 Пепла» временно золотом (§4)
-			text = "+%d зол." % gold
+			gold = 80
+			text = "+80 зол., +2 пепла" if grant_ash(2) else "+80 зол."
 		_:
 			return
 	if gold > 0:
