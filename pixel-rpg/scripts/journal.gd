@@ -123,7 +123,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _open:
 			close()
 			get_viewport().set_input_as_handled()
-		elif not GameState.input_locked:  # диалог/модалка — журнал не открываем
+		elif not GameState.input_locked and not Shop.is_open():  # диалог/модалка/лавка — журнал не открываем
 			open()
 			get_viewport().set_input_as_handled()
 	elif event.physical_keycode == KEY_ESCAPE and _open:

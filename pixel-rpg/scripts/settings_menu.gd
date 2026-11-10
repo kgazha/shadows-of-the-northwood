@@ -120,20 +120,21 @@ func _exit_tree() -> void:
 
 func _input(event: InputEvent) -> void:
 	# _input идёт раньше GUI и _unhandled_input: Esc перехватываем первыми.
-	if not (event is InputEventKey) or not event.pressed or event.echo:
+	if not (event is InputEventKey) or event.echo:
 		return
-	if event.physical_keycode == KEY_ESCAPE:
-		if _open:
+	if _open:
+		# Меню мышиное: глотаем ВСЕ клавиатурные события, включая release:
+		# дошедшее до world-страховки release-событие снимало бы наш
+		# input_locked до перелока в _process (мигание блокировки).
+		if event.pressed and event.physical_keycode == KEY_ESCAPE:
 			close()
-			get_viewport().set_input_as_handled()
-		elif not _busy():
+		get_viewport().set_input_as_handled()
+		return
+	if event.pressed and event.physical_keycode == KEY_ESCAPE:
+		if not _busy():
 			open()
 			get_viewport().set_input_as_handled()
 		return
-	if _open:
-		# Меню мышиное: глотаем ВСЕ клавиши (включая стрелки/Space/Tab — у
-		# softlock-страховки мира не должно быть ни повода, ни события).
-		get_viewport().set_input_as_handled()
 
 ## Клик мимо панели — закрыть (вуаль под панелью, по панели клики не проходят).
 func _on_dim_input(event: InputEvent) -> void:
@@ -359,6 +360,14 @@ func _ui_windows_open() -> bool:
 		return true
 	if h.has_method("is_modal_open") and h.is_modal_open():
 		return true
+	# Открытые лавка/журнал: Esc принадлежит им. Наш _input опережает их
+	# _unhandled-фазы — без этого гейта Esc «воровался» у лавки/журнала:
+	# окно под меню не закрывалось, а Esc открывал меню поверх него.
+	if Shop.is_open():
+		return true
+	for c in p.get_children():
+		if c is Journal and c.is_open():
+			return true
 	return false
 
 ## Открытию мешает любой чужой владелец ввода: наш lock ставится только поверх
