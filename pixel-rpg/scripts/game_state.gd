@@ -501,11 +501,15 @@ func start_ng_plus() -> int:
 	# квестовые/диалоговые флаги (q.*, q.got.*, q.last.*) и Пепелище (ashen.*:
 	# ведьма/сундук/интро) — перепроходятся каждый круг (канон-решение оркестратора:
 	# Пепла с ведьмы не течёт, зона пересоздаётся живой);
+	# ng.boss_<w> — пер-волновые гейты пепла за босса (+3/убийство). Без сброса
+	# повторные круги на кап-волне остаются без босс-пепла и ретеншн-луп
+	# пересыхает; ach.* уже разблокированные (ng_crowns) не откатываются —
+	# unlock идемпотентен по ach.-флагам.
 	# collect-then-erase: не мутируем flags во время итерации по нему
 	var wipe_keys: Array = []
 	for k in flags:
 		var ks := String(k)
-		if ks.begins_with("q.") or ks.begins_with("ashen."):
+		if ks.begins_with("q.") or ks.begins_with("ashen.") or ks.begins_with("ng.boss_"):
 			wipe_keys.append(k)
 	for k in wipe_keys:
 		flags.erase(k)

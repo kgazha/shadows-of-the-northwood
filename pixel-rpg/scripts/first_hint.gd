@@ -74,7 +74,9 @@ func _ready() -> void:
 ## Публичный вход: id — стабильный ключ дедупа (первый слайм, первый костёр,
 ## ...), text — одна строка на ~60 символов. Повтор того же id за сейв — no-op.
 func show_hint(id: String, text: String) -> void:
-	if String(GameState.flags.get("hint." + id, "")) != "":
+	# str(), не String(): сейв — недоверенный вход (SaveVault-импорт/ручная
+	# правка), а String(bool|int) в GDScript — runtime-краш (находка qa10 F-1).
+	if str(GameState.flags.get("hint." + id, "")) != "":
 		return                       # показан в этой сейв-жизни
 	if _active == id:
 		return
@@ -95,7 +97,7 @@ func _process(delta: float) -> void:
 		var q: Array = _queue.pop_front()
 		var id := String(q[0])
 		# вторая проверка дефолта: флаг мог встать за время ожидания в очереди
-		if String(GameState.flags.get("hint." + id, "")) != "":
+		if str(GameState.flags.get("hint." + id, "")) != "":
 			continue
 		_active = id
 		GameState.set_flag("hint." + id, "1")
