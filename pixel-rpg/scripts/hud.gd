@@ -189,6 +189,8 @@ func setup(p_world: Node2D) -> void:
 	_build_skill_panel(th)
 	_build_alch_ui(th)
 	_build_class_modal(th)
+	# мета-счётчики (P2 §3.4/§4): Пепел + daily-серия, левый нижний угол — meta_hud.gd
+	add_child(load("res://scripts/meta_hud.gd").new())
 	# стрелка-указатель цели: рисуется на канвасе CanvasLayer = экранные координаты
 	marker = Polygon2D.new()
 	marker.polygon = PackedVector2Array([Vector2(9, 0), Vector2(-6, -6), Vector2(-3, 0), Vector2(-6, 6)])
