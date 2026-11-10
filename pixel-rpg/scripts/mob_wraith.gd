@@ -235,5 +235,6 @@ func hurt(dmg: int, from: Vector2) -> void:
 		GameState.add_xp(15)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Тенеплёт рассеян! (+15 XP)")
+		Loot.on_mob_death("wraith", global_position)
 		GameState.quest_changed.emit()
 		queue_free()

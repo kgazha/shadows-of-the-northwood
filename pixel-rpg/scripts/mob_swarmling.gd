@@ -168,6 +168,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		GameState.add_xp(3)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Мглокрыс повержен! (+3 XP)")
+		Loot.on_mob_death("swarmling", global_position)
 		GameState.quest_changed.emit()
 		_on_swarm_death()
 		queue_free()
