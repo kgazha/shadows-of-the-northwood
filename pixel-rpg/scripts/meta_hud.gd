@@ -20,11 +20,13 @@ extends Control
 
 const TICK := 0.5
 const COL_ASH := Color(0.80, 0.77, 0.73)        # «пепельный» серый
+const COL_NG := Color(0.95, 0.78, 0.45)         # янтарь «Круга» — тёплее пепла
 const COL_DAILY_OK := Color(0.55, 0.85, 0.5)    # зелёный счётчика журнала
 const COL_DAILY_MISS := Color(0.85, 0.5, 0.45)  # тревожный, но не кислотный
 
 var _t := 0.0
 var _sig := ""
+var _ng_lbl: Label
 var _ash_lbl: Label
 var _daily_lbl: Label
 
@@ -33,14 +35,16 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	offset_left = 8
-	offset_top = -96   # выше полосы диалогов hud.panel (top -66)
+	offset_top = -110  # выше полосы диалогов hud.panel (top -66); место под 3-ю строку NG+
 	offset_right = 180
 	offset_bottom = -70
 	var vb := VBoxContainer.new()
 	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_theme_constant_override("separation", 1)
+	_ng_lbl = _mk(COL_NG)
 	_ash_lbl = _mk(COL_ASH)
 	_daily_lbl = _mk(COL_DAILY_OK)
+	vb.add_child(_ng_lbl)  # «Круг N» — над рядом Пепла (младший счётчик — выше)
 	vb.add_child(_ash_lbl)
 	vb.add_child(_daily_lbl)
 	add_child(vb)
@@ -82,10 +86,15 @@ func _update() -> void:
 	var streak := int(GameState.flags.get("daily.streak", 0))
 	var stamp := float(GameState.flags.get("daily.stamp", 0.0))
 	var today := stamp > 0.0 and Time.get_unix_time_from_system() - stamp < 86400.0
-	var sig := "%d|%d|%d|%d" % [bal, streak, 1 if today else 0, 1 if meta_open else 0]
+	var wave := GameState.ng_wave()
+	var sig := "%d|%d|%d|%d|%d" % [bal, streak, 1 if today else 0, 1 if meta_open else 0, wave]
 	if sig == _sig:
 		return
 	_sig = sig
+	# 0) Круг: только в NG+ (обычная игра — счётчика нет, HUD не пухнет)
+	var ng_vis := wave > 0
+	_ng_lbl.visible = ng_vis
+	_ng_lbl.text = "Круг %d" % wave
 	# 1) Пепел: при balance>0 ИЛИ открытом meta.* (новичку HUD не пухнет)
 	var ash_vis := bal > 0 or meta_open
 	_ash_lbl.visible = ash_vis
@@ -100,4 +109,4 @@ func _update() -> void:
 		else:
 			_daily_lbl.text = "Пропуск — серия сброшена"
 			_daily_lbl.add_theme_color_override("font_color", COL_DAILY_MISS)
-	visible = ash_vis or daily_vis
+	visible = ng_vis or ash_vis or daily_vis
