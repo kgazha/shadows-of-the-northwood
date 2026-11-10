@@ -1,0 +1,207 @@
+extends CharacterBody2D
+## Мглокрыс: мелкий, быстрый, слабый. Спавнится СТАЕЙ 3–5 штук (world.gd задаёт
+## каждому один и тот же swarm_id до setup). У стаи общий «испуг»: когда гибнет
+## половина и больше — уцелевшие разбегаются в разные стороны и исчезают, не
+## дожидаясь добивания. HP 2, урон 1, опыта мало — стая как препятствие, не стена.
+## Лист assets/mobs_swarmling.png — 48x64: 3 кадра (возня / перебежка / укус)
+## на 4 ряда (вниз / влево / вправо / вверх).
+
+const LEASH := 56.0           # реакция только на героя рядом
+const HIT_DIST := 8.0
+const SPEED_CHASE := 54.0     # быстрее слайма: мелкий и юркий
+const SPEED_FLEE := 66.0      # испуганная крыса почти не догоняема
+const SPEED_WANDER := 14.0
+const FLEE_RADIUS := 128.0    # отбежал на это расстояние — стая растворилась в тумане
+const MAX_HP := 2
+
+## Реестры стай: swarm_id -> {total, alive, panicked, scatter}.
+## static — переживает конкретный экземпляр; чистится сам, когда стая гибнет/исчезает.
+static var SWARMS := {}
+
+## Имя стаи задаётся МИРОМ до setup (все крысы запуска одной волной).
+var swarm_id := "solo"
+var world: Node2D
+var hp := MAX_HP
+var max_hp := MAX_HP
+var anim: AnimatedSprite2D
+var hurt_t := 0.0
+## Заморозка («Морозная нова» мага): >0 — не двигается и не кусает, синий тинт.
+var freeze_t := 0.0
+var wander_t := 0.0
+var wander_dir := Vector2.ZERO
+var flee_dir := Vector2.ZERO
+var home := Vector2.ZERO
+var facing := "down"
+var bit_t := 0.0              # >0 — проигрывается кадр укуса
+var dying := false            # страж повторной смерти: XP — ровно один раз
+var _shape: CollisionShape2D
+
+func setup(p_world: Node2D, tile: Vector2i) -> void:
+	world = p_world
+	position = world.tile_to_world(tile)
+	home = position
+	collision_layer = 4
+	collision_mask = 1 | 2 | 4
+	add_to_group("enemy")
+	var sw := _swarm()
+	sw.total = int(sw.total) + 1
+	sw.alive = int(sw.alive) + 1
+	var cs := CollisionShape2D.new()
+	var sh := RectangleShape2D.new()
+	sh.size = Vector2(8, 6)
+	cs.shape = sh
+	add_child(cs)
+	_shape = cs
+	anim = AnimatedSprite2D.new()
+	var fr := SpriteFrames.new()
+	fr.remove_animation("default")
+	if ResourceLoader.exists("res://assets/mobs_swarmling.png"):
+		var tex := load("res://assets/mobs_swarmling.png")
+		var rows := {"down": 0, "left": 1, "right": 2, "up": 3}
+		for dir_name: String in rows.keys():
+			var row: int = int(rows[dir_name])
+			for kind: Array in [["idle", [0, 1], true, 4.0], ["walk", [0, 1], true, 9.0], ["act", [2], false, 0.0]]:
+				var an := "%s_%s" % [String(kind[0]), dir_name]
+				fr.add_animation(an)
+				fr.set_animation_loop(an, bool(kind[2]))
+				if bool(kind[2]):
+					fr.set_animation_speed(an, float(kind[3]))
+				for col: int in kind[1]:
+					var at := AtlasTexture.new()
+					at.atlas = tex
+					at.region = Rect2(col * 16, row * 16, 16, 16)
+					fr.add_frame(an, at, 0.0)
+		anim.sprite_frames = fr
+		add_child(anim)
+		anim.play("idle_down")
+	else:
+		push_warning("Нет ассета: assets/mobs_swarmling.png — у мглокрыса цветная заглушка")
+		var ph := ColorRect.new()
+		ph.color = Color(0.42, 0.36, 0.3)
+		ph.size = Vector2(9, 6)
+		ph.position = Vector2(-4, -3)
+		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(ph)
+
+func _swarm() -> Dictionary:
+	if not SWARMS.has(swarm_id):
+		SWARMS[swarm_id] = {"total": 0, "alive": 0, "panicked": false, "scatter": false}
+	return SWARMS[swarm_id]
+
+func _physics_process(delta: float) -> void:
+	if dying:
+		return
+	hurt_t = maxf(0.0, hurt_t - delta)
+	freeze_t = maxf(0.0, freeze_t - delta)
+	bit_t = maxf(0.0, bit_t - delta)
+	if hurt_t > 0.0:
+		modulate = Color(1, 0.5, 0.5)
+	elif freeze_t > 0.0:
+		modulate = Color(0.55, 0.75, 1.0)
+	else:
+		modulate = Color.WHITE
+	if GameState.input_locked or world.player == null or GameState.hp <= 0:
+		velocity = Vector2.ZERO
+		return
+	if freeze_t > 0.0:
+		velocity = Vector2.ZERO
+		return
+	var player: CharacterBody2D = world.player
+	var sw := _swarm()
+	var d := global_position.distance_to(player.global_position)
+	if bool(sw.panicked):
+		# общий испуг: каждая крыса уже выбрала свой угол разлёта — просто убегаем
+		velocity = flee_dir * SPEED_FLEE
+		move_and_slide()
+		_face(flee_dir)
+		_anim()
+		if global_position.distance_to(home) > FLEE_RADIUS:
+			# стая растворилась — крыса убегает за пределы сцены навсегда
+			remove_from_group("enemy")
+			queue_free()
+		return
+	if d < LEASH:
+		velocity = (player.global_position - global_position).normalized() * SPEED_CHASE
+		if d < HIT_DIST:
+			player.take_damage(1)
+			bit_t = 0.25
+	else:
+		wander_t -= delta
+		if wander_t <= 0.0:
+			wander_t = randf_range(0.8, 2.0)
+			if randf() < 0.3:
+				wander_dir = Vector2.ZERO
+			else:
+				wander_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)).normalized()
+		velocity = wander_dir * SPEED_WANDER
+	_face(player.global_position - global_position if d < LEASH else velocity)
+	_anim()
+	move_and_slide()
+
+func _face(dvec: Vector2) -> void:
+	if dvec == Vector2.ZERO:
+		return
+	if absf(dvec.x) > absf(dvec.y):
+		facing = "right" if dvec.x > 0.0 else "left"
+	else:
+		facing = "up" if dvec.y < 0.0 else "down"
+
+func _anim() -> void:
+	if anim == null or not anim.sprite_frames.has_animation("idle_down"):
+		return
+	var want := "act" if bit_t > 0.0 else ("walk" if velocity.length_squared() > 1.0 else "idle")
+	var an := "%s_%s" % [want, facing]
+	if anim.animation != an:
+		anim.play(an)
+
+func hurt(dmg: int, from: Vector2) -> void:
+	if dying:
+		return  # труп не получает урон: XP и quest_changed — ровно один раз
+	GameState.entered_combat()  # контакт с врагом — реген паузится
+	hp -= dmg
+	hurt_t = 0.3
+	velocity = (global_position - from).normalized() * 55.0
+	if hp <= 0:
+		dying = true
+		remove_from_group("enemy")
+		GameAudio.sfx("drop")
+		GameState.add_xp(3)
+		GameAudio.sfx("coin")
+		GameState.toast.emit("Мглокрыс повержен! (+3 XP)")
+		GameState.quest_changed.emit()
+		_on_swarm_death()
+		queue_free()
+
+## Общий испуг стаи: как только живых стало не больше половины — уцелевшие
+## выбирают веерные направления разлёта (один раз на стаю, один тост).
+func _on_swarm_death() -> void:
+	var sw := _swarm()
+	sw.alive = maxi(0, int(sw.alive) - 1)
+	if bool(sw.panicked) or int(sw.alive) <= 0:
+		_maybe_forget_swarm()
+		return
+	if int(sw.alive) * 2 > int(sw.total):
+		return
+	sw.panicked = true
+	GameState.toast.emit("Стая мглокрысов шарахается в разные стороны!")
+	# веер: каждый уцелевший разбегается в свою сторону от центра стаи
+	var survivors: Array = []
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(e) and e.has_method("_is_swarm_member") and e._is_swarm_member(swarm_id):
+			survivors.append(e)
+	for i: int in range(survivors.size()):
+		var ang := TAU * float(i) / maxf(1.0, float(survivors.size())) + randf_range(-0.35, 0.35)
+		survivors[i].call("set_flee", Vector2(cos(ang), sin(ang)))
+
+func _is_swarm_member(id: String) -> bool:
+	return swarm_id == id and not dying
+
+func set_flee(dirv: Vector2) -> void:
+	flee_dir = dirv.normalized() if dirv != Vector2.ZERO else Vector2(0.0, -1.0)
+
+## Последняя крыса стаи исчезла (убита или убежала) — чистим реестр за собой,
+## чтобы static-словарь не копил мёртвые записи (никаких таймеров после queue_free).
+func _maybe_forget_swarm() -> void:
+	var sw: Dictionary = SWARMS.get(swarm_id, {})
+	if int(sw.get("alive", 0)) <= 0:
+		SWARMS.erase(swarm_id)

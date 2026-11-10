@@ -236,6 +236,19 @@ func _spawn_entities() -> void:
 		var slime = slime_script.new()
 		village_zone.add_child(slime)
 		slime.setup(self, Vector2i(int(e[0]), int(e[1])))
+	# Боевые архетипы (sand_m): лучники держат дистанцию в дальних углах леса…
+	var archer_script := load("res://scripts/mob_archer.gd")
+	for e: Array in [[4, 26], [44, 26]]:
+		var arch = archer_script.new()
+		village_zone.add_child(arch)
+		arch.setup(self, Vector2i(int(e[0]), int(e[1])))
+	# …а стая мглокрыс — на западной поляне (общий испуг при живых <= половины).
+	var rat_script := load("res://scripts/mob_swarmling.gd")
+	for e: Array in [[6, 16], [9, 16], [6, 18], [10, 18]]:
+		var rat = rat_script.new()
+		rat.swarm_id = "glade_west"
+		village_zone.add_child(rat)
+		rat.setup(self, Vector2i(int(e[0]), int(e[1])))
 
 ## Костры-привалы (E-отдых + варка). Костёр — Area2D, использует тот же паттерн
 ## world.near, что NPC/травы; одноразовость живёт в GameState.campfires_used.
@@ -270,6 +283,13 @@ func _build_cave() -> void:
 	# коллайдер сразу, а не только после перезахода (пещера строится один раз)
 	GameState.stats_changed.connect(_sync_cave_chest)
 	_spawn_cave_mobs()
+	# Тенеплёты в нише босса (появляются только живым боссом, песочница sand_m).
+	if not GameState.boss_defeated and dungeon_zone != null and dungeon_zone.boss_node != null:
+		var wraith_script := load("res://scripts/mob_wraith.gd")
+		for t: Vector2i in [Vector2i(9, 16), Vector2i(13, 17)]:
+			var wr = wraith_script.new()
+			dungeon_zone.add_child(wr)
+			wr.setup(self, t)
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
 
