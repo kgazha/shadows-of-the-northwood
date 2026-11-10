@@ -34,6 +34,7 @@ var home := Vector2.ZERO
 var facing := "down"
 var bit_t := 0.0              # >0 — проигрывается кадр укуса
 var dying := false            # страж повторной смерти: XP — ровно один раз
+var swarm_left := false       # крыса покинула стайный учёт ровно один раз (смерть XOR бегство)
 var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
@@ -118,6 +119,7 @@ func _physics_process(delta: float) -> void:
 		if global_position.distance_to(home) > FLEE_RADIUS:
 			# стая растворилась — крыса убегает за пределы сцены навсегда
 			remove_from_group("enemy")
+			_leave_swarm()  # фикс W2: бегство — тоже убыль стаи (тот же путь, что смерть; без XP/тоста)
 			queue_free()
 		return
 	if d < LEASH:
@@ -177,6 +179,15 @@ func hurt(dmg: int, from: Vector2) -> void:
 ## Общий испуг стаи: как только живых стало не больше половины — уцелевшие
 ## выбирают веерные направления разлёта (один раз на стаю, один тост).
 func _on_swarm_death() -> void:
+	_leave_swarm()  # смерть — один из вариантов ухода из стаи
+
+## Единый учёт выхода крысы из стаи (смерть XOR бегство): ровно один декремент
+## alive на особь (страж swarm_left). Иначе в static-реестре вечно висит запись
+## с panicked=true (фикс W2: убежавшая крыса не убывала из стаи).
+func _leave_swarm() -> void:
+	if swarm_left:
+		return
+	swarm_left = true
 	var sw := _swarm()
 	sw.alive = maxi(0, int(sw.alive) - 1)
 	if bool(sw.panicked) or int(sw.alive) <= 0:
