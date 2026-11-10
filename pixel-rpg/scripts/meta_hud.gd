@@ -87,7 +87,9 @@ func _update() -> void:
 	var stamp := float(GameState.flags.get("daily.stamp", 0.0))
 	var today := stamp > 0.0 and Time.get_unix_time_from_system() - stamp < 86400.0
 	var wave := GameState.ng_wave()
-	var sig := "%d|%d|%d|%d|%d" % [bal, streak, 1 if today else 0, 1 if meta_open else 0, wave]
+	# Q4BUG-1: сигнатура обязана кодировать бит stamp>0 — иначе переход
+	# «пропуск» (stamp=-48ч) → stamp=0 даёт ту же подпись и лейбл протухает.
+	var sig := "%d|%d|%d|%d|%d|%d" % [bal, streak, 1 if today else 0, 1 if meta_open else 0, wave, 1 if stamp > 0.0 else 0]
 	if sig == _sig:
 		return
 	_sig = sig
