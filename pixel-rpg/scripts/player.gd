@@ -31,6 +31,7 @@ var pending_mult := 1.0               # «Мощный удар»: множит�
 var mark_target: Node2D = null        # «Метка охотника»
 var mark_t := 0.0
 var siphon_t := 0.0                   # «Поглощение»: лечение от попаданий снарядов
+var _atk_fx_t: Tween = null           # туин «подачи тела», один на героя
 
 @onready var world: Node2D = get_parent()
 
@@ -226,7 +227,13 @@ func _attack_in_range() -> void:
 		do_attack()
 	else:
 		attack_cd = float(class_data().attack_speed)
-		fire_projectile(global_position.direction_to(attack_target.global_position))
+		var dir := global_position.direction_to(attack_target.global_position)
+		_recoil_fx(dir)
+		fire_projectile(dir)
+
+## Отдача дальнобойщика: корпус слегка отводит назад от выстрела.
+func _recoil_fx(dir: Vector2) -> void:
+	_lunge_fx(-dir, 3.0)
 
 func face_to(p: Vector2) -> void:
 	var d := p - global_position
@@ -260,7 +267,77 @@ func do_attack() -> void:
 	attack_cd = float(class_data().attack_speed)
 	var mult := pending_mult
 	pending_mult = 1.0
+	_lunge_fx(facing_dir(), 5.0)
+	_slash_fx()
 	melee_hit(mult)
+
+# --- визуал атак (без новых ассетов: pure tween/poligon) ---
+
+## Подача тела: спрайт резко наклоняется к цели и упруго возвращается.
+## Двигаем anim (визуальный ребёнок), физику не трогаем.
+func _lunge_fx(dir: Vector2, dist: float) -> void:
+	if _atk_fx_t != null and _atk_fx_t.is_valid():
+		_atk_fx_t.kill()
+	anim.position = Vector2.ZERO
+	_atk_fx_t = create_tween()
+	_atk_fx_t.tween_property(anim, "position", dir * dist, 0.06)
+	_atk_fx_t.tween_property(anim, "position", Vector2.ZERO, 0.13)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+## Дуга замаха: серповидный «всплеск» клинка, проворачивается по дуге и гаснет.
+func _slash_fx(color := Color(0.93, 0.96, 1.0, 0.9)) -> void:
+	var sw := Node2D.new()
+	sw.name = "SlashFx"
+	sw.global_position = global_position
+	var base := facing_dir().angle()
+	sw.rotation = base - 0.85
+	var arc := Polygon2D.new()
+	var pts := PackedVector2Array()
+	var n := 8
+	for i in n + 1:
+		var a := deg_to_rad(-55.0 + 110.0 * float(i) / float(n))
+		pts.append(Vector2(cos(a), sin(a)) * 14.0)
+	for i in n + 1:
+		var a := deg_to_rad(55.0 - 110.0 * float(i) / float(n))
+		pts.append(Vector2(cos(a), sin(a)) * 8.5)
+	arc.polygon = pts
+	arc.color = color
+	sw.add_child(arc)
+	world.add_child(sw)
+	var t := sw.create_tween()
+	t.set_parallel(true)
+	t.tween_property(sw, "rotation", base + 0.85, 0.16)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	t.tween_property(arc, "modulate:a", 0.0, 0.22)
+	t.chain().tween_callback(sw.queue_free)
+
+## Расходящееся кольцо (вихревой удар, нова).
+func _ring_fx(radius: float, color := Color(0.95, 0.9, 0.7, 0.35)) -> void:
+	var ring := Polygon2D.new()
+	ring.name = "RingFx"
+	var pts := PackedVector2Array()
+	for i in 20:
+		var a := TAU * float(i) / 20.0
+		pts.append(Vector2(cos(a), sin(a)))
+	ring.polygon = pts
+	ring.color = color
+	ring.scale = Vector2.ONE * 6.0
+	world.add_child(ring)
+	ring.global_position = global_position
+	var t := ring.create_tween()
+	t.set_parallel(true)
+	t.tween_property(ring, "scale", Vector2.ONE * radius, 0.25)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(ring, "modulate:a", 0.0, 0.3)
+	t.chain().tween_callback(ring.queue_free)
+
+## Оборот героя вокруг себя (вихревой удар): спрайт делает полный оборот.
+func _spin_fx() -> void:
+	anim.rotation = 0.0
+	var t := create_tween()
+	t.tween_property(anim, "rotation", TAU, 0.28)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_callback(func(): anim.rotation = 0.0)
 
 ## Мгновенный мили-удар: враги в радиусе точки удара (12 px по facing).
 func melee_hit(mult: float, center := Vector2.INF, radius := 13.0, only: Node2D = null) -> void:
@@ -277,11 +354,12 @@ func melee_hit(mult: float, center := Vector2.INF, radius := 13.0, only: Node2D 
 static func _enemy_size(e: Node) -> float:
 	return 18.0 if e.is_in_group("boss") else 10.0
 
-func _spark(c: Vector2) -> void:
+func _spark(c: Vector2, color := Color(1, 1, 0.8, 0.85), size := 6.0) -> void:
 	var spark := ColorRect.new()
-	spark.color = Color(1, 1, 0.8, 0.85)
-	spark.size = Vector2(6, 6)
-	spark.position = c - global_position - Vector2(3, 3)
+	spark.name = "SparkFx"
+	spark.color = color
+	spark.size = Vector2(size, size)
+	spark.position = c - global_position - Vector2(size, size) * 0.5
 	spark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(spark)
 	var t := spark.create_tween()
@@ -296,9 +374,12 @@ func fire_projectile(dir: Vector2, mult := 1.0, pierce := false, aoe := 0.0, spr
 		return
 	var tgt := attack_target if attack_target != null and is_instance_valid(attack_target) else null
 	var d := dmg_vs(tgt, mult) if tgt != null else int(round(float(GameState.damage) * mult))
+	var muzzle := global_position + dir * 8.0
 	var pd = PROJ.new()
 	world.add_child(pd)
-	pd.setup(global_position + dir * 8.0, dir, float(class_data().proj_speed), d, idx, pierce, aoe, self)
+	pd.setup(muzzle, dir, float(class_data().proj_speed), d, idx, pierce, aoe, self)
+	# вспышка у дула: очевидно, что снаряд только что выпущен
+	_spark(muzzle, Color(1, 1, 0.85, 0.9), 4.0)
 
 # --- скиллы ---
 
@@ -322,10 +403,14 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			var t := _skill_target()
 			if t != null and global_position.distance_to(t.global_position) <= float(class_data().radius):
 				face_to(t.global_position)
+				_lunge_fx(facing_dir(), 7.0)
+				_slash_fx(Color(1.0, 0.85, 0.4, 0.95))
 				melee_hit(2.0, Vector2.INF, 13.0, t)
 			else:
 				pending_mult = 2.0  # догнёт — следующий удар x2
 		"whirlwind":
+			_spin_fx()
+			_ring_fx(28.0, Color(0.95, 0.92, 0.7, 0.4))
 			melee_hit(1.5, global_position, 28.0)
 		"second_wind":
 			GameState.heal(4)
@@ -333,6 +418,8 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 		"execute":
 			var t := _skill_target()
 			face_to(t.global_position)
+			_lunge_fx(facing_dir(), 8.0)
+			_slash_fx(Color(1.0, 0.45, 0.35, 0.95))
 			var mx := 12.0 if t.is_in_group("boss") else 3.0
 			if float(t.hp) <= mx * 0.25:
 				t.hurt(999, global_position)  # казнён
@@ -360,6 +447,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 		"firebolt":
 			fire_projectile(_shoot_dir(), 2.5, false, 12.0, 1)
 		"frost_nova":
+			_ring_fx(32.0, Color(0.55, 0.85, 1.0, 0.5))
 			for e in get_tree().get_nodes_in_group("enemy"):
 				if is_instance_valid(e) and "freeze_t" in e and global_position.distance_to(e.global_position) <= 32.0:
 					e.freeze_t = 3.0
