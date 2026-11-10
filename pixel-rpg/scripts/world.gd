@@ -71,6 +71,10 @@ func _ready() -> void:
 	add_child(audio)
 	GameAudio.I = audio
 	GameAudio.music("forest")
+	# ПКМ-перемещение: синглтон ClickMove (по образцу GameAudio — экземпляр + static I).
+	var click_move := ClickMove.new()
+	add_child(click_move)
+	ClickMove.I = click_move
 	var mf := FileAccess.open("res://data/map_village.json", FileAccess.READ)
 	meta = JSON.parse_string(mf.get_as_text())
 	map_rows = meta["grid"]

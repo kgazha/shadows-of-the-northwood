@@ -3,6 +3,12 @@ extends Area2D
 ## Травы — возобновляемый ресурс (зелья): через ~50 с отрастают на месте.
 
 const HERB_RESPAWN := 50.0
+## Травы в бою (combat_t > 0) — правило «на шуму боя»: сбор не запрещён, но
+## количество HERB_PICK режется множителем COMBAT_HERB_MULT с округлением вверх
+## и нижним пределом COMBAT_HERB_MIN (минимум 1, если куст не пустой).
+const HERB_PICK := 1
+const COMBAT_HERB_MULT := 0.5
+const COMBAT_HERB_MIN := 1
 
 var world: Node2D
 var kind := "herb"
@@ -59,8 +65,16 @@ func try_interact() -> void:
 		if GameState.elder_quest == 0:
 			GameState.toast.emit("Рановато. Сначала поговори со старейшиной.")
 			return
-		GameState.herbs += 1
-		GameState.toast.emit("Трава собрана (всего: %d). Q — испить снадобья (+3 HP)" % GameState.herbs)
+		var picked := HERB_PICK
+		var in_combat := GameState.combat_t > 0.0
+		if in_combat:
+			picked = maxi(COMBAT_HERB_MIN, ceili(HERB_PICK * COMBAT_HERB_MULT))
+		GameState.herbs += picked
+		if in_combat:
+			# один тост: HUD показывает только последний, два подряд не годятся
+			GameState.toast.emit("На шуму боя не до трав! Собрано +%d (всего: %d)" % [picked, GameState.herbs])
+		else:
+			GameState.toast.emit("Трава собрана: +%d (всего: %d). Q — испить снадобья (+3 HP)" % [picked, GameState.herbs])
 		GameState.quest_changed.emit()
 		if GameState.elder_quest == 1 and GameState.herbs >= 3:
 			GameState.toast.emit("Достаточно! Отнеси старейшине.")

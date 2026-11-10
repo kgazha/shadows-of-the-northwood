@@ -72,10 +72,6 @@ static func drink_brewed() -> bool:
 	if GameState.hp >= GameState.max_hp:
 		GameState.toast.emit("Ты и так здрав.")
 		return false
-	if GameState.combat_t > 0.0:
-		# питьё требует секунды на глоток — в бою (COMBAT_HOLD) отказ, состояние не трогаем
-		GameState.toast.emit("Слишком тревожно — выпей после боя.")
-		return false
 	GameState.brewed_potions -= 1
 	GameState.heal(GameState.STRONG_POTION_HEAL)
 	GameState.quest_changed.emit()
