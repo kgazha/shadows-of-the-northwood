@@ -59,7 +59,7 @@ func _run() -> void:
 	print("NOTE enemies: total=%d slimes=%d brutes=%d boss=%d" % [get_tree().get_nodes_in_group("enemy").size(), slimes, brutes, boss])
 
 	# --- теория: EV из таблиц GearData.LOOT ---
-	print("NOTE EV-theory: slime=2.975 brute=5.85 boss=32.5 chest=13.0 (gold/cycle)")
+	print("NOTE EV-theory: slime=2.975 brute=6.75 boss=32.5 chest=13.0 (gold/cycle)")
 
 	# --- EV-оценка по 500 симуляций на вид ---
 	var ev_s := ev_est("slime", 500)
@@ -67,7 +67,7 @@ func _run() -> void:
 	var ev_x := ev_est("boss", 500)
 	print("NOTE EV-sim500: slime=%.3f brute=%.3f boss=%.3f" % [ev_s, ev_b, ev_x])
 	ck(absf(ev_s - 2.975) < 0.35, "EV slime ~2.975", "got %f" % ev_s)
-	ck(absf(ev_b - 5.85) < 0.5, "EV brute ~5.85", "got %f" % ev_b)
+	ck(absf(ev_b - 6.75) < 0.5, "EV brute ~6.75", "got %f" % ev_b)
 	ck(absf(ev_x - 32.5) < 2.5, "EV boss ~32.5", "got %f" % ev_x)
 	# границы бросков
 	GameState.gold = 0

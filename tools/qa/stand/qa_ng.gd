@@ -47,6 +47,20 @@ func _find_node_script(root: Node, path_part: String):
 			return r
 	return null
 
+func _mute_world_reload_hooks() -> void:
+	# Драйвер стенда живёт в ПЕРЕЗАГРУЖАЕМОЙ сцене: world.gd в _ready вешает на
+	# ng_plus_started лямбда reload_current_scene -> при start_ng_plus сцена
+	# пересоздаётся, _ready драйвера стартует заново -> ещё один круг -> петля
+	# волн до капа и убийство по таймауту. Секции 4-8 сверяют слой
+	# GameState/диска, а не пересборку сцены (пересборку крыть qa_ng2).
+	# Глушим ТОЛЬКО world-лямбды: именованный Achv._on_ng_plus (ачивки NG+)
+	# и собственный счётчик стенда (object == self) остаются подключены.
+	for c in GameState.get_signal_connection_list("ng_plus_started"):
+		var cb: Callable = c["callable"]
+		if cb.is_valid() and cb.get_object() != self \
+				and cb.get_object() != null and cb.get_object().has_method("tile_to_world"):
+			GameState.ng_plus_started.disconnect(cb)
+
 func _ready() -> void:
 	print("QA_NG_BEGIN")
 	_del_save()  # мир в _ready грузит сейв — стартуем с чистого листа
@@ -144,6 +158,8 @@ func _ready() -> void:
 	w_ctl.queue_free()
 	await get_tree().process_frame
 
+	# секции, дёргающие start_ng_plus: заглушить world-хук перезагрузки сцены
+	_mute_world_reload_hooks()
 	var w1: int = GameState.start_ng_plus()
 	ck("start_returns_1", w1 == 1, "ret=%d" % w1)
 	ck("wave_is_1", GameState.ng_wave() == 1)
@@ -157,11 +173,18 @@ func _ready() -> void:
 		and not GameState.flags.has("q.got.potion") and not GameState.flags.has("q.last.talk"))
 	ck("reset_ashen_flags", not GameState.flags.has("ashen.boss") \
 		and not GameState.flags.has("ashen.chest") and not GameState.flags.has("ashen.intro_seen"))
-	ck("keep_meta_ach_daily_ng", int(GameState.flags.get("meta.ash", 0)) == 7 \
+	# NG+ ачивки (cad57bb): внутри круга _check_ng анлокает ng_second (+1 Пепло) —
+	# meta.ash двигается, ach.ng_* появляются. «Живёт» = не потерялось, новые
+	# ach.* допускаются. 9402ee1: ng.boss_* намеренно СТИРАются (пепел босса
+	# перезарабатывается каждый круг) — проверятся отдельным reset-чеком ниже.
+	var ash_after := int(GameState.flags.get("meta.ash", 0))
+	ck("keep_meta_ach_daily_ng", ash_after >= 7 \
 		and int(GameState.flags.get("meta.bless", 0)) == 2 \
 		and int(GameState.flags.get("ach.probe", 0)) == 1 \
 		and int(GameState.flags.get("daily.streak", 0)) == 3 \
-		and int(GameState.flags.get("ng.boss_0", 0)) == 1)
+		and bool(GameState.flags.get("ach.ng_second", false)), \
+		"meta.ash=%d ng_second=%s" % [ash_after, str(GameState.flags.get("ach.ng_second", false))])
+	ck("reset_ng_boss_gates_p0", not GameState.flags.has("ng.boss_0"), "P0 9402ee1")
 	ck("keep_plain_flag", bool(GameState.flags.get("merchant_seen", false)))
 	ck("keep_gold_gear_amulet_level", GameState.gold == 123 \
 		and String(GameState.gear["weapon"]) == "sword" and GameState.has_amulet \
@@ -222,6 +245,7 @@ func _ready() -> void:
 	ck("ev_gold_ratio_x14", absf(ratio - 1.4) <= 0.21, "ratio=%.3f" % ratio)
 
 	# --- 7) Кап волны: догоняем до 5, лишние вызовы не плодят w6, сброс идёт ---
+	_mute_world_reload_hooks()  # страховка: w_live в секции 5 коннектил свой хук до free
 	for i in 4:
 		GameState.start_ng_plus()
 	ck("wave_caps_5", GameState.ng_wave() == 5, "wave=%d" % GameState.ng_wave())
@@ -232,7 +256,7 @@ func _ready() -> void:
 	ck("cap_no_w6", rc == 5 and GameState.ng_wave() == 5, "ret=%d" % rc)
 	ck("cap_still_resets", GameState.chests_used.is_empty() \
 		and GameState.campfires_used.is_empty() and int(GameState.materials["zhim"]) == 0)
-	ck("cap_keep_meta", int(GameState.flags.get("meta.ash", 0)) == 7)
+	ck("cap_keep_meta", int(GameState.flags.get("meta.ash", 0)) >= 7)
 
 	# --- 8) Персистентность: волна доживает до перезагрузки ---
 	# (gold на диске = 123 + EV-прибавка w1-прогона, сверяем со снапшотом)

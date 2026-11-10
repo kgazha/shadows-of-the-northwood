@@ -60,9 +60,13 @@ func _run() -> void:
 
 	# --- G (п.1): добитый босс после рестарта ---
 	ck(GameState.boss_defeated and GameState.cave_state == 2, "G save loaded (boss dead, cave 2)", "def=%s cs=%d" % [GameState.boss_defeated, GameState.cave_state])
+	# В группе "boss" сидит и NG+ ведьма (mob_boss2) — считаем только пещерного
+	# brute.gd, гейт которого (boss_defeated) здесь и проверяется.
 	var bosses := 0
 	for b in get_tree().get_nodes_in_group("boss"):
-		bosses += 1
+		var s = b.get_script()
+		if s != null and String(s.resource_path).contains("brute.gd"):
+			bosses += 1
 	print("NOTE R2 bosses in world after restart: %d" % bosses)
 	ck(bosses == 0, "G dead boss did NOT respawn on restart")
 	var dz = world.get("dungeon_zone")

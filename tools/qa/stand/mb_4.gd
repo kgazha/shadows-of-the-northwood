@@ -51,7 +51,7 @@ func t_gear_canon() -> void:
 	check("G: урон меча x2=4", GameState.damage == 4)
 	mk({"gear": {"weapon": "axe", "armor": ""}, "has_sword": true})
 	ld()
-	check("G: документация: axe+has_sword:true — M2 НЕ гасит флаг", GameState.has_sword == true)
+	check("G: N3-зеркало: axe+has_sword:true — M2 гасит флаг (6e208ef)", GameState.has_sword == false)
 	check("G: урон по axe (x2.5)=5", GameState.damage == 5)
 
 func t_flags_types() -> void:

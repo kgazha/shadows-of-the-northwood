@@ -1,6 +1,7 @@
 extends Node
-## QA-харнесс s5: «воскресает» ли убитый босс при рестарте процесса
-## (спавн пещеры исполняется до GameState.load_game()).
+## QA-харнесс s5: «воскресает» ли убитый пещерный босс при рестарте процесса.
+## Исторический корень (спавн до load_game()) исправлен в world.gd; стенд
+## остался как регресс-гейт: cave_state=2 в сейве => brute не спавнится.
 
 var world: Node2D
 var fails := {"n": 0}
@@ -15,6 +16,17 @@ func ck(cond: bool, name: String, detail: String = "") -> void:
 func frames(n: int) -> void:
 	for i in n:
 		await get_tree().physics_frame
+
+# Только пещерный босс (brute.gd): ведьма mob_boss2 тоже в группе "boss".
+func _cave_bosses() -> Array:
+	var out: Array = []
+	for b in get_tree().get_nodes_in_group("boss"):
+		if b == null or b.is_queued_for_deletion():
+			continue
+		var s = b.get_script()
+		if s != null and String(s.resource_path).contains("brute.gd"):
+			out.append(b)
+	return out
 
 func _ready() -> void:
 	# сейв «босс уже мёртв»: cave_state=2 + boss_defeated
@@ -34,15 +46,18 @@ func _ready() -> void:
 func _run() -> void:
 	await frames(5)
 	ck(GameState.boss_defeated, "S5 save loaded (boss_defeated=true)")
+	# В группе "boss" кроме пещерного босса (brute.gd) числится и NG+ ведьма
+	# (mob_boss2.gd, спавн в /Ashen/ gated by ashen.boss). Стенд проверяет
+	# ГЕЙТ ПЕЩЕРНОГО босса (boss_defeated / cave_state>=2) — фильтруем по скрипту.
 	var bosses := 0
-	for b in get_tree().get_nodes_in_group("boss"):
+	for b in _cave_bosses():
 		bosses += 1
-	print("NOTE bosses spawned in-process with boss_defeated=true: %d" % bosses)
+	print("NOTE cave bosses spawned in-process with boss_defeated=true: %d" % bosses)
 	ck(bosses == 0, "S5 dead boss must not respawn after restart", "bosses=%d" % bosses)
 	if bosses > 0:
-		print("BUG S5 boss respawns despite cave_state>=2: dungeon built before load_game(), spawn gate saw default false")
+		print("BUG S5 brute respawns despite cave_state>=2: spawn gate failed after load_game()")
 		# экономическая сторона: добить повторно = 25-40 золота за каждый рестарт
-		var b = get_tree().get_nodes_in_group("boss")[0]
+		var b = _cave_bosses()[0]
 		GameState.gold = 0
 		b.call("hurt", 99999, Vector2.ZERO)
 		print("NOTE re-kill boss gold gained=%d cave_state=%d" % [GameState.gold, GameState.cave_state])

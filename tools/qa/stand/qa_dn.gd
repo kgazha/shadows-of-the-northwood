@@ -266,8 +266,16 @@ func _t7_perf() -> void:
 	var ms_per_frame := float(wall) / float(maxi(1, fps))
 	print("PERF 5s storm 240/s: frames=%d wall=%d ms -> %.3f ms/frame (бюджет 16.7)" % [fps, wall, ms_per_frame])
 	_check(ms_per_frame < 16.7, "T7 per-frame cost under storm %.3f ms < 16.7" % ms_per_frame)
-	await frames(60)
-	_check(h.active_count() == 0, "T7 pool drained after storm: %d" % h.active_count())
+	# Дренаж пула: время жизни числа + тик MetaHud (TICK=0.5 с => 30 кадров) —
+	# фиксированные 60 были впритык и flak'али (2/5). Поллим до 90 кадров.
+	var drained := false
+	for fr: int in range(90):
+		if int(h.active_count()) == 0:
+			drained = true
+			break
+		await get_tree().physics_frame
+	_check(drained and int(h.active_count()) == 0, \
+		"T7 pool drained after storm: %d" % int(h.active_count()))
 
 # ---------------- helpers ----------------
 

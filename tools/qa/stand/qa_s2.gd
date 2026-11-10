@@ -197,9 +197,24 @@ func _run() -> void:
 		Shop.close()
 
 	# --- I: слайдеры live + персист без рестарта ---
+	# 90dc4c9: шкала переехала на 0..1 шаг 0.05, page=0 (иначе Range режет max-page)
 	sm.open()
-	sm.mus_slider.value = 30.0
+	ck(absf(sm.master_slider.max_value - 1.0) < 0.001 and absf(sm.master_slider.step - 0.05) < 0.0001 \
+		and absf(sm.master_slider.page) < 0.0001, "I slider scale 0..1 step .05 page 0", \
+		"max=%f step=%f page=%f" % [sm.master_slider.max_value, sm.master_slider.step, sm.master_slider.page])
+	# ed3c444: экран «Управление» — двухколоночная шпаргалка из CONTROLS_TABLE.
+	# ct_col = [заголовок, ct_box]; сами 11 строк живут во вложенном ct_box.
+	var ct_rows := 0
+	if sm.ct_col != null:
+		for ch in sm.ct_col.get_children():
+			if ch is BoxContainer:
+				ct_rows += ch.get_child_count()
+	ck(SettingsMenu.CONTROLS_TABLE.size() == 11 and sm.ct_col != null \
+		and ct_rows >= 11, "I controls table 11 rows rendered", \
+		"table=%d rows=%d" % [SettingsMenu.CONTROLS_TABLE.size(), ct_rows])
+	sm.mus_slider.value = 0.3
 	sm.sfx_slider.value = 0.0
+	sm._save_now()  # эмуляция отпускания слайдера: IO по design — только drag_ended
 	await frames(2)
 	ck(absf(GameAudio.I.music_vol - 0.3) < 0.001, "I music_vol=0.3", "got %f" % GameAudio.I.music_vol)
 	ck(absf(GameAudio.I.sfx_vol - 0.0) < 0.001, "I sfx_vol=0.0", "got %f" % GameAudio.I.sfx_vol)
@@ -220,8 +235,8 @@ func _run() -> void:
 	sm.open()
 	await frames(2)
 	ck(not FileAccess.file_exists("user://audio_cfg.json"), "I open does not write cfg on idle")
-	ck(absf(sm.mus_slider.value - 30.0) < 0.01 and absf(sm.sfx_slider.value) < 0.01, "I sliders init from GameAudio", "mus=%f sfx=%f" % [sm.mus_slider.value, sm.sfx_slider.value])
-	sm._apply()  # восстановить cfg для теста рестарта
+	ck(absf(sm.mus_slider.value - 0.3) < 0.01 and absf(sm.sfx_slider.value) < 0.01, "I sliders init from GameAudio", "mus=%f sfx=%f" % [sm.mus_slider.value, sm.sfx_slider.value])
+	sm._save_now()  # восстановить cfg для теста рестарта (IO только здесь)
 	sm.close()
 	# персист без рестарта процесса: убить GameAudio, создать новый
 	var old_ga: Node = null
@@ -238,7 +253,7 @@ func _run() -> void:
 	await frames(2)
 	ck(absf(GameAudio.I.music_vol - 0.3) < 0.001 and absf(GameAudio.I.sfx_vol - 0.0) < 0.001, "I volumes survive audio-node restart", "m=%f s=%f" % [GameAudio.I.music_vol, GameAudio.I.sfx_vol])
 	sm.open()
-	ck(absf(sm.mus_slider.value - 30.0) < 0.01, "I sliders sync with restarted audio")
+	ck(absf(sm.mus_slider.value - 0.3) < 0.01, "I sliders sync with restarted audio")
 	sm._on_reset()
 	await frames(2)
 	ck(absf(GameAudio.I.music_vol - GameAudio.DEF_VOL) < 0.001, "I reset restores DEF_VOL", "got %f" % GameAudio.I.music_vol)

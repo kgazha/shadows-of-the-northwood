@@ -61,10 +61,12 @@ func _ready() -> void:
 	var h = _hud()
 	ck("world_boots", world_node != null and h != null)
 
-	# world-хук родителя (reload сцены) должен висеть на сигнале РОВНО одним
-	# коннектом; снимаем его, чтобы reload не убил стенд на середине матрицы
+	# На сигнале ДВА легитимных коннекта (с rebase на cad57bb/f0d9450):
+	# Achv._on_ng_plus (ачивки NG+ снимаются до перезагрузки) и world-лямбда
+	# reload_current_scene. Снимаем оба: reload убил бы стенд на середине
+	# матрицы, а Achv-прирост Пепла здесь — шум (meta.ash держим fixture'ом).
 	var conns: Array = GameState.get_signal_connection_list("ng_plus_started")
-	ck("world_reload_hook_connected", conns.size() == 1, "count=%d" % conns.size())
+	ck("world_reload_hook_connected", conns.size() == 2, "count=%d (Achv+world)" % conns.size())
 	for c in conns:
 		GameState.ng_plus_started.disconnect(c["callable"])
 
@@ -129,12 +131,16 @@ func _ready() -> void:
 		and not GameState.pos_valid)
 	ck("reset_ashen_q_after_offer", not GameState.flags.has("ashen.boss") \
 		and not GameState.flags.has("ashen.chest") and not GameState.flags.has("q.grims"))
+	# meta.ash >= 7: внутри круга Achv._check_ng/ng_second вправе докинуть Пепла
+	# (cad57bb). ng.boss_0 из переноса УБРАН: 9402ee1 намеренно стирает ng.boss_*
+	# (пепел босса перезарабатывается каждый круг) — отдельный reset-чек ниже.
 	ck("carry_after_offer", GameState.gold == 123 and String(GameState.gear["weapon"]) == "sword" \
 		and GameState.has_amulet and GameState.level == 3 \
-		and int(GameState.flags.get("meta.ash", 0)) == 7 \
+		and int(GameState.flags.get("meta.ash", 0)) >= 7 \
 		and int(GameState.flags.get("daily.streak", 0)) == 3 \
-		and int(GameState.flags.get("ach.probe", 0)) == 1 \
-		and int(GameState.flags.get("ng.boss_0", 0)) == 1)
+		and int(GameState.flags.get("ach.probe", 0)) == 1, \
+		"ash=%s" % str(GameState.flags.get("meta.ash", -1)))
+	ck("reset_ng_boss_gates_offer", not GameState.flags.has("ng.boss_0"), "P0 9402ee1")
 	ck("autosave_w1_disk", GameState.load_game() and GameState.ng_wave() == 1)
 	ck("dialog_unlocked", not bool(h.is_dialog_open()) and not GameState.input_locked)
 
@@ -154,8 +160,14 @@ func _ready() -> void:
 	var txt2 := _all_text()
 	ck("cap_final_line", txt2.contains("Финальный круг пройден") and not txt2.contains("Круг 6"), \
 		txt2)
-	_close_dialog()
-	# колбэк капа — обычный разговор: сразу после реплики открыт elder_after
+	# Колбэк капа — обычный разговор (elder_after, «Ступай»). Крутим advance
+	# ПОКА не увидим реплику elder_after: закрытие кап-реплики синхронно
+	# открывает следующую (say() не даёт typing'у дотикать — advance в typing
+	# просто досматривает строку), цикл _close_dialog'а проглотил бы её целиком.
+	var guard := 0
+	while h.is_dialog_open() and not _all_text().contains("Ступай") and guard < 60:
+		h.advance()
+		guard += 1
 	ck("cap_then_plain", bool(h.is_dialog_open()) and _all_text().contains("Ступай"), \
 		_all_text())
 	_close_dialog()
@@ -174,8 +186,11 @@ func _ready() -> void:
 		and not _all_text().contains("круг"), _all_text())
 	_close_dialog()
 
-	# --- 9) волна 1, ведьма жива: Старейшина снова ordinary ---
+	# --- 9) волна 2, ведьма ЖИВА: Старейшина снова ordinary ---
+	# (§6 оставил ashen.boss="dead" — с ним матрица легитимно предлагает «Круг 3»,
+	# стираем ключ, иначе стенд проверял бы не ту ветку)
 	GameState.flags["ng.wave"] = 2
+	GameState.flags.erase("ashen.boss")
 	GameState.elder_quest = 2
 	elder.try_interact()
 	ck("w2_no_witch_plain", bool(h.is_dialog_open()) and not _all_text().contains("Круг"), \
