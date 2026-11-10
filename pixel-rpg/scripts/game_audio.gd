@@ -46,6 +46,7 @@ static var I: GameAudio        # синглтон; назначает world.gd (
 
 var music_vol := DEF_VOL
 var sfx_vol := DEF_VOL
+var master_vol := DEF_VOL       # шина Master (общая громкость); mute при 0 — как Music/SFX
 var _players: Array[AudioStreamPlayer] = []   # пул SFX
 var _rr := 0                                  # курсор переиспользования занятого пула
 var _mus: Array[AudioStreamPlayer] = []       # плееры музыки (до 2 на кроссфейд)
@@ -199,11 +200,17 @@ static func _enforce_loop(s: AudioStream) -> void:
 
 # --- громкости: шины + user://audio_cfg.json ---
 
-func set_volumes(music: float, sfx: float) -> void:
+## master < 0 — не менять общую громкость (обратная совместимость старых вызовов).
+## save=false — применить к шинам без записи user://audio_cfg.json (перетаскивание
+## слайдера: live-звук без IO на каждый шаг; сохранение — по отпусканию).
+func set_volumes(music: float, sfx: float, master: float = -1.0, save: bool = true) -> void:
 	music_vol = clampf(music, 0.0, 1.0)
 	sfx_vol = clampf(sfx, 0.0, 1.0)
+	if master >= 0.0:
+		master_vol = clampf(master, 0.0, 1.0)
 	_apply_bus_volumes()
-	_save_cfg()
+	if save:
+		_save_cfg()
 
 func _ensure_bus(bus_name: String) -> void:
 	if AudioServer.get_bus_index(bus_name) >= 0:
@@ -216,7 +223,7 @@ func _ensure_bus(bus_name: String) -> void:
 	_apply_bus_volumes()
 
 func _apply_bus_volumes() -> void:
-	for pair in [["Music", music_vol], ["SFX", sfx_vol]]:
+	for pair in [["Master", master_vol], ["Music", music_vol], ["SFX", sfx_vol]]:
 		var idx := AudioServer.get_bus_index(String(pair[0]))
 		if idx < 0:
 			continue
@@ -229,7 +236,7 @@ func _save_cfg() -> void:
 	if f == null:
 		push_warning("Не удалось записать %s" % CFG_PATH)
 		return
-	f.store_string(JSON.stringify({"music": music_vol, "sfx": sfx_vol}))
+	f.store_string(JSON.stringify({"master": master_vol, "music": music_vol, "sfx": sfx_vol}))
 
 func _load_cfg() -> void:
 	music_vol = DEF_VOL
@@ -239,6 +246,7 @@ func _load_cfg() -> void:
 		if f != null:
 			var data: Variant = JSON.parse_string(f.get_as_text())
 			if typeof(data) == TYPE_DICTIONARY:
+				master_vol = clampf(float(data.get("master", DEF_VOL)), 0.0, 1.0)
 				music_vol = clampf(float(data.get("music", DEF_VOL)), 0.0, 1.0)
 				sfx_vol = clampf(float(data.get("sfx", DEF_VOL)), 0.0, 1.0)
 	_apply_bus_volumes()

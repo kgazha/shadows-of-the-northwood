@@ -6,10 +6,12 @@ extends CanvasLayer
 ## world._ready (интеграционный запрос — отдельным хунком); стартует СКРЫТЫМ,
 ## в скрытом виде mouse_filter=IGNORE — «невидимое стекло» над игрой не остаётся.
 ##
-## Громкости: слайдеры «Музыка»/«Эффекты» 0–100 %, инициализация из GameAudio.I,
-## live-применение set_volumes() при каждом движении — GameAudio сам персистит
-## user://audio_cfg.json. Своего user://settings.json НЕТ: своих полей пока нет
-## (появятся — заведём файл здесь же, по образцу GameAudio._save_cfg).
+## Громкости: три слайдера «Общая»/«Музыка»/«Эффекты» (HSlider, 0..1, шаг 0.05),
+## инициализация из GameAudio.I (master_vol/music_vol/sfx_vol; I ещё нет — DEF_VOL).
+## Live-применение на слух при каждом шаге: set_volumes(..., save=false) — шины
+## мгновенно, без IO; запись user://audio_cfg.json — по отпусканию слайдера
+## (drag_ended) и по «Сброс». GameAudio сам читает/пишет audio_cfg.json в
+## _ready/_save_cfg — своего user://settings.json здесь нет.
 ##
 ## Тумблер «Ход по правому клику» написан СТРОГО против внешнего контракта
 ## параллельной фичи: ClickMove.is_on() -> bool, ClickMove.set_on(v: bool).
@@ -53,8 +55,10 @@ const FRAME_PATH := "res://assets/ui/panel_frame.png"  # та же Kenney 9-slic
 
 var dim: ColorRect             # полноэкранная вуаль: открыта -> STOP, скрыта -> IGNORE
 var panel: PanelContainer
+var master_slider: HSlider
 var mus_slider: HSlider
 var sfx_slider: HSlider
+var master_pct: Label
 var mus_pct: Label
 var sfx_pct: Label
 var cm_row: HBoxContainer      # строка тумблера ПКМ-хода; нет ClickMove -> скрыта
@@ -211,44 +215,16 @@ func _build() -> void:
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(title)
 
-	# строка «Музыка»: подпись — слайдер 0..100 — проценты
-	var row_m := HBoxContainer.new()
-	row_m.add_theme_constant_override("separation", 6)
-	row_m.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var lab_m := _row_label("Музыка")
+	# три строки громкости: подпись — слайдер 0..1 (шаг 0.05) — проценты
+	master_slider = HSlider.new()
 	mus_slider = HSlider.new()
-	mus_slider.min_value = 0.0
-	mus_slider.max_value = 100.0
-	mus_slider.step = 1.0
-	mus_slider.custom_minimum_size = Vector2(120, 10)
-	mus_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	mus_slider.focus_mode = Control.FOCUS_NONE  # меню мышиное — рамка фокуса не нужна
-	mus_slider.value_changed.connect(func(_v: float) -> void: _apply())
-	mus_pct = _row_label("")
-	mus_pct.custom_minimum_size = Vector2(26, 0)
-	row_m.add_child(lab_m)
-	row_m.add_child(mus_slider)
-	row_m.add_child(mus_pct)
-	vb.add_child(row_m)
-
-	var row_s := HBoxContainer.new()
-	row_s.add_theme_constant_override("separation", 6)
-	row_s.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var lab_s := _row_label("Эффекты")
 	sfx_slider = HSlider.new()
-	sfx_slider.min_value = 0.0
-	sfx_slider.max_value = 100.0
-	sfx_slider.step = 1.0
-	sfx_slider.custom_minimum_size = Vector2(120, 10)
-	sfx_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	sfx_slider.focus_mode = Control.FOCUS_NONE
-	sfx_slider.value_changed.connect(func(_v: float) -> void: _apply())
+	master_pct = _row_label("")
+	mus_pct = _row_label("")
 	sfx_pct = _row_label("")
-	sfx_pct.custom_minimum_size = Vector2(26, 0)
-	row_s.add_child(lab_s)
-	row_s.add_child(sfx_slider)
-	row_s.add_child(sfx_pct)
-	vb.add_child(row_s)
+	_vol_row(vb, "Общая", master_slider, master_pct)
+	_vol_row(vb, "Музыка", mus_slider, mus_pct)
+	_vol_row(vb, "Эффекты", sfx_slider, sfx_pct)
 
 	# тумблер ПКМ-хода — виден, только когда фича ClickMove реально в проекте
 	cm_row = HBoxContainer.new()
@@ -344,35 +320,78 @@ func _row_label(t: String) -> Label:
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
+## Строка громкости: подпись — HSlider 0..1 шаг 0.05 — процент.
+## FOCUS_NONE (меню мышиное); IGNORE только у подписей — сам слайдер остаётся
+## STOP: перетаскивание не выпускает клик в мир/вуаль, лок модального контракта
+## при драге незыблем (эмуляция драга покрыта QA).
+## value_changed — live-звук без IO; drag_ended — сохранение audio_cfg.json.
+func _vol_row(vb: VBoxContainer, t: String, sl: HSlider, pct: Label) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sl.min_value = 0.0
+	sl.max_value = 1.0
+	sl.step = 0.05
+	# ВАЖНО: page>0 в Godot 4.7 Range ограничивает value сверху величиной max-page
+	# (при page=0.25 громкость 0.8 читалась как 0.75, 100% была недостижима).
+	# Постраничный ход клавишами этому слайдеру не нужен — он FOCUS_NONE.
+	sl.page = 0.0
+	sl.custom_minimum_size = Vector2(120, 10)
+	sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sl.focus_mode = Control.FOCUS_NONE
+	sl.value_changed.connect(func(_v: float) -> void: _apply())
+	sl.drag_ended.connect(func(_v: float) -> void: _save_now())
+	pct.custom_minimum_size = Vector2(26, 0)
+	row.add_child(_row_label(t))
+	row.add_child(sl)
+	row.add_child(pct)
+	vb.add_child(row)
+
 # --- громкости ---
 
 ## Инициализация слайдеров из синглтона (I мог ещё не родиться — фолбэк дефолт).
 ## set_value_no_signal: открытие меню не должно писать audio_cfg.json «на ровном месте».
+## Значения вне сетки шага (сейв старой версии/чужой конфиг) округляются к 0.05.
 func _sync_audio() -> void:
 	var mv := GameAudio.DEF_VOL
 	var sv := GameAudio.DEF_VOL
+	var tv := GameAudio.DEF_VOL
 	if GameAudio.I != null:
-		mv = GameAudio.I.music_vol
-		sv = GameAudio.I.sfx_vol
-	mus_slider.set_value_no_signal(float(roundi(mv * 100.0)))
-	sfx_slider.set_value_no_signal(float(roundi(sv * 100.0)))
+		mv = GameAudio.I.master_vol
+		sv = GameAudio.I.music_vol
+		tv = GameAudio.I.sfx_vol
+	master_slider.set_value_no_signal(snappedf(mv, 0.05))
+	mus_slider.set_value_no_signal(snappedf(sv, 0.05))
+	sfx_slider.set_value_no_signal(snappedf(tv, 0.05))
 	_sync_pct_labels()
 
 func _sync_pct_labels() -> void:
-	mus_pct.text = "%d%%" % int(mus_slider.value)
-	sfx_pct.text = "%d%%" % int(sfx_slider.value)
+	master_pct.text = "%d%%" % int(round(master_slider.value * 100.0))
+	mus_pct.text = "%d%%" % int(round(mus_slider.value * 100.0))
+	sfx_pct.text = "%d%%" % int(round(sfx_slider.value * 100.0))
 
-## Live-применение: шины + персист делает GameAudio.set_volumes (user://audio_cfg.json).
+## Live-применение на слух: шины мгновенно, БЕЗ записи файла (перетаскивание
+## даёт десятки value_changed — IO на отпускание, см. drag_ended/_save_now).
 func _apply() -> void:
 	_sync_pct_labels()
 	if GameAudio.I != null:
-		GameAudio.I.set_volumes(mus_slider.value / 100.0, sfx_slider.value / 100.0)
+		GameAudio.I.set_volumes(mus_slider.value, sfx_slider.value, master_slider.value, false)
+
+## Сохранение по отпусканию слайдера: одна запись user://audio_cfg.json на драг.
+func _save_now() -> void:
+	if GameAudio.I != null:
+		GameAudio.I.set_volumes(mus_slider.value, sfx_slider.value, master_slider.value, true)
+	else:
+		_sync_pct_labels()
 
 func _on_reset() -> void:
-	var d := GameAudio.DEF_VOL * 100.0
-	mus_slider.value = d   # value_changed -> _apply
-	sfx_slider.value = d
-	_apply()               # значения могли уже быть дефолтными — сигнал бы молчал
+	var d := snappedf(GameAudio.DEF_VOL, 0.05)
+	master_slider.set_value_no_signal(d)   # сетка шага: сигнал бы всё равно сделал _apply
+	mus_slider.set_value_no_signal(d)
+	sfx_slider.set_value_no_signal(d)
+	_sync_pct_labels()
+	if GameAudio.I != null:
+		GameAudio.I.set_volumes(d, d, d, true)  # «Сброс» — жмём один раз, пишем сразу
 	GameAudio.sfx("ui_confirm")
 
 # --- тумблер «Ход по правому клику» (внешний контракт ClickMove) ---
