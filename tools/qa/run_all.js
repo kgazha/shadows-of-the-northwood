@@ -164,7 +164,14 @@ function main() {
   for (const s of stands) {
     const name = s.name.padEnd(13);
     process.stdout.write('[run ] ' + name + ' ... ');
-    fs.rmSync(USERDATA, { recursive: true, force: true }); // чистый user:// на каждую цепочку
+    // чистый user:// на каждую цепочку. Rmdir без ретраев ловил EPERM, пока
+    // только что убитый Godot держит ручку на app_userdata, и валил батарею.
+    // node сам ретраит EPERM/EBUSY/ENOTEMPTY только при maxRetries.
+    try {
+      fs.rmSync(USERDATA, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    } catch (e) {
+      console.log('[warn] wipe user:// после 3 ретраев (200 мс): ' + e.code + ' — продолжаем');
+    }
     let exits = [], lastLog = '', state = 'OK';
     for (let i = 0; i < s.run.length; i++) {
       lastLog = path.join(LOGS, s.name + '_' + (i + 1) + '.log');

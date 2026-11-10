@@ -62,11 +62,12 @@ func _phase_build() -> void:
 	chk(az.boss_node != null, "ведьма заспавнена")
 	chk(az.portal_node != null, "портал выхода есть")
 	chk(az.chest_node != null, "сундук есть")
-	# состав мобов: 2 лучника, стая 4, 2 тенеплёта (+ крыс-стражей пока нет)
+	# состав мобов: 3 лучника, стая 4, 4 тенеплёта (0c9dfe0: Пепелище плотнее,
+	# +1 archer [37,15] и +2 wraith [34,14],[36,19]; + крыс-стражей пока нет)
 	var counts := _count_mobs(world.ashen_zone)
-	chk(int(counts["archer"]) == 2, "лучников 2")
+	chk(int(counts["archer"]) == 3, "лучников 3")
 	chk(int(counts["swarmling"]) == 4, "стаи 4 крыса")
-	chk(int(counts["wraith"]) == 2, "тенеплётов 2")
+	chk(int(counts["wraith"]) == 4, "тенеплётов 4")
 	chk(int(counts["witch"]) == 1, "ведьма одна")
 	# тинты через self_modulate (атмосферная перекраска без новых ассетов)
 	var tinted := true
@@ -289,7 +290,7 @@ func _phase_rebuild() -> void:
 	chk(az != null and az.boss_node == null, "пересборка: ведьмы нет (флаг dead)")
 	chk(az.chest_node == null, "пересборка: сундука нет (флаг taken)")
 	var c := _count_mobs(world.ashen_zone)
-	chk(int(c["archer"]) == 2 and int(c["wraith"]) == 2, "пересборка: аркадные спавны на месте")
+	chk(int(c["archer"]) == 3 and int(c["wraith"]) == 4, "пересборка: аркадные спавны на месте")
 	chk(int(c["swarmling"]) == 4 and int(c["guard"]) == 0, "пересборка: стая 4, стражи 0")
 	chk(az.portal_node != null, "пересборка: портал на месте")
 	# музыка/атмосфера не падали: зона активируется штатно

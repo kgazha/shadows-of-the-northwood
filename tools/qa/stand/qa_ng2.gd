@@ -160,15 +160,17 @@ func _ready() -> void:
 	var txt2 := _all_text()
 	ck("cap_final_line", txt2.contains("Финальный круг пройден") and not txt2.contains("Круг 6"), \
 		txt2)
-	# Колбэк капа — обычный разговор (elder_after, «Ступай»). Крутим advance
-	# ПОКА не увидим реплику elder_after: закрытие кап-реплики синхронно
+	# Колбэк капа — обычный разговор (world.talk). Канон 2dcbb05 (TEXT-AUDIT B7):
+	# ПЕРВАЯ обычная беседа на волне N — однократный elder_after_<N> («Пятая
+	# свеча»), дедуп-флаг dlg_elder_after_5; лишь потом — обычный «Ступай».
+	# Крутим advance ПОКА не увидим вариант: закрытие кап-реплики синхронно
 	# открывает следующую (say() не даёт typing'у дотикать — advance в typing
 	# просто досматривает строку), цикл _close_dialog'а проглотил бы её целиком.
 	var guard := 0
-	while h.is_dialog_open() and not _all_text().contains("Ступай") and guard < 60:
+	while h.is_dialog_open() and not _all_text().contains("Пятая свеча") and guard < 60:
 		h.advance()
 		guard += 1
-	ck("cap_then_plain", bool(h.is_dialog_open()) and _all_text().contains("Ступай"), \
+	ck("cap_then_wave5_variant", bool(h.is_dialog_open()) and _all_text().contains("Пятая свеча"), \
 		_all_text())
 	_close_dialog()
 	ck("cap_wave_stays_5", GameState.ng_wave() == 5 and \
