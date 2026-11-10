@@ -117,10 +117,16 @@ start-game.bat
 2. `node tools/gen_assets2.js` — ПОЛИРОВКА (перезаписывает tiles/slime/npc/портреты/heart/player
    + decor.png, anim_tiles.png, shadow.png, class_*.png, skill_icons.png, projectiles.png,
    cursor_move/enemy.png, dungeon_tiles.png, brute.png, key.png, portraits2.png).
-3. `node tools/gen_map.js`, `node tools/gen_map_cave.js`.
-4. Прогон Godot с `--import` (иначе новые PNG не увидятся).
-5. `node tools/png_check.js pixel-rpg/assets/<файл> 16 16` — по 256 непрозрачных пикселей
+3. `node tools/gen_assets3.js` — ТЁМНОЕ ФЭНТЕЗИ v3 (перетирает ВСЕ 23 файла: приглушённые
+   палитры, светотень, hash-шум вместо мультяшности; геометрия/индексы 1-в-1 со v2).
+   Детерминированный: без Math.random, свой PNG-энкодер, самопроверка размеров и
+   заполненности клеток внутри скрипта («OK» по каждому файлу).
+4. `node tools/gen_map.js`, `node tools/gen_map_cave.js`.
+5. Прогон Godot с `--import` (иначе новые PNG не увидятся).
+6. `node tools/png_check.js pixel-rpg/assets/<файл> 16 16` — по 256 непрозрачных пикселей
    на клетку (или близко) — так верифицируем арт без визуальной модели.
+   ВАЖНО: листы героя **48×64 = 3 колонки × 4 ряда** (не 64×64!), ряды down/left/right/up,
+   колонка 0 — idle; slime 32×16, brute 64×32, skill_icons 192×16, portraits 120×40.
 
 ## Грабли Godot 4.7 (проверено на себе)
 
