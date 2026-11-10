@@ -92,6 +92,14 @@ func _ready() -> void:
 			var v2: Variant = JSON.parse_string(vf.get_as_text())
 			if typeof(v2) == TYPE_DICTIONARY:
 				dialogues.merge(v2, true)
+	# Сейв читаем ДО всего, что читает персист в момент спавна: campfire.setup()
+	# (campfires_used), interactable.setup() (chests_used), dungeon_zone.setup()
+	# (door_opened/has_amulet/boss_defeated -> дверь, сундук, босс), а также
+	# atmosphere/hud ниже (in_cave, статы). Порядок «сначала спавн, потом загрузка»
+	# рождал целое семейство ресинков; сами они остаются как страховка (F9/рантайм),
+	# но теперь никогда не видят «незагруженное» состояние. apply_zone() вызывается
+	# позже: зона пещеры к моменту применения должна быть собрана.
+	var loaded := GameState.load_game()  # true — сейв прочитан (F9 грузит сам, см. _unhandled_input)
 	village_zone = Node2D.new()
 	village_zone.name = "Village"
 	add_child(village_zone)
@@ -118,13 +126,13 @@ func _ready() -> void:
 	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
-	if GameState.load_game():
+	if loaded:
 		apply_zone(GameState.in_cave, false)
 		if GameState.pos_valid:
 			player.global_position = GameState.player_pos
 		player.apply_class()
 		hud.refresh_skills()
-		_apply_chest_states()  # сундуки из сейва (спавн был до load_game) — фикс T2
+		_apply_chest_states()  # страховка: спавн уже видит сейв, идемпотентно (нужно для F9)
 	if GameState.class_id == "":
 		# новые игры: сначала выбор героя, интро — после (в _start_intro)
 		hud.show_class_modal(_start_intro)
@@ -337,7 +345,7 @@ func _apply_cave_shapes(dz) -> void:
 func _sync_cave_chest() -> void:
 	if dungeon_zone == null or dungeon_zone.chest_tile.x < 0 or not GameState.has_amulet:
 		return
-	dungeon_zone.open_chest()  # тайл 12: пещера собрана до load_game() и успела получить 11
+	dungeon_zone.open_chest()  # тайл 12: теперь нужно для F9 — при старте setup() сам рисует 12
 	var walls: Node = dungeon_zone.get_node_or_null("Walls")
 	if walls == null:
 		return
@@ -598,8 +606,9 @@ func _find_npc(id: String) -> Node2D:
 	return null
 
 func _apply_chest_states() -> void:
-	# сущности спавнятся до GameState.load_game() — применяем сохранённое
-	# состояние сундуков после загрузки (фикс T2: «оживание» открытого сундука)
+	# Страховка после загрузки: при старте сущности уже спавнятся с загруженным
+	# состоянием, но F9 (quickload) приходит в живой мир, где сундуки старее сейва.
+	# Идемпотентно (refresh_used только включает «использован»).
 	for n in village_zone.get_children():
 		if n.get("kind") != null and n.get("kind") == "chest" and n.has_method("refresh_used"):
 			n.refresh_used()
