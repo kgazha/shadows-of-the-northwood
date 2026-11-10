@@ -36,7 +36,10 @@
   `fx_flame.png`, `fx_smoke.png`, `fx_shard.png` — сгенерированы с нуля
   скриптом `tools/gen_fx_assets.js` (чистый Node.js/zlib), CC0 1.0.
 - `scripts/fx.gd` — написан для проекта, CC0 1.0.
-- Детали и план опциональной замены на Kenney Particle Pack: `licenses_fx.md`.
+- Опциональная замена на Kenney «Particle Pack» (CC0,
+  https://kenney.nl/assets/particle-pack): положить PNG в `assets/fx/` под теми
+  же именами (или поправить `TEX_*` в `fx.gd`); тонирование задаётся кодом
+  (`color`/`color_ramp`, PNG белые) — правка эффектов не потребуется.
 
 ## 4. UI-звуки — собственный синтез (WAV), CC0 1.0
 

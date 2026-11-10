@@ -3,187 +3,158 @@
 > Журнал контекста разработки. Любая новая сессия ИИ-ассистента должна начать с этого файла.
 > Обновлять при каждом значимом изменении.
 
-## Текущий статус (фаза 5)
+## Текущий статус (фаза 6)
 
-✅ **Фаза 4 + WASD/ЛКМ/Пробел вместо клик-приказов, панель скиллов прижата к нижнему краю,
-внебойная регенерация HP + мана у мага (полоска маны в HUD).**
-Headless-смоук чистый; QA-харнесс фазы 5 (qa_p7) — 35/35 PASS.
+✅ **Фаза 6 + костры/алхимия + FX-частицы + процедурная музыка/звуки + пещера с боссом
+(ребаланс ярусами) + QA-фиксы T1–T10 + персистентность двери/сундука/призраков +
+Kenney 9-slice рамки/прицел + лицензии CC0 — ВСЁ В MAIN.**
+Headless-смоук чистый (exit 0, SCRIPT ERROR 0). Ждёт живой проверки игроком (чек-лист ниже).
 
 - Движок: **Godot 4.7.2 stable** (портативный, `tools/godot/`), рендер GL Compatibility.
-- Git: `943def2` baseline → `13073d7` art → `526b256` классы → `7ed2527` диалог-клик →
-  `0a3e619` атмосфера → `f917a9f` фикс fade_rect (клики) → далее фаза 3 (сейвы двери и пр.).
+- Git (последние): `5a01fa2` camps+alchemy → `29992b4` FX → `6b91493` music tools →
+  `748f62d` cave art/collision/balance → `9def4b9` audio → `ddc0539` qa2 fixes →
+  `707a5e9` qa-fixes T1–T10 → `fb3ae96` door fix → `6a82877` polish (tension music + mob drop) →
+  `4d74fd0` chest collider fix → `8cc0efa` ghost interactables → `8cac008` UI (frames/cursors).
+- Лицензии: `pixel-rpg/LICENSES.md` — все сторонние ассеты CC0 (Kenney RPG Audio, UI Pack
+  Pixel Adventure, Cursor Pixel Pack через зеркала GitHub); своё (FX-текстуры, synth UI-звуки,
+  процедурная музыка) — тоже CC0. **Политика: только CC0/CC-BY, NEVER NC** (коммерческий релиз).
 
 ## Как запустить / проверить
 
 - Игрок: двойной клик `start-game.bat` (сейвы в `tools/appdata`).
 - Смоук: `& tools/godot/Godot_v4.7.2-stable_win64.exe --headless --path pixel-rpg --quit-after 240`
   — игнорировать «Failed to read the root certificate store» (шум); судить по отсутствию SCRIPT ERROR.
-- После правки ассетов: сначала прогон с `--import`.
+- После правки ассетов / новых class_name: сначала прогон с `--import`.
 - Тайминг-тесты: флаг `--fixed-fps 60` (иначе физика/твины в headless врут).
 - ВНИМАНИЕ: `push_input` в headless НЕ двигает GUI-хиттестинг — клики мышью проверяются
   только живым запуском или прямым вызовом методов. Реальные баги от игрока важнее зелёных тестов.
 - Сейв пользователя: `tools/appdata/Godot/app_userdata/Тени Северного Леса/save_morkheim.json`
-  (перед тестами, пишущими GameState, ДЕЛАТЬ БЭКАП).
+  (герой=лучник). ПЕРЕД тестами, пишущими GameState, ДЕЛАТЬ БЭКАП; агенты пишут только в свои
+  `tools/appdata_*`.
 
-## Управление (нынешнее)
+## Управление
 
-- **WASD** — прямое движение героя. **ЛКМ** — атака в сторону курсора (удержание = автоповтор
-  с Кулдауном; герой в покое смотрит на курсор). **Пробел** — кувырок-рывок с i-frames
-  (сквозь урон), дальность ~37px, КД ~0.9 с. **E** — взаимодействие и «далее» в диалоге
-  (диалог также ЛКМ/Space/Enter). **1–4**/клик по иконкам — скиллы. **Q**/кнопка — зелье.
-  **F5/F9** — сейв/лоад. Автосейв: level-up, изменение квестов, открытие двери.
-  Клик-приказов (идти/атаковать по клику) БОЛЬШЕ НЕТ — `nav.gd`/`build_path` оставлены
-  про запас (например для автороля или pet), в бою не используются.
+- **WASD** — прямое движение. **ЛКМ** — атака в сторону курсора (удержание = автоповтор).
+  **Пробел** — кувырок с i-frames (~37px, КД ~0.9 с). **E** — взаимодействие/«далее».
+  **1–4** — скиллы. **Q** — зелье. **F5/F9** — сейв/лоад. Автосейв: level-up, квесты, дверь.
+  Клик-приказов нет; `nav.gd`/`build_path` оставлены про запас (pet/autoroll), в бою не нужны.
 
-## Ключевые механики
+## Ключевые механики (сверх фазы 5 — см. git log)
 
-- **Классы** (`scripts/classes_data.gd`): warrior hp12/melee, archer hp8/range80 (стрелы),
-  mage hp6/range70 (фаербол+заморозка). Скиллы открываются на ур. 1/2/3/4, КД 4–18 с.
-  XP-кривая ×1.6 (20/32/51/82/131…). Урон производный: класс + меч x2 + амулет +1
-  (поле `damage` — getter, записи игнорируются намеренно!).
-- **Этап создания героя** (`hud.show_class_modal`) при `class_id==""` — первый экран игры,
-  заголовок «Создание героя», подзаголовок про необратимость. СМЕНА КЛАССА УДАЛЕНА из игры:
-  кнопки нет, `GameState.set_class()` игнорирует второй вызов (защита от регрессий).
-  fade-слой мира на CanvasLayer 10 ОБЯЗАТЕЛЬНО с `mouse_filter=IGNORE` (иначе ест все клики).
-- **Полоска HP** вместо сердец: `hud.hp_bg/hp_fill/hp_txt` (заполнение 128 px, текст «hp / max»,
-  при ≤30% полоса краснеет). `refresh()` больше НЕ пересобирает узлы — просто меняет size/text
-  (было: создавало TextureRect сердец на каждый stats_changed). `heart.png` оставлен как иконка проекта.
-- **Коллизии карты = символы карты**: `BLOCKING` по индексу тайла, полный тайл 16×16.
-  Мелочь не должна блокировать всю клетку — `BLOCK_SHAPES` (индекс → `[w,h,dx,dy]` от центра):
-  валун 11×10, указатель 6×5 (столб). Иначе вокруг видимого предмета «невидимые стены».
-- **Контраст блокеров — правило арт-пасса**: тёмное фэнтези сузило палитру, и дерево
-  (leaf 44,72,46) слилось с лесным полом (44,65,44) — игрок упирался в «пустоту».
-  Каждый блокирующий тайл обязан нести читаемый СИЛУЭТ: тёмный контур (tree — leafDD
-  по краю кроны, валун — rockDD-обводка) + светлый акцент (макушка leafXL, верх валуна
-  rockXL) + тень у земли (grassSh). Проверка — qa-харнесс по сигнатурным цветам (см. Грабли).
-- **Восстановление (B+F)**: вне боя (`GameState.combat_t<=0`) гер регенит **+1 HP / 4 с** и
-  (только маг) **+2 маны / 2 с**; тики — сигналы `regen_hp_tick/regen_mana_tick`, над гером
-  летят зелёные/синие искры. «В бою» = 6 с после последнего контакта: `entered_combat()` дёргают
-  `player.take_damage`, `slime.hurt`, `brute.hurt`, ветка frost_nova. Смерть (hp=0) реген выключает.
-  **Мана только у мага** (`CLASSES.mage.mana=30`): стоимость в `SKILLS[*].mana`
-  (firebolt 6, frost_nova 9, siphon 7, firestorm 14); воин/лучер — чистые КД (`.get("mana",0)`).
-  Гейт в `cast_skill` ПЕРЕД проставлением КД и ПОСЛЕ проверки цели (осечка не жрёт ни ману, ни КД);
-  отказ — тост «Не хватает энергии!». Полная мана: `set_class`/`heal_full` (level-up, респаун).
-  Сейв: поле `"mana"` в to_dict; старый сейв без поля => мана полная. Полоска маны в HUD
-  (`mana_bg/mana_fill/mana_txt`, синяя, под HP) видна только при `max_mana>0`.
-  Зелья (Q, +3 HP) и «Второй ветер» — как были. Бэклог альтернатив: A) костры+дрова,
-  C) алхимия, D) вампиризм, E) сон = время суток.
-- **Анимация атак** (чистый код, без новых ассетов — аним-листов атак в листах 48×64 нет):
-  мили `do_attack` => `_lunge_fx` (спрайт резко подаётся к цели и упруго возвращается) +
-  `_slash_fx` (серповидная дуга Polygon2D проворачивается по дуге ±48° и гаснет за 0.22 с).
-  Дальний бой => `_recoil_fx` (корпус отводит назад) + `_spark` вспышка у дула. Скиллы:
-  power_strike/execute — свой цвет дуги, whirlwind — `_spin_fx` (оборот спрайта) + `_ring_fx`
-  расходящееся кольцо, frost_nova — синее кольцо. Все FX auto-free (Tween chain queue_free),
-  имена узлов SlashFx/RingFx/SparkFx. Лундж двигает `anim.position` (визуал), физику не трогает.
-- **A*-навигация** (`scripts/nav.gd` — чистые static-функции, без состояния): 8 направлений
-  без срезания углов, octile-евристика, сглаживание LOS-«верёвкой», `_clamp_free` — цель
-  внутри препятствия => подход к ближайшей свободной клетке. `world.build_path(from,to)` /
-  `world.line_clear(a,b)` — зона-аware (деревенская сетка или `dungeon_zone.cell_walkable`,
-  base=CAVE_OFFSET). `player.gd`: waypoints из `path` (поп <3 px), преследование цели —
-  прямая если дистанция ≤ radius+26 и `line_clear`, иначе реплейн ≤ 1 раза в 0.45 с;
-  застревание (moved < 35% ожидаемого 0.45 с) => реплейн, нет пути => отмена приказа.
-  Враги НЕ в сетке пути (скольжение мимо), только статические препятствия.
-- **Зоны**: деревня + пещера (Node2D Cave со смещением `CAVE_OFFSET y=4800`), переходы
-  fade-твином. Пещера: отшельник Геральд → босс «Осквернённый гром» → ключ → ниша с сундуком
-  (дверь `[[17,18]]`, сундук (18,18)) → амулет → финал у отшельника. cave_state 0..4.
-  **Смерть = мягкая**: респаун с полным HP у костра деревни.
-- **Ресурсы цикла** (фаза 3): слаймы респавнятся у дома через 50 с (XP-петля), травы
-  отрастают за 50 с (зелья), босс давит рывком каждые ~4.5 с (лучник/маг не стоят безнаказанно).
-- **Дверь ниши сериализуется**: `GameState.door_opened` (старые сейвы совместимы — d.get defaults).
-- **Маркер цели**: золотая стрелка на краю экрана (`hud._update_marker`), цель считает
-  `world.objective_pos()` (старейшина→травы→вход в пещеру→босс→отшельник→дверь/сундук; цель
-  в другой зоне = стрелка к переходу). Скрыта, когда цель в кадре.
+- **Классы** (`classes_data.gd`): warrior hp12/melee, archer hp8/range80, mage hp6/range70.
+  XP-кривая ×1.6. Урон — getter (записи в `damage` игнорировать!). Смена класса запрещена.
+- **Реген**: вне боя +1 HP/4 с, маг +2 маны/2 с; «в бою» = 6 с после контакта.
+- **Костры** (`campfire.gd`): 3 шт — `CAMPFIRE_SPOTS` cf_village(18,13)/cf_forest(12,19)/cf_cave(38,18);
+  отдых 4 с → +6 HP, ОДНОРАЗОВЫЕ, состояние в сейве (`_resync_campfires()` после load/quickload!).
+- **Алхимия**: материалы (suhotsvet/zhim) с трав и мобов; MAT_CAP 5, BREWED_CAP 2;
+  слаймы дроп 0.25; мобы пещеры (не босс) тоже 0.25 (`brute._roll_mat_drop`);
+  выпить можно ТОЛЬКО вне боя (`combat_t` гейт).
+- **Пещера** (`dungeon_zone.gd`): ярусы мобов по удалённости от входа (Чебышёв):
+  tier1 {4..7} cap3 hp6/dmg1/spd24, tier2 {8..11} cap4 hp9/dmg2/spd29, tier3 {12..} cap5 hp12/dmg2/spd33;
+  LEASH 64. Босс: hp24/dmg3/spd34, рывок КД 4.0; **тревожная музыка** при первой агрессии
+  (радиус LEASH), возврат эмбиента пещеры после смерти в пещере.
+- **Звук/музыка** (`game_audio.gd`): НЕ autoload — `class_name GameAudio`, `static var I`,
+  add_child в world._ready. Шины Music/SFX создаются рантаймом; конфиг `user://audio_cfg.json`;
+  пул 8 плееров SFX; `music()` — кроссфейд 1.5 с, реестр forest/cave/tension. WAV-луп
+  выставляется в коде `_enforce_loop` (в .import не работает). Все play_sfx guarded через
+  ResourceLoader.exists — отсутствие файла не роняет игру.
+- **Персистентность «построено до загрузки»** — ПАТТЕРН ФАЗЫ: world._ready() строит мир
+  строкой 102, а `GameState.load_game()` — строкой 113, поэтому любые флаги из сейва приходят
+  ПОСЛЕ сборки. Решение — подписка на `GameState.stats_changed` + идемпотентные ресинки:
+  `_sync_door()` (дверь ниши), `_sync_cave_chest()` (world: коллайдер сундука), `_sync_chest()`
+  (dungeon_zone: тайл+призраки). Плюс охранные проверки в `try_interact` (нет повторного
+  heal(4) из сундука, нет повторного save от двери). `has_amulet` — канонический признак
+  открытого пещерного сундука ( НЕ chests_used — тот только для деревенских).
+- **Сундуки деревенские**: `chests_used` (uid `"chest@x,y"`) в GameState, персистентны.
+- **UI-полировка**: `assets/ui/panel_frame.png` (Kenney 32×32 nine-slice, палитр-своп) —
+  StyleBoxTexture на диалог (content 4), skill_panel (4), camp_panel (3); у StyleBoxTexture
+  `texture_margin_*` — INT (float = SCRIPT ERROR), у NinePatchRect `patch_margin_*` — FLOAT.
+  Полоса отдыха = NinePatchRect и ОБЯЗАНА быть `move_child` после camp_panel (PanelContainer
+  вырастает до y=322 и иначе её перекрывает — исправленный базовый баг). Курсоры:
+  `cursor_crosshair.png` (hotspot 8,8) в мире / `cursor_arrow.png` (0,0) при input_locked,
+  враг — красный `cur_enemy` (хук `world._update_cursor`, project.godot не тронут). Тосты —
+  намеренно без рамки (прозрачный Label с обводкой поверх мира).
+- **FX** (`world.gd`+`player.gd`): удары/смерти/лут — частицы из `tools/gen_fx_assets.js`
+  (свои CC0-текстуры). `player` при смерти не залипает в прозрачности (qafix).
+- **Сейвы**: null-safe `from_dict` (`_num/_numf/_flag/_str`) — битый/старый JSON не роняет;
+  HP-потолок: класс/уровень → recalc → hp из сейва.
+- **Зоны**: деревня + пещера (y+=4800). Переходы fade-твином. Квест-цепочка: отшельник →
+  босс → ключ → дверь(17,18) → сундук(18,18) → амулет → финал. Смерть = мягкая (костёр деревни).
 
 ## Структура
 
 ```
 pixel-rpg/
-  project.godot           input: move_*, interact(E), attack(Space), skill_1..4, potion(Q), F5/F9
+  project.godot           input: move_*, interact(E), attack(LMB), roll(Space), skill_1..4, potion(Q), F5/F9
   scenes/main.tscn        ЕДИНСТВЕННАЯ сцена: Node2D + world.gd (всё строится кодом в _ready!)
-  scripts/world.gd        мир: зоны, карта, ввод (мышь-приказы), диалоги, квест-логика talk(),
-                          objective_pos()/маркер, drink_potion(), build_path()/line_clear(), save/load
-  scripts/player.gd       герой: классы, приказы ЛКМ (путь из world.build_path), автоатака+
-                          преследование с реплейном, cast_skill(0..3, at), снаряды, hurt_cd
-  scripts/nav.gd          ЧИСТЫЕ static: A* (8-напр., без углов, octile), LOS, simplify, _clamp_free
-  scripts/classes_data.gd справочник CLASSES/SKILLS (баланс править здесь)
-  scripts/game_state.gd   autoload GameState: все флаги/сейвы; _ready вешает автосейвы
-  scripts/hud.gd          CanvasLayer: полоска HP/XP/тосты/диалоги, панель скиллов, кнопка зелья,
-                          стрелка цели, этап создания героя (gui_input, НЕ signals на push_input)
-  scripts/atmosphere.gd   свет/тени/вода/факелы/частицы/твинт зон/виньетка (~580 строк)
-  scripts/dungeon_zone.gd пещера из map_cave.json: hermit/лестница/дверь(сериализ.)/сундук/босс-триггер
-  scripts/dungeon_zone internals: ссылки hermit_node/boss_node/chest_node/stairs_node для маркера
-  scripts/interactable.gd трава (респавн 50 с) / сундук меча (подсказка «Пустой сундук»)
-  scripts/slime.gd        респавн у дома; dying-состояние вне группы "enemy"
-  scripts/brute.gd        босс: погоня + рывок CHARGE_CD 4.5 с
-  scripts/npc.gd, projectile.gd, dungeon_zone.gd inner classes
-  data/map_village.json, data/map_cave.json   (генераторы! не руками)
-  data/dialogues.json + data/dialogues_v2.json (весь текст — правьте свободно)
+  scripts/world.gd        мир: зоны, карта, ввод, диалоги, квесты, save/load, FX-хуки, _sync_* ресинки
+  scripts/game_audio.gd   class_name GameAudio + static var I (НЕ autoload!); музыка/SFX/лупы
+  scripts/player.gd       герой: движение WASD, атака к курсору, кувырок, скиллы, снаряды
+  scripts/game_state.gd   autoload GameState: флаги/сейвы/null-safe from_dict/chests_used/автосейвы
+  scripts/hud.gd          CanvasLayer: HP/мана/XP/тосты/диалоги/панель скиллов/маркер/создание героя
+  scripts/dungeon_zone.gd пещера: ярусы мобов, дверь/сундук (сериализ.), босс-триггер, _sync_door/_sync_chest
+  scripts/brute.gd        босс: погоня+рывок, tension music, мат-дроп у не-боссов
+  scripts/slime.gd, campfire.gd, interactable.gd, npc.gd, projectile.gd, atmosphere.gd, nav.gd
+  scripts/classes_data.gd справочник CLASSES/SKILLS (баланс здесь)
+  assets/…                tiles/players/slime/brute/dungeon_tiles/decor + sfx/ + music/ (WAV)
+  data/map_village.json, data/map_cave.json, data/dialogues*.json
+  LICENSES.md             все права (CC0), обновлять при добавлении ассетов
 tools/
-  gen_assets.js  → затем gen_assets2.js   (ПОРЯДОК ОБЯЗАТЕЛЕН: второй перетирает первый)
-  gen_map.js, gen_map_cave.js  (cave содержит DEADLOCK-проверку: цель/отшельник/выход
-                                достижимы даже с закрытой дверью, иначе throw)
-  png_check.js   <файл> [cw ch] — проверка оглушённых клеток PNG без «зрения»
-  dl.js          единственный сетевой доступ
-  godot/         портативный движок; appdata/localdata — песочница APPDATA
-docs/DESIGN_v2_classes.md   спека классов/скиллов (правка v1.1: ур.аны 1..4, xp x1.6)
-QA-REPORT.md, RETENTION-REPORT.md  ревью-отчёты команды
+  gen_assets.js → gen_assets2.js → gen_assets3.js   (ПОРЯДОК ОБЯЗАТЕЛЕН; v3 = тёмное фэнтези)
+  gen_fx_assets.js, gen_music.js (+verify_wav.js), gen_ui_sfx.js — генераторы FX/звуков
+  gen_map.js, gen_map_cave.js (DEADLOCK-проверка достижимости!)
+  png_check.js, dl.js (единственный сетевой доступ), godot/, appdata_*/ (песочницы агентов)
+docs/DESIGN_v2_classes.md, QA-REPORT.md, RETENTION-REPORT.md
 start-game.bat
 ```
 
-## Пайплайн ассетов (детерминированный, без сети и рандома)
+## Пайплайн ассетов (детерминированный)
 
-1. `node tools/gen_assets.js` — базовый лист.
-2. `node tools/gen_assets2.js` — ПОЛИРОВКА (перезаписывает tiles/slime/npc/портреты/heart/player
-   + decor.png, anim_tiles.png, shadow.png, class_*.png, skill_icons.png, projectiles.png,
-   cursor_move/enemy.png, dungeon_tiles.png, brute.png, key.png, portraits2.png).
-3. `node tools/gen_assets3.js` — ТЁМНОЕ ФЭНТЕЗИ v3 (перетирает ВСЕ 23 файла: приглушённые
-   палитры, светотень, hash-шум вместо мультяшности; геометрия/индексы 1-в-1 со v2).
-   Детерминированный: без Math.random, свой PNG-энкодер, самопроверка размеров и
-   заполненности клеток внутри скрипта («OK» по каждому файлу).
-4. `node tools/gen_map.js`, `node tools/gen_map_cave.js`.
-5. Прогон Godot с `--import` (иначе новые PNG не увидятся).
-6. `node tools/png_check.js pixel-rpg/assets/<файл> 16 16` — по 256 непрозрачных пикселей
-   на клетку (или близко) — так верифицируем арт без визуальной модели.
-   ВАЖНО: листы героя **48×64 = 3 колонки × 4 ряда** (не 64×64!), ряды down/left/right/up,
-   колонка 0 — idle; slime 32×16, brute 64×32, skill_icons 192×16, portraits 120×40.
+1–4. Генераторы (порядок!): `gen_assets.js` → `gen_assets2.js` → `gen_assets3.js` → карты.
+   FX/звук: `gen_fx_assets.js`, `gen_music.js`, `gen_ui_sfx.js`.
+5. Godot с `--import` (новые PNG/WAV).
+6. `node tools/png_check.js pixel-rpg/assets/<файл> 16 16` — 256 непр. пикселей/клетку.
+   Листы героя 48×64 (3×4, ряды down/left/right/up), slime 32×16, brute 64×32.
+Kenney-ассеты (растровые) скачаны в `tools/assets_in/ui/` (633 PNG, проверены сигнатурами).
 
-## Грабли Godot 4.7 (проверено на себе)
+## Грабли Godot 4.7 + процесса (проверено на себе)
 
-- `CanvasLayer.layer=10` рисуется И пикает поверх HUD(1): невидимый ColorRect c дефолтным
-  `mouse_filter=STOP` убивает все клики игры. Всегда IGNORE для оверлеев.
-- `push_input` в headless не двигает GUI-хиттест → клик-тесты бессмысленны, модалку
-  проверять прямым вызовом или живым запуском.
-- `PhysicsPointQueryParameters2D.position` (не point); Light2D абстрактный → PointLight2D;
-  TileMapLayer: нет set_cells/get_index_of_child, есть get_cell_atlas_coords;
-  `Viewport.push_input` возвращает void; CPUParticles2D без turbulence;
-  `String(null)` — ошибка рантайма (лишь str() переносит null);
-  var-свойства с setter'ом-заглушкой (damage) — легаси-код пишет в них молча.
-- `var m := load(...).instantiate()` не выводит тип — аннотировать `: Node`.
-- Viewport: метод называется `gui_get_hovered_control()` (НЕ gui_get_hovered — его нет).
-- project.godot — CRLF: многострочные edit-якоря не матчатся, якориться одной уникальной
-  строкой (например `"physical_keycode":32,...`).
-- Ввод ЛКМ теперь action `attack` (InputEventMouseButton button_index=1), пробел — `roll`.
-- Лямбда GDScript захватывает локальные скаляры **по значению**: `hp_ticks += 1` в коннекте
-  меняет копию — счётчики в харнессах класть в контейнер (`var t := {"n":0}`; `t.n += 1`).
-- «opaque=256/256» НЕ значит «видно»: все пиксели тайла непрозрачны, но объект может
-  тонуть в фоне по цвету. Headless не видит глазам — но видит **сигнатурные цвета**:
-  харнесс считает пиксели контура/блика блокера рядом с его средним тоном фона
-  (qa_p8: leafDD>=14px в дереве, rockDD>=20px в валуне, grassSh>=6px в указателе,
-  и ноль «объектных» цветов на тайле пола). Любой арт-пас обязан прогнать эту проверку.
-- Голова: `--quit-after N` на всякий случай (парс-ошибка = сцена не китует = вечный job).
+- CanvasLayer overlay ОБЯЗАТЕЛЬНО `mouse_filter=IGNORE` (иначе ест клики).
+- `push_input` headless не двигает GUI-хиттест; `var x := load(...).instantiate()` — без типа.
+- `PhysicsPointQueryParameters2D.position`; TileMapLayer: `get_cell_atlas_coords`;
+  `String(null)` — ошибка (str() ок); `gui_get_hovered_control()`; лямбды захватывают по значению.
+- AudioStreamWAV: зацикливание ТОЛЬКО в коде (LOOP_FORWARD + loop_end=length*mix_rate).
+- project.godot — CRLF; агентам editing ЗАПРЕЩЁН (autoloads добавляет только оркестратор).
+- .gd в main — CRLF, диффы агентов — LF: MD5 «фикса» из песочницы и после применения РАЗНЫЕ —
+  это норма; сверять `git diff --no-index -w` (пусто = идентично) или совпадение с агентским MD5
+  после git apply (git нормализует). Байтовые проверки — В NODE, не PowerShell (5.1 vs 7:
+  `-Encoding Byte` vs `-AsByteStream`).
+- `git apply` в интерактиве из-под корня W может «Skipped patch» — надёжный гейт:
+  `git apply --check` из корня + применение на чистую копию вне репо.
+- Голова: `--quit-after N` (парс-ошибка = вечный job). Реген-сигналы дёргают `stats_changed`
+  часто — ресинки должны быть идемпотентными и дешёвыми.
 
-## Команда-конвейер (мультиагент)
+## Команда-конвейер (мультиагент) — режим конвейера
 
-Правило, спасшее от merge-конфликтов: **несекующаяся ответственность по файлам**
-(писатель → data/*.json+LORE, художник → tools/gen_assets2.js+ассеты, дев → scripts/*,
-QA → только чтение + временные харнессы, ретеншен → аналитика). Оркестратор интегрирует
-и гоняет смоук. QA-харнессы (`qa_main.*`, `qa_p3.*`) — временные, в дерево не коммитить.
+Пользователь требует МАКСИМАЛЬНОЙ параллелизации (5–6 агентов). Схема: автор фичи + независимый
+адверсариальный QA на фичу; оркестратор — только интеграция/стаджинг/сеть. Агенты:
+- работают в своей песочнице `sand_X/pixel-rpg` (копия без .godot), APPDATA/LOCALAPPDATA — свои;
+- в main НЕ пишут; хендофф = `git`-дифф в корень W (LF, табы, заголовки `a/pixel-rpg/...`),
+  с MD5 базы и фикса, `git apply --check` против АКТУАЛЬНОГО HEAD (перепроверять у оркестратора!);
+- сеть только через оркестратора (одноразовая прозрачная эскалация pwsh с видимой командой);
+- QA-харнесы (`qa_*`) — временные, в дерево не коммитить.
+Харнеси-наследие: sand_cave qa_c1..c5 (688), qa_c3b (686), sand_door qa_d1 v3 (10 режимов),
+sand_polish qa_polish (16), sand_sfx audio_tests. Перед прогонами, пишущими GameState, — свежий
+`user://save_morkheim.json` (иначе автосейв сам открывает сундук/дверь и ломает ожидания).
 
 ## Идеи / бэклог
 
-- Звук (музы нет вообще — самый заметный пробел).
-- VK Bridge + WebGL-экспорт (export_templates.tpz ~1.2 ГБ качать dl.js; потоки выключить).
-- Экономика торговца (скидочный меч за слаймов), купля зелий.
-- Реиграбельность: смена класса = полный сброс прогресса (сейчас частичный).
-- Автоплитка-лайт для стен пещеры, ещё вариаций декор-россыпи.
-- Диалоги во время fade всё ещё могут выглядеть скомкано — не проверялось в живую.
+- **VK-сборка**: WebGL-экспорт (export_templates.tpz ~1.2 ГБ; потоки выключить), VK Bridge;
+  музыка WAV→OGG (~21MB экономии).
+- Перенос `GameState.load_game()` ДО `_build_cave()` в world.gd — устранил бы саму причину
+  ресинков (аккуратно: `_resync_campfires` завязан на текущий порядок).
+- Q-зелье без боевого гейта (несогласованность дизайна — осознанно оставлено).
+- Опция: Kenney Particle Pack вместо своих FX-текстур (инструкция в лицензиях).
+- Экономика торговца; автоплитка стен пещеры; диалоги во время fade (не проверялись вживую).
+- **ПОЛЬЗОВАТЕЛЬ ЕЩЁ НЕ ВИДЕЛ ГЛАЗАМИ**: костры, FX, управление, арт v3, звук/музыка,
+  пещерный ребаланс, фиксы T1–T10, UI-рамки/прицел — обязать прогнать чек-лист в живом окне.

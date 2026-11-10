@@ -6,3 +6,5 @@ tools/localdata/
 pixel-rpg/.godot/
 *.tmp
 test_*_tmp.*
+
+tools/assets_in/
