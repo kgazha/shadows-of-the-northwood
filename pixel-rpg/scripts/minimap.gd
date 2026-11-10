@@ -15,14 +15,19 @@ extends Node
 ##
 ## СОДЕРЖИМОЕ (текущая зона целиком, тумана войны нет): тайлы walk/wall кэшем
 ## ImageTexture (деревня — world.map_rows + CHAR_TO_TILE/BLOCKING, пещера —
-## dungeon_zone.map_rows + cell_walkable), герой — белая точка-маркер, мобы —
+## dungeon_zone.map_rows + cell_walkable, Пепелище — ashen_grid.map_rows +
+## cell_walkable), герой — белая точка-маркер, мобы —
 ## красные (группа "enemy"; boss — крупнее и злее: мёртвый моб снят с группы,
 ## исчезает сам), костры жёлтые (погасший — тусклее), сундуки золотые (открытый —
 ## тусклее: village — interactable(kind="chest").used, cave — GameState.has_amulet),
-## NPC белые, вход в пещеру/лестница выхода — голубые.
+## NPC белые, вход в пещеру/лестница выхода — голубые; аршина Пепелища (вход
+## из деревни и портал наружу) — тоже голубые, сундук Пепелища золотится лишь
+## пока цел (взят — узел снят, блипа нет), Ведьма — общий босс-блип группы
+## "enemy"+"boss": убита (или мертва из сейва) — гаснет сама, без спец-кода.
 ##
 ## ПЕРЕКЛЮЧЕНИЕ ЗОНЫ: сигнала world.zone_changed в world.gd нет — поллинг 0.5 с
-## (GameState.in_cave + подпись карт). ПЕРЕВЫКЛЮЧАТЕЛЬ: внешний контракт как у
+## (GameState.in_cave + гейт Пепелища по y героя (world.gd: y > ASHEN_OFFSET.y) +
+## подпись карт: третья подпись — строки ashen_grid.map_rows). ПЕРЕВЫКЛЮЧАТЕЛЬ: внешний контракт как у
 ## ClickMove — статические is_on() -> bool / set_on(v: bool), персист
 ## user://minimap_cfg.json, дефолт ВКЛ; settings_menu резолвит его тем же
 ## паттерном (class_name-скрипт со статиками). Клавиша M (физический KEY_M,
@@ -60,7 +65,7 @@ static var _cfg_loaded := false
 var world                          # узел world.gd (родитель); слабо, как у ClickMove
 var _layer: CanvasLayer
 var _radar: _Radar
-var _zone_cave := false            # зона нарисованных кэшей
+var _zone := "village"             # зона нарисованных кэшей: "village" | "cave" | "ashen"
 var _zone_seen := false            # хоть одна карта собрана?
 var _grid_tex: ImageTexture = null # walk/wall текущей зоны (1px = 1 тайл)
 var _grid_w := 0
@@ -143,13 +148,27 @@ func _process(delta: float) -> void:
 	_poll_t -= delta
 	if _poll_t <= 0.0:
 		_poll_t = POLL
-		# мира мог «не стать» (F9/пересборка): подпись зоны — in_cave + сами rows
+		# мира мог «не стать» (F9/пересборка): подпись зоны — гейт + сами rows
+		# гейт Пепелища — тот же, что в world.gd: y героя > ASHEN_OFFSET.y
 		var cave := bool(GameState.in_cave)
-		var rows: Array = world.map_rows
-		var sig := "%s|%s" % ["c" if cave else "v", str(rows)]
+		var zone := "village"
+		var ao: Variant = world.get("ASHEN_OFFSET")
+		var pl = world.player
+		if cave:
+			zone = "cave"
+		elif pl != null and is_instance_valid(pl) and ao is Vector2 and pl.global_position.y > (ao as Vector2).y:
+			zone = "ashen"
+		var az = world.get("ashen_grid")   # слабая ссылка: null в сборках без Пепелища
+		var prefix := "a" if zone == "ashen" else ("c" if cave else "v")
+		var rows_s: String
+		if zone == "ashen" and az != null and is_instance_valid(az) and az.get("map_rows") != null:
+			rows_s = str(az.map_rows)
+		else:
+			rows_s = str(world.map_rows)
+		var sig := prefix + "|" + rows_s
 		if sig != _sig:
 			_sig = sig
-			_zone_cave = cave
+			_zone = zone
 			_rebuild_grid()
 			_rebuild_pois()
 	_radar.queue_redraw()
@@ -163,7 +182,15 @@ func _rebuild_grid() -> void:
 	var rows: Array
 	var w := 0
 	var h := 0
-	if _zone_cave:
+	if _zone == "ashen":
+		var az = world.ashen_grid
+		if az == null or not is_instance_valid(az) or az.get("map_rows") == null:
+			_zone_seen = false
+			return
+		rows = az.map_rows
+		h = int(az.map_h)
+		w = int(az.map_w)
+	elif _zone == "cave":
 		var dz = world.dungeon_zone
 		if dz == null or not is_instance_valid(dz) or dz.get("map_rows") == null:
 			_zone_seen = false
@@ -189,10 +216,13 @@ func _rebuild_grid() -> void:
 	_zone_seen = true
 
 ## Проходимость тайла: деревня — те же публичные константы world, что у
-## ClickMove._tile_walkable; пещера — dungeon_zone.cell_walkable (закрытая дверь
-## и взятый сундук уже учтены самим методом).
+## ClickMove._tile_walkable; пещера — dungeon_zone.cell_walkable, Пепелище —
+## ashen_grid.cell_walkable (закрытая дверь и взятый сундук уже учтены самими
+## методами).
 func _cell_walkable(rows: Array, w: int, t: Vector2i) -> bool:
-	if _zone_cave:
+	if _zone == "ashen":
+		return world.ashen_grid.cell_walkable(t)
+	if _zone == "cave":
 		return world.dungeon_zone.cell_walkable(t)
 	if t.y < 0 or t.y >= rows.size() or t.x < 0 or t.x >= w:
 		return false
@@ -209,7 +239,19 @@ func _cell_walkable(rows: Array, w: int, t: Vector2i) -> bool:
 func _rebuild_pois() -> void:
 	_pois.clear()
 	var ts := float(world.TILE)
-	if _zone_cave:
+	if _zone == "ashen":
+		var az = world.ashen_grid
+		if az == null or not is_instance_valid(az):
+			return
+		if az.portal_node != null and is_instance_valid(az.portal_node):
+			_pois.append({"t": _tile_of(az.portal_node.global_position, _zone_base(), ts), "c": C_PORTAL, "s": 3})
+		# Взятый сундук снимает свой узел (queue_free) — блипа нет; флаг ashen.chest
+		# закрывает и отложенный кадр до фактического удаления узла.
+		if az.chest_node != null and is_instance_valid(az.chest_node) \
+				and String(GameState.flags.get("ashen.chest", "")) != "taken":
+			_pois.append({"t": _tile_of(az.chest_node.global_position, _zone_base(), ts), "c": C_CHEST, "s": 3})
+		return  # Ведьма и мобы — живой цикл группы "enemy" в paint()
+	elif _zone == "cave":
 		var dz = world.dungeon_zone
 		if dz == null or not is_instance_valid(dz):
 			return
@@ -238,9 +280,21 @@ func _rebuild_pois() -> void:
 		elif p.ends_with("npc.gd"):
 			_pois.append({"t": _tile_of((n as Node2D).global_position, _zone_base(), ts), "c": C_NPC, "s": 2})
 	_pois.append({"t": Vector2i(world.CAVE_ENTRANCE_TILE), "c": C_PORTAL, "s": 3})
+	# выжженная аршина на восточной окраине — вход в Пепелище
+	var aet: Variant = world.get("ASHEN_ENTRANCE_TILE")
+	if aet is Vector2i:
+		_pois.append({"t": aet, "c": C_PORTAL, "s": 3})
 
 func _zone_base() -> Vector2:
-	return world.CAVE_OFFSET if _zone_cave else Vector2.ZERO
+	if _zone == "cave":
+		return world.CAVE_OFFSET
+	if _zone == "ashen":
+		var ao: Variant = world.get("ASHEN_OFFSET")
+		var off := Vector2.ZERO
+		if ao is Vector2:
+			off = ao
+		return off
+	return Vector2.ZERO
 
 ## Мировые координаты -> тайл зоны (обратный ход world.tile_to_world: +0.5T и +2px).
 func _tile_of(p: Vector2, base: Vector2, ts: float) -> Vector2i:
