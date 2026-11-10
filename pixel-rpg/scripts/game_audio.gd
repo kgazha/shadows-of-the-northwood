@@ -29,9 +29,11 @@ const SFX := {
 }
 ## Реестр музыкальных тем (assets/music, готовые бесшовные лупы «loop-tail»).
 const MUSIC := {
-	"forest": "res://assets/music/theme_forest.wav",
-	"cave": "res://assets/music/theme_cave.wav",
-	"tension": "res://assets/music/theme_tension.wav",
+	# OGG вместо WAV: 21.5 МБ -> 1.5 МБ (ffmpeg libvorbis -q 5). Исходники WAV
+	# исключены из экспорта фильтром в export_presets.cfg, в репозитории — эталон.
+	"forest": "res://assets/music/theme_forest.ogg",
+	"cave": "res://assets/music/theme_cave.ogg",
+	"tension": "res://assets/music/theme_tension.ogg",
 }
 
 const CFG_PATH := "user://audio_cfg.json"

@@ -9,6 +9,7 @@ signal toast(text: String)
 signal leveled_up(level: int)
 signal regen_hp_tick
 signal regen_mana_tick
+signal gold_changed
 
 # --- восстановление (B+F): внебойная регенерация + мана мага ---
 const COMBAT_HOLD := 6.0        # сколько секунд считаем «в бою» после контакта
@@ -77,10 +78,20 @@ var player_pos := Vector2.ZERO
 var pos_valid := false
 var input_locked := false
 
+# --- v2 (фундамент волны «контент»): золото, шестерня, общие флаги ---
+## Хранилище здесь; реестр предметов (id -> слот/цена/статы) — scripts/gear_data.gd
+## (фича экономики), справочник квестов — scripts/quests_data.gd (фича квестов).
+var gold := 0
+## Снаряжение: слот ("weapon"/"armor") -> item id, "" — пусто.
+var gear := {"weapon": "", "armor": ""}
+## Универсальные событийные флаги (квесты, диалоги, лавочник): id -> bool/int/string.
+var flags := {}
+
 func _ready() -> void:
 	# Автосебы: редкие, но важные для игрока моменты не должны теряться.
 	leveled_up.connect(func(_l: int) -> void: save_game())
 	quest_changed.connect(func() -> void: save_game())
+	gold_changed.connect(func() -> void: save_game())
 
 func _process(delta: float) -> void:
 	combat_t = maxf(0.0, combat_t - delta)
@@ -171,6 +182,50 @@ func chest_used(uid: String) -> bool:
 func chest_mark_used(uid: String) -> void:
 	if not chests_used.has(uid):
 		chests_used.append(uid)
+
+# --- v2: золото / снаряжение / флаги ---
+
+func add_gold(n: int) -> void:
+	if n == 0:
+		return
+	gold = maxi(0, gold + n)
+	gold_changed.emit()
+
+## Потратить золото; false с тостом — не хватает.
+func spend_gold(n: int) -> bool:
+	if n < 0:
+		return false
+	if gold < n:
+		toast.emit("Не хватает золота: нужно %d, есть %d" % [n, gold])
+		return false
+	gold -= n
+	gold_changed.emit()
+	return true
+
+func can_afford(n: int) -> bool:
+	return gold >= n
+
+## Надеть item id в слот; возвращает id ранее надетого предмета (или "").
+## legacy-флаг has_sword держится в синхроне ("sword"/"") до канона gear_data.gd.
+func equip_item(slot: String, item_id: String) -> String:
+	if not gear.has(slot):
+		push_warning("Неизвестный слот: %s" % slot)
+		return ""
+	var prev := String(gear[slot])
+	gear[slot] = item_id
+	if slot == "weapon":
+		if item_id == "":
+			has_sword = false
+		elif item_id == "sword":
+			has_sword = true
+		stats_changed.emit()
+	return prev
+
+func get_flag(id: String, def: Variant = false) -> Variant:
+	return flags.get(id, def)
+
+func set_flag(id: String, value: Variant) -> void:
+	flags[id] = value
 
 # --- безопасный разбор полей сейва (ни одно поле не должно уронить парсер) ---
 
@@ -276,6 +331,7 @@ func to_dict() -> Dictionary:
 		"materials": materials.duplicate(), "brewed": brewed_potions,
 		"campfires_used": campfires_used.duplicate(),
 		"chests_used": chests_used.duplicate(),
+		"v": 2, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
 	}
 
@@ -319,6 +375,24 @@ func from_dict(d: Dictionary) -> void:
 		for cid in chu:
 			if typeof(cid) == TYPE_STRING and chests_used.size() < 64:
 				chest_mark_used(String(cid))
+	# --- v2: золото/шестерня/флаги (старые сейвы => чистые значения) ---
+	gold = maxi(0, _num(d.get("gold", 0), 0))
+	gear = {"weapon": "", "armor": ""}
+	var gd: Variant = d.get("gear", {})
+	if typeof(gd) == TYPE_DICTIONARY:
+		for slot in gear:
+			gear[slot] = _str(gd.get(slot, ""), "")
+	# legacy-миграция: старый сейв с мечом => weapon="sword" (если слот пуст)
+	if has_sword and String(gear["weapon"]) == "":
+		gear["weapon"] = "sword"
+	flags = {}
+	var fd: Variant = d.get("flags", {})
+	if typeof(fd) == TYPE_DICTIONARY:
+		var n := 0
+		for k in fd:
+			if typeof(k) == TYPE_STRING and n < 128:
+				flags[String(k)] = fd[k]
+				n += 1
 	player_pos = Vector2(_numf(d.get("px", 0.0), 0.0), _numf(d.get("py", 0.0), 0.0))
 	pos_valid = _flag(d.get("pos_valid", false), false)
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp
