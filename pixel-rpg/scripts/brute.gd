@@ -178,6 +178,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 		remove_from_group("enemy")  # мёртвый моб больше не бьёт и не целивается
 		if boss:
 			GameState.boss_defeated = true
+			Achv.on_boss_death()  # ачивки «Убийца босса» / «хардкор» (achv.gd)
 			GameState.add_xp(BOSS_XP)
 			GameState.toast.emit("Гниль отступает!")
 			# tension смолкла: возвращаем тему пещеры, только если герой ещё в ней;

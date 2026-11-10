@@ -233,6 +233,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		remove_from_group("enemy")
 		GameAudio.sfx("drop")
 		GameState.add_xp(15)
+		Achv.count("kill_wraith")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Тенеплёт рассеян! (+15 XP)")
 		Loot.on_mob_death("wraith", global_position)

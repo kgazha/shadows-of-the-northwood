@@ -130,6 +130,7 @@ func _finish() -> void:
 	rest_t = 0.0
 	if SINGLE_USE:
 		_mark_used()
+		Achv.on_campfire_used()  # ачивка «Трёх костров» (achv.gd)
 	GameState.heal(REST_HP)
 	var msg: String = "Тёплое забытье: +%d HP" % REST_HP
 	if GameState.max_mana > 0 and GameState.mana < GameState.max_mana:

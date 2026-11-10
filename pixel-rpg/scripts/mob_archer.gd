@@ -220,6 +220,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		remove_from_group("enemy")
 		GameAudio.sfx("drop")
 		GameState.add_xp(9)
+		Achv.count("kill_archer")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Лесокров-лучник повержен! (+9 XP)")
 		Loot.on_mob_death("archer", global_position)

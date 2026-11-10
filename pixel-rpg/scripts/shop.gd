@@ -183,6 +183,7 @@ func _on_buy(id: String) -> void:
 	GameState.stats_changed.emit()  # armor-слот equip_item не эмитит — HUD сам обновим
 	GameAudio.sfx("ui_confirm")
 	GameState.toast.emit("Куплено: %s. Надето!" % String(it.get("name", id)))
+	Achv.on_buy()  # ачивка «Покупатель: 5 вещей» (achv.gd)
 	refresh()
 
 func _on_sell(slot: String) -> void:

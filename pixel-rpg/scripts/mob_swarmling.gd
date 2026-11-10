@@ -166,6 +166,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		remove_from_group("enemy")
 		GameAudio.sfx("drop")
 		GameState.add_xp(3)
+		Achv.count("kill_swarmling")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Мглокрыс повержен! (+3 XP)")
 		Loot.on_mob_death("swarmling", global_position)

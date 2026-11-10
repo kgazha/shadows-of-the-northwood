@@ -9,6 +9,7 @@ extends RefCounted
 ## world_pos + world (опц.) — точка для искр золота на месте трупа; без world
 ## эффект просто пропускается (headless-QA, бо́сс после queue_free и т. п.).
 static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null) -> void:
+	Achv.on_mob_death(kind)  # ачивка «Первая кровь» (§2 #1, achv.gd)
 	var table: Variant = GearData.LOOT.get(kind, [])
 	if typeof(table) != TYPE_ARRAY or table.is_empty():
 		push_warning("Loot: неизвестный вид моба: %s" % kind)

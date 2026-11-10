@@ -107,6 +107,7 @@ func _die() -> void:
 	respawn_t = RESPAWN
 	GameAudio.sfx("drop")  # шлепок тела (кожа)
 	GameState.slime_kills += 1
+	Achv.on_slime_kill()  # ачивки «Охотник 25/100» (achv.gd)
 	GameState.add_xp(7)
 	GameAudio.sfx("coin")  # автораздача опыта — звон монет
 	GameState.toast.emit("Слайм повержен! (+7 опыта)")

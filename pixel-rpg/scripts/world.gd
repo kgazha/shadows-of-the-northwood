@@ -126,6 +126,7 @@ func _ready() -> void:
 	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
+	add_child(Achv.new())  # достижения+daily (achv.gd); после load_game() — daily видит stamp
 	if loaded:
 		apply_zone(GameState.in_cave, false)
 		if GameState.pos_valid:
@@ -551,6 +552,7 @@ func drink_potion() -> void:
 		GameState.toast.emit("Ты и так здрав.")
 		return
 	GameState.herbs -= 1
+	Achv.on_herb_drunk()  # ачивка «Травник» (achv.gd §2 #11)
 	var _hp0 := GameState.hp  # heal-число = реально восстановленные HP
 	GameState.heal(3)
 	DmgNumbers.spawn(player.global_position + Vector2(0, -12), GameState.hp - _hp0, "heal")
