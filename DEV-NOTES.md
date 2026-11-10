@@ -11,10 +11,10 @@ Kenney 9-slice рамки/прицел + лицензии CC0 — ВСЁ В MAIN
 Headless-смоук чистый (exit 0, SCRIPT ERROR 0). Ждёт живой проверки игроком (чек-лист ниже).
 
 - Движок: **Godot 4.7.2 stable** (портативный, `tools/godot/`), рендер GL Compatibility.
-- Git (последние): `5a01fa2` camps+alchemy → `29992b4` FX → `6b91493` music tools →
-  `748f62d` cave art/collision/balance → `9def4b9` audio → `ddc0539` qa2 fixes →
-  `707a5e9` qa-fixes T1–T10 → `fb3ae96` door fix → `6a82877` polish (tension music + mob drop) →
-  `4d74fd0` chest collider fix → `8cc0efa` ghost interactables → `8cac008` UI (frames/cursors).
+- Git (последние): `5a01fa2` camps+alchemy → `29992b4` FX → `6b91493` music → `748f62d` cave →
+  `9def4b9` audio → `ddc0539` qa2 → `707a5e9` qa-fixes T1–T10 → `fb3ae96` door → `6a82877` polish →
+  `4d74fd0` chest → `8cc0efa` ghosts → `8cac008` UI → `90d08c6` meta → `2387e53` тени (якоря+region) →
+  `f21671a` lock-guard → `ee0b879` dialog-hardening → `aee8731` тени round2.
 - Лицензии: `pixel-rpg/LICENSES.md` — все сторонние ассеты CC0 (Kenney RPG Audio, UI Pack
   Pixel Adventure, Cursor Pixel Pack через зеркала GitHub); своё (FX-текстуры, synth UI-звуки,
   процедурная музыка) — тоже CC0. **Политика: только CC0/CC-BY, NEVER NC** (коммерческий релиз).
@@ -74,6 +74,21 @@ Headless-смоук чистый (exit 0, SCRIPT ERROR 0). Ждёт живой �
   `cursor_crosshair.png` (hotspot 8,8) в мире / `cursor_arrow.png` (0,0) при input_locked,
   враг — красный `cur_enemy` (хук `world._update_cursor`, project.godot не тронут). Тосты —
   намеренно без рамки (прозрачный Label с обводкой поверх мира).
+- **Тени** (`atmosphere.gd _ensure_shadow`): лист `assets/shadow.png` 32×16 = два блоба:
+  персонаж `Rect(0,0,16,6)`, босс `Rect(8,7,24,9)` — **region enabled ВСЕГДА** (без него у всех
+  рисовался весь лист — «призрачная тень» вдали). Позиция — по ИЗМЕРЕННЫМ якорям стоп
+  (низ непрозрачных пикселей спрайта, AtlasTexture — по region!, кэш по instance_id с проверкой
+  тождества текстуры; инструмент `tools/shadow_dump.js`). Тень — child ПЕРЕД спрайтом,
+  modulate (0,0,0,.5). Видимость тени синхронна со спрайтом (пик травы/пепел костра — без тени;
+  страховка в `_sync_shadow` при скане). `_on_child_entered` сканирует только вошедшее поддерево,
+  полный скан с дебаунсом 0.15 с (иначе FX-шторм = 19% бюджета кадра).
+- **Анти-софтлок ввода** (класс «убил слайма — не могу двигаться, F9 не лечит»): `input_locked` —
+  рантайм-var, НЕ сериализуется; залипший true переживает F9 (сам F9 глушится веткой locked) и
+  снимается только рестартом. Инвариант `f21671a`: в world._unhandled_input — лок без открытой
+  панели/модалки снимается первым же вводом. `ee0b879`: hud держит очередь `pending_ends`
+  (перетёртый show_dialog колбэк не теряется — респавн после чужого диалога гарантирован),
+  хвост transition_to НЕ снимает лок при открытом диалоге. Правила: любую панель закрывать
+  только через advance()/свой разлок; новый set-true input_locked обязан иметь «мёртвую» отмычку.
 - **FX** (`world.gd`+`player.gd`): удары/смерти/лут — частицы из `tools/gen_fx_assets.js`
   (свои CC0-текстуры). `player` при смерти не залипает в прозрачности (qafix).
 - **Сейвы**: null-safe `from_dict` (`_num/_numf/_flag/_str`) — битый/старый JSON не роняет;
