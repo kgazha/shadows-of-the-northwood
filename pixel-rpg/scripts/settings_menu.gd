@@ -63,6 +63,10 @@ var _cm_api                    # ClickMove: автозагрузка-узел л
 var mm_row: HBoxContainer      # строка тумблера миникарты; нет Minimap -> скрыта
 var mm_btn: Button
 var _mm_api                    # Minimap: GDScript со статиками (паттерн _cm_api)
+var sv_export: LineEdit        # «Сейв»: readonly-строка экспорта (выделение+копия)
+var sv_import: LineEdit        # «Сейв»: поле вставки строки импорта
+var sv_apply_btn: Button
+var sv_msg: Label              # тост результата прямо в секции
 var _open := false
 
 func _ready() -> void:
@@ -132,9 +136,19 @@ func _input(event: InputEvent) -> void:
 		# Меню мышиное: глотаем ВСЕ клавиатурные события, включая release:
 		# дошедшее до world-страховки release-событие снимало бы наш
 		# input_locked до перелока в _process (мигание блокировки).
+		# Исключение — редакторы текста секции «Сейв»: пока LineEdit в фокусе,
+		# пропускаем клавиши к GUI (набор/Ctrl+V/Ctrl+C). Просочившееся release
+		# безопасно: lock держит перелок в _process (страховка уже в контракте).
+		var fo := get_viewport().gui_get_focus_owner()
+		if not (fo is LineEdit and is_ancestor_of(fo)):
+			if event.pressed and event.physical_keycode == KEY_ESCAPE:
+				close()
+			get_viewport().set_input_as_handled()
+			return
 		if event.pressed and event.physical_keycode == KEY_ESCAPE:
-			close()
-		get_viewport().set_input_as_handled()
+			close()  # Esc из поля — закрыть меню (по контракту Esc всегда закрывает)
+			get_viewport().set_input_as_handled()
+			return
 		return
 	if event.pressed and event.physical_keycode == KEY_ESCAPE:
 		if not _busy():
@@ -261,6 +275,52 @@ func _build() -> void:
 	mm_row.add_child(mm_btn)
 	mm_row.visible = false
 	vb.add_child(mm_row)
+
+	# --- «Сейв»: переносной бэкап (SaveVault; RETENTION_NG_PLUS §5.2) ---
+	var sv_title := Label.new()
+	sv_title.text = "Сейв"
+	sv_title.add_theme_font_size_override("font_size", 9)
+	sv_title.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+	sv_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(sv_title)
+
+	var row_e := HBoxContainer.new()
+	row_e.add_theme_constant_override("separation", 6)
+	row_e.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var exp_btn := Button.new()
+	exp_btn.text = "Экспорт"
+	exp_btn.focus_mode = Control.FOCUS_NONE
+	exp_btn.add_theme_font_size_override("font_size", 8)
+	exp_btn.tooltip_text = "Строка сейва в это поле и в буфер обмена (если площадка отдаёт буфер)."
+	exp_btn.pressed.connect(_on_sv_export)
+	sv_export = LineEdit.new()
+	sv_export.editable = false           # readonly: мышь выделяет, Ctrl+C копирует
+	sv_export.custom_minimum_size = Vector2(150, 0)
+	sv_export.add_theme_font_size_override("font_size", 8)
+	row_e.add_child(exp_btn)
+	row_e.add_child(sv_export)
+	vb.add_child(row_e)
+
+	var row_i := HBoxContainer.new()
+	row_i.add_theme_constant_override("separation", 6)
+	row_i.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sv_import = LineEdit.new()
+	sv_import.placeholder_text = "Вставь сейв..."
+	sv_import.custom_minimum_size = Vector2(150, 0)
+	sv_import.add_theme_font_size_override("font_size", 8)
+	sv_apply_btn = Button.new()
+	sv_apply_btn.text = "Применить"
+	sv_apply_btn.focus_mode = Control.FOCUS_NONE
+	sv_apply_btn.add_theme_font_size_override("font_size", 8)
+	sv_apply_btn.pressed.connect(_on_sv_import)
+	row_i.add_child(sv_import)
+	row_i.add_child(sv_apply_btn)
+	vb.add_child(row_i)
+
+	sv_msg = Label.new()
+	sv_msg.add_theme_font_size_override("font_size", 7)
+	sv_msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(sv_msg)
 
 	var reset_btn := Button.new()
 	reset_btn.text = "Сброс"
@@ -418,6 +478,55 @@ func _on_mm_toggled(on: bool) -> void:
 	_mm_refresh_text(on)
 	if _mm_api != null:
 		_mm_api.call("set_on", on)   # персист — ответственность Minimap
+
+# --- «Сейв»: экспорт/импорт строкового бэкапа (вся логика — в SaveVault) ---
+
+func _on_sv_export() -> void:
+	var t := SaveVault.export_text()
+	if t == "":
+		_sv_msg("Сейва ещё нет — экспортировать нечего", false)
+		GameAudio.sfx("ui_deny")
+		return
+	sv_export.text = t
+	sv_export.select(0, t.length())  # предвыделение: сразу видно, что копируем
+	# Буфер — best-effort: на десктопе/WebGL есть, на headless/экзотах тихий
+	# фолбэк — readonly-строка с предвыделением и Ctrl+C всегда остаются.
+	var copied := false
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.clipboard_set(t)
+		copied = DisplayServer.clipboard_has()
+	_sv_msg("Скопировано в буфер" if copied else "Выделено: Ctrl+C", true)
+	GameAudio.sfx("ui_confirm")
+
+func _on_sv_import() -> void:
+	var s := sv_import.text.strip_edges()
+	if s == "":
+		# Пустой ввод — только мерцание отказа: без тоста, без crash, файл не тронут.
+		GameAudio.sfx("ui_deny")
+		_sv_blink(sv_apply_btn)
+		return
+	if SaveVault.import_text(s) == OK:
+		sv_import.text = ""
+		sv_export.text = ""
+		_sv_msg("Сейв восстановлен. Перезайдите (F9) или перезапустите", true)
+		# В реестре GameAudio нет ui_purchase — канонное «успех» имя ui_confirm.
+		GameAudio.sfx("ui_confirm")
+	else:
+		_sv_msg("Не похоже на наш сейв", false)
+		GameAudio.sfx("ui_deny")
+		_sv_blink(sv_apply_btn)
+
+func _sv_msg(text: String, ok: bool) -> void:
+	sv_msg.text = text
+	sv_msg.add_theme_color_override("font_color",
+		Color(0.6, 0.9, 0.6) if ok else Color(0.95, 0.55, 0.45))
+
+## Мерцание отказа: тройное падение modulate (Tween, без оверхеда в _process).
+func _sv_blink(btn: Button) -> void:
+	var tw := create_tween()
+	tw.set_loops(3)
+	tw.tween_property(btn, "modulate", Color(1.0, 0.45, 0.45), 0.07)
+	tw.tween_property(btn, "modulate", Color.WHITE, 0.07)
 
 # --- занятость мира (по чужим окнам не открываемся) ---
 
