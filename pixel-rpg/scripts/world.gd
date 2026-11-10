@@ -557,7 +557,7 @@ func drink_potion() -> void:
 	GameState.heal(3)
 	DmgNumbers.spawn(player.global_position + Vector2(0, -12), GameState.hp - _hp0, "heal")
 	GameState.quest_changed.emit()  # автосейв + обновление HUD
-	GameState.toast.emit("Лесное зелье: +3 HP")
+	GameState.toast.emit("Лесное зелье: +%d HP" % (GameState.hp - _hp0))  # факт долечено (QA F1)
 
 # --- маркер цели квеста ---
 

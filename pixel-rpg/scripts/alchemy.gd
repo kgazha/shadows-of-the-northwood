@@ -78,5 +78,5 @@ static func drink_brewed() -> bool:
 	GameState.heal(GameState.STRONG_POTION_HEAL)
 	DmgNumbers.spawn(Vector2.INF, GameState.hp - _hp0, "heal")
 	GameState.quest_changed.emit()
-	GameState.toast.emit("Крепкое зелье: +%d HP (осталось %d)" % [GameState.STRONG_POTION_HEAL, GameState.brewed_potions])
+	GameState.toast.emit("Крепкое зелье: +%d HP (осталось %d)" % [GameState.hp - _hp0, GameState.brewed_potions])
 	return true
