@@ -58,8 +58,9 @@ var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо �
 var cam: Camera2D
 var fade_rect: ColorRect
 var village_return_pos := Vector2.INF  # куда возвращаться из пещеры (то место, где вошли)
-var cur_move: Texture2D    # курсор «идти» (cursor_move.png)
+var cur_move: Texture2D    # курсор «идти» (world: прицел assets/ui/cursor_crosshair.png, фолбэк cursor_move.png)
 var cur_enemy: Texture2D   # курсор «атака» (cursor_enemy.png)
+var cur_arrow: Texture2D   # стрелка для диалогов/модалок (assets/ui/cursor_arrow.png)
 var atmosphere             # scripts/atmosphere.gd: свет/тени/частицы/цветокор (весь визуал спринта «Атмосфера»)
 var campfires: Array = []  # scripts/campfire.gd (hud читает для панели варки/полосы отдыха)
 
@@ -129,10 +130,15 @@ func _start_intro() -> void:
 		start_dialogue("intro")
 
 func _load_cursors() -> void:
-	if ResourceLoader.exists("res://assets/cursor_move.png"):
+	# мир: пиксельный прицел из Kenney Cursor Pixel Pack; при отсутствии — штатный cursor_move.png
+	if ResourceLoader.exists("res://assets/ui/cursor_crosshair.png"):
+		cur_move = load("res://assets/ui/cursor_crosshair.png")
+	elif ResourceLoader.exists("res://assets/cursor_move.png"):
 		cur_move = load("res://assets/cursor_move.png")
 	if ResourceLoader.exists("res://assets/cursor_enemy.png"):
 		cur_enemy = load("res://assets/cursor_enemy.png")
+	if ResourceLoader.exists("res://assets/ui/cursor_arrow.png"):
+		cur_arrow = load("res://assets/ui/cursor_arrow.png")
 
 func tile_to_world(t: Vector2i) -> Vector2:
 	return Vector2((t.x + 0.5) * TILE, (t.y + 0.5) * TILE + 2.0)
@@ -428,8 +434,15 @@ func _enemy_at(p: Vector2) -> Node2D:
 	return null
 
 func _update_cursor() -> void:
-	if GameState.input_locked or cur_move == null:
-		Input.set_custom_mouse_cursor(null)  # во время диалога/модалки — обычный
+	if GameState.input_locked:
+		# диалог/модалка: стрелка из того же пака (меню кликают стрелкой, не прицелом)
+		if cur_arrow != null:
+			Input.set_custom_mouse_cursor(cur_arrow, Input.CURSOR_ARROW, Vector2(0, 0))
+		else:
+			Input.set_custom_mouse_cursor(null)
+		return
+	if cur_move == null:
+		Input.set_custom_mouse_cursor(null)
 		return
 	var e := _enemy_at(get_global_mouse_position())
 	if e != null and cur_enemy != null:

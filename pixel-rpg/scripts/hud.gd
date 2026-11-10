@@ -58,6 +58,8 @@ var camp_panel: PanelContainer  # панель варки: только у го�
 var camp_btns := {}             # rid -> Button
 var rest_bg: ColorRect          # полоса канала отдыха
 var rest_fill: ColorRect
+var rest_frame: NinePatchRect   # деревянная рамка полосы отдыха (null, если нет ассета)
+var ui_frame_tex: Texture2D     # 9-slice рамка окон 32x32 (assets/ui/panel_frame.png)
 
 func setup(p_world: Node2D) -> void:
 	world = p_world
@@ -67,6 +69,12 @@ func setup(p_world: Node2D) -> void:
 		portraits2_tex = load("res://assets/portraits2.png")
 	else:
 		push_warning("Нет ассета: assets/portraits2.png — отшельник без портрета")
+	# единая тёмная деревянная рамка окон (Kenney UI Pack Pixel Adventure, 9-slice, край 4 px);
+	# без ассета панели остаются на стиле темы — деградация штатная
+	if ResourceLoader.exists("res://assets/ui/panel_frame.png"):
+		ui_frame_tex = load("res://assets/ui/panel_frame.png")
+	else:
+		push_warning("Нет ассета: assets/ui/panel_frame.png — панели без рамки")
 	var th := Theme.new()
 	th.default_font_size = 8
 	hp_bg = ColorRect.new()
@@ -168,6 +176,8 @@ func setup(p_world: Node2D) -> void:
 	dhint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(dhint)
 	panel.theme = th
+	if ui_frame_tex != null:
+		panel.add_theme_stylebox_override("panel", _ui_frame_style(4.0))
 	add_child(panel)
 	panel.visible = false
 
@@ -439,6 +449,8 @@ func _build_skill_panel(th: Theme) -> void:
 		hb.add_child(sc)
 		skill_slots.append({"root": sc, "icon": icon, "cd": cdc, "cdn": cdnum, "lvl": lvl, "hot": hot})
 	skill_panel.theme = th
+	if ui_frame_tex != null:
+		skill_panel.add_theme_stylebox_override("panel", _ui_frame_style(4.0))
 	add_child(skill_panel)
 	# зелье из трав — справа от панели скиллов
 	potion_btn = Button.new()
@@ -504,30 +516,43 @@ func _build_alch_ui(th: Theme) -> void:
 	brewed_btn.theme = th
 	brewed_btn.visible = false
 	add_child(brewed_btn)
-	# полоса канала отдыха — над панелью скиллов
+	# полоса канала отдыха — над панелью скиллов; 12 px, в деревянной рамке (как окна)
+	rest_frame = NinePatchRect.new()
+	rest_frame.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	rest_frame.offset_left = -64
+	rest_frame.offset_right = 64
+	rest_frame.offset_top = -66
+	rest_frame.offset_bottom = -54
+	rest_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if ui_frame_tex != null:
+		rest_frame.texture = ui_frame_tex
+		rest_frame.draw_center = true
+		rest_frame.patch_margin_left = 4.0
+		rest_frame.patch_margin_top = 4.0
+		rest_frame.patch_margin_right = 4.0
+		rest_frame.patch_margin_bottom = 4.0
 	rest_bg = ColorRect.new()
 	rest_bg.color = Color(0.08, 0.07, 0.09, 0.9)
-	rest_bg.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	rest_bg.offset_left = -60
-	rest_bg.offset_right = 60
-	rest_bg.offset_top = -62
-	rest_bg.offset_bottom = -55
+	rest_bg.position = Vector2(4, 4)
+	rest_bg.size = Vector2(120, 4)
 	rest_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rest_fill = ColorRect.new()
 	rest_fill.color = Color(0.95, 0.62, 0.25)
-	rest_fill.position = Vector2(1, 1)
+	rest_fill.position = Vector2(0, 0)
+	rest_fill.size = Vector2(0, 4)
 	rest_bg.add_child(rest_fill)
+	rest_frame.add_child(rest_bg)
 	var rtxt := Label.new()
 	rtxt.text = "Отдых…"
-	rtxt.position = Vector2(2, -1)
+	rtxt.position = Vector2(49, 1)
 	rtxt.add_theme_font_size_override("font_size", 7)
 	rtxt.add_theme_color_override("font_color", Color(1, 0.95, 0.85))
 	rtxt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	rtxt.add_theme_constant_override("outline_size", 3)
 	rtxt.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rest_bg.add_child(rtxt)
-	rest_bg.visible = false
-	add_child(rest_bg)
+	rest_frame.add_child(rtxt)
+	rest_frame.visible = false
+	add_child(rest_frame)
 	# панель варки — только у горящего костра
 	camp_panel = PanelContainer.new()
 	camp_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -561,8 +586,13 @@ func _build_alch_ui(th: Theme) -> void:
 		vb.add_child(none)
 	camp_panel.add_child(vb)
 	camp_panel.theme = th
+	if ui_frame_tex != null:
+		camp_panel.add_theme_stylebox_override("panel", _ui_frame_style(3.0))
 	camp_panel.visible = false
 	add_child(camp_panel)
+	# полоса отдыха поверх панели варки: PanelContainer упирается контентом в полосу
+	# (в базе она рисовалась под панелью и во время отдыха была не видна)
+	move_child(rest_frame, camp_panel.get_index() + 1)
 
 func _on_brewed_pressed() -> void:
 	GameAudio.sfx("ui_click")
@@ -599,10 +629,10 @@ func _update_camp_ui() -> void:
 			for cf in cfs:
 				if is_instance_valid(cf) and cf.get("resting") == true:
 					cf_rest = cf
-	rest_bg.visible = cf_rest != null
+	rest_frame.visible = cf_rest != null
 	if cf_rest != null:
 		var frac := clampf(float(cf_rest.get("rest_t")) / Campfire.REST_TIME, 0.0, 1.0)
-		rest_fill.size = Vector2(118.0 * frac, 5)
+		rest_fill.size = Vector2(120.0 * frac, 4)
 
 ## Перестроить иконки под текущий класс (после создания героя, загрузки сейва).
 func refresh_skills() -> void:
@@ -770,3 +800,23 @@ func _pick_class(id: String) -> void:
 	if class_chosen_cb.is_valid():
 		class_chosen_cb.call()
 	class_chosen_cb = Callable()
+
+# --- стилистика рамки (Kenney UI Pack, 9-slice) ---
+
+## Тёмная деревянная рамка для PanelContainer: край 4 px, свой отступ контента,
+## чтобы текст не касался дерева. Возвращает null, если ассета нет (тогда тема).
+func _ui_frame_style(content: float) -> StyleBoxTexture:
+	if ui_frame_tex == null:
+		return null
+	var sb := StyleBoxTexture.new()
+	sb.texture = ui_frame_tex
+	sb.region_rect = Rect2(0, 0, 32, 32)
+	sb.texture_margin_left = 4
+	sb.texture_margin_top = 4
+	sb.texture_margin_right = 4
+	sb.texture_margin_bottom = 4
+	sb.content_margin_left = content
+	sb.content_margin_top = content
+	sb.content_margin_right = content
+	sb.content_margin_bottom = content
+	return sb
