@@ -14,8 +14,20 @@ extends CanvasLayer
 ##
 ## Прогресс/автостарты не считает: тиком дёргает QuestsData.refresh() —
 ## единственный источник правды о квестах. Уведомления — через GameState.toast.
+##
+## Вкладки (P1.5, docs/RETENTION_NG_PLUS.md §2): «Квесты» / «Достижения».
+## Самих данных в журнале нет — const-таблица AchvCatalog (канон §2),
+## статусы читаются из GameState: флаг "ach.<id>" (в JSON-сейве может лежать
+## float — сверяем через != null и float > 0), прогресс-подсказки из
+## "ach.n.<kind>" / int-полей / размеров контейнеров GameState (см. _ach_cur).
+## Журнал остаётся НЕМОДАЛЬНЫМ: ввода не берёт, J-гейт при открытом Shop
+## (75b5b69) не трогает; переключение вкладок — мышь или Tab (только когда
+## журнал открыт). Закрытая вкладка достижений ничего не опрашивает.
 
 const TICK := 0.35  # сек между аудитами реестра квестов (автостарт/завершение)
+const TAB_QUESTS := 0
+const TAB_ACHV := 1
+const TAB_TITLES := ["Квесты", "Достижения"]
 
 var _open := false
 var _dirty := true
@@ -25,6 +37,10 @@ var _panel: PanelContainer
 var _scroll: ScrollContainer
 var _list: VBoxContainer
 var _frame_tex: Texture2D
+var _tab := TAB_QUESTS
+var _tab_btns: Array = []        # Button на вкладку (стилизация flat-тегми)
+var _ach_list: VBoxContainer     # список 12 строк достижений (вкладка TAB_ACHV)
+var _ach_sig := -1               # подпись состояния ачивок: анлоки + счётчики
 
 func _ready() -> void:
 	layer = 5  # поверх HUD (у hud.gd слой 1, виньетка — внутри hud)
@@ -57,6 +73,18 @@ func _ready() -> void:
 	sep.color = Color(1, 0.85, 0.5, 0.3)
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(sep)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 8)
+	vb.add_child(tabs)
+	for i in TAB_TITLES.size():
+		var tb := Button.new()
+		tb.flat = true
+		tb.text = String(TAB_TITLES[i])
+		tb.focus_mode = Control.FOCUS_NONE  # мышиные: клавиатурный фокус не воруем
+		tb.add_theme_font_size_override("font_size", 8)
+		tb.pressed.connect(select_tab.bind(i))
+		tabs.add_child(tb)
+		_tab_btns.append(tb)
 	_scroll = ScrollContainer.new()
 	_scroll.custom_minimum_size = Vector2(296, 160)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -65,11 +93,17 @@ func _ready() -> void:
 	_list.add_theme_constant_override("separation", 4)
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(_list)
-	var hint := _mk_label("J / Esc — закрыть", 7, Color(1, 1, 1, 0.45))
+	_ach_list = VBoxContainer.new()
+	_ach_list.add_theme_constant_override("separation", 4)
+	_ach_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ach_list.visible = false
+	_scroll.add_child(_ach_list)
+	var hint := _mk_label("J / Esc — закрыть, Tab — вкладка", 7, Color(1, 1, 1, 0.45))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	vb.add_child(hint)
 	_panel.theme = th
 	_root.add_child(_panel)
+	_tab_style()
 	close()  # стартовое состояние: скрыт, мышь насквозь
 	GameState.quest_changed.connect(func() -> void: _dirty = true)
 
@@ -84,6 +118,10 @@ func _process(delta: float) -> void:
 	if _open and _dirty:
 		_dirty = false
 		_rebuild()
+	# вкладка достижений живая: анлок/счётчик могли измениться при открытом
+	# журнале (покупка у Гриима, варка) — дешёвая подпись вместо пересборки вслепую
+	if _open and _tab == TAB_ACHV and _ach_sig != _ach_sig_calc():
+		_rebuild_achv()
 
 # --- публичный API ---
 
@@ -96,6 +134,8 @@ func open() -> void:
 	_root.visible = true
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	for b in _tab_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
+		(b as Button).mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.scroll_vertical = 0
 	GameAudio.sfx("book")  # шелест страниц; нет файла — тихий пропуск
 
@@ -113,6 +153,25 @@ func toggle() -> void:
 func is_open() -> bool:
 	return _open
 
+func select_tab(i: int) -> void:
+	if i < 0 or i >= TAB_TITLES.size() or i == _tab:
+		return
+	_tab = i
+	_tab_style()
+	_list.visible = _tab == TAB_QUESTS
+	_ach_list.visible = _tab == TAB_ACHV
+	_scroll.scroll_vertical = 0
+	if _tab == TAB_ACHV:
+		_rebuild_achv()  # свежие статусы на каждый вход во вкладку
+
+func _tab_style() -> void:
+	for i in _tab_btns.size():
+		var b: Button = _tab_btns[i]
+		b.add_theme_color_override(
+			"font_color", Color(1, 0.9, 0.55) if i == _tab else Color(1, 1, 1, 0.45))
+		b.add_theme_color_override(
+			"font_hover_color", Color(1, 0.9, 0.55) if i == _tab else Color(1, 1, 1, 0.7))
+
 # --- ввод ---
 
 ## Physical-код: буква на физической клавише, раскладка (ру/англ) не важна.
@@ -129,10 +188,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif event.physical_keycode == KEY_ESCAPE and _open:
 		close()
 		get_viewport().set_input_as_handled()
+	elif event.physical_keycode == KEY_TAB and _open:
+		select_tab(TAB_QUESTS if _tab == TAB_ACHV else TAB_ACHV)
+		get_viewport().set_input_as_handled()
 
 # --- построение списка квестов ---
 
 func _rebuild() -> void:
+	if _tab == TAB_ACHV:
+		_rebuild_achv()
+		return
 	for ch in _list.get_children():
 		ch.queue_free()
 	var entries: Array = QuestsData.entries(GameState)
@@ -155,6 +220,73 @@ func _rebuild() -> void:
 			var done := bool(tg.get("done", false))
 			var row := _mk_label("    %s %s  %d/%d" % ["[x]" if done else "[ ]", String(tg.get("label", "")), int(tg.get("cur", 0)), int(tg.get("need", 1))], 7, Color(0.55, 0.85, 0.5) if done else Color(1, 1, 1, 0.85))
 			_list.add_child(row)
+
+# --- построение вкладки достижений (P1.5) ---
+
+## Статус ачивки: флаг "ach.<id>". В JSON-сейве значение могло стать float —
+## поэтому «!= null и float(...) > 0», а не bool()/сравнение с 1.
+func _ach_unlocked(id: String) -> bool:
+	var v: Variant = GameState.flags.get("ach." + id)
+	if v == null:
+		return false
+	return float(v) > 0.0
+
+## Текущее значение прогресс-подсказки по спецификации из AchvCatalog:
+## "n.<kind>" — счётчик "ach.n.<kind>" (голый "<kind>" трактуется так же),
+## "field:<p>" — int-поле GameState, "size:<p>" — размер поля-контейнера.
+func _ach_cur(spec: String) -> int:
+	if spec.begins_with("n."):
+		return int(GameState.flags.get("ach." + spec, 0))
+	if spec.begins_with("field:"):
+		return int(GameState.get(spec.trim_prefix("field:")))
+	if spec.begins_with("size:"):
+		var v: Variant = GameState.get(spec.trim_prefix("size:"))
+		if typeof(v) == TYPE_ARRAY or typeof(v) == TYPE_DICTIONARY:
+			return v.size()
+		return 0
+	return int(GameState.flags.get("ach.n." + spec, 0))
+
+## Дешёвая подпись состояния (для живого обновления вкладки при открытом
+## журнале): количество анлоков и сумма прогрессов, ограниченных целью.
+func _ach_sig_calc() -> int:
+	var s := 0
+	for raw_c in AchvCatalog.ITEMS:
+		var c: Dictionary = raw_c
+		if _ach_unlocked(String(c.get("id", ""))):
+			s += 1000
+		var spec := String(c.get("counter", ""))
+		if spec != "":
+			s += mini(_ach_cur(spec), int(c.get("goal", 0)) + 1)
+	return s
+
+func _rebuild_achv() -> void:
+	_ach_sig = _ach_sig_calc()
+	for ch in _ach_list.get_children():
+		ch.queue_free()
+	for raw_c in AchvCatalog.ITEMS:
+		var c: Dictionary = raw_c
+		var id := String(c.get("id", ""))
+		var unlocked := _ach_unlocked(id)
+		# палитра как у квестов: выполнено — тёплое золото, нет — приглушённый
+		var head_col := Color(1, 0.9, 0.55) if unlocked else Color(0.6, 0.58, 0.54)
+		var head := _mk_label("%s %s — %s%s" % [
+			"[x]" if unlocked else "[ ]",
+			String(c.get("name", id)),
+			String(c.get("reward", "")),
+			"  ✓ закрыто" if unlocked else "",
+		], 8, head_col)
+		_ach_list.add_child(head)
+		var d := _mk_label(String(c.get("desc", "")), 7,
+			Color(0.85, 0.8, 0.7, 0.7) if unlocked else Color(0.85, 0.8, 0.7, 0.4))
+		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d.custom_minimum_size = Vector2(280, 0)
+		_ach_list.add_child(d)
+		var spec := String(c.get("counter", ""))
+		if spec != "":
+			var cur := _ach_cur(spec)
+			var goal := int(c.get("goal", 0))
+			_ach_list.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
+				7, Color(0.55, 0.85, 0.5) if cur >= goal else Color(1, 1, 1, 0.6)))
 
 # --- мелкие хелперы стиля (в тон hud.gd) ---
 
