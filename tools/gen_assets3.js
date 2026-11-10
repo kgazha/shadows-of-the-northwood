@@ -300,7 +300,9 @@ function genTiles() {
     tt.rect(0, 15, 16, 1, C.waterDD);
   };
   t = put(); waterFrame(t, 0); s.blit(t, 64);
-  // 5 — дерево: старое кряжистое, дупло, сухие сучья, корневая тень
+  // 5 — дерево: кряжистое, дупло, сухие сучья. Фикс «невидимых стен»: крона
+  // обведена тёмным контуром leafDD и несёт светлую макушку — на тёмном
+  // лесном полу (тайл 15) блокирующее дерево обязано читаться СИЛУЭТОМ.
   t = put(); grassBase(t, 5);
   for (const [x, y] of [[12, 1], [13, 0], [4, 1], [3, 0]]) t.set(x, y, C.trunkDD);            // сухие сучья
   const HW = [3, 5, 6, 6, 6, 6, 6, 5, 3, 1];
@@ -309,13 +311,10 @@ function genTiles() {
     for (let x = 8 - hw; x < 8 + hw; x++) {
       const n = nz(x, y, 5, 9, 1, 29);
       let c = n < 6 ? C.leafD : n > 24 ? C.leafL : C.leaf;
-      if (x < 7 && y < 5 && n > 14) c = C.leafL;                       // свет верх-лево
-      if (x < 6 && y < 3 && n > 20) c = C.leafXL;
-      if (x > 9 && y > 5) c = mixC(c, C.leafDD, .55);                  // тень низ-право
-      if (y === 0) c = mixC(c, C.leafXL, .3);
-      else if (x === 8 - hw) c = mixC(c, C.leafL, .5);
-      else if (x === 8 + hw - 1) c = mixC(c, C.leafDD, .65);
-      if (y === 9) c = mixC(c, C.leafDD, .75);
+      if (y <= 1 && n > 10) c = C.leafXL;                             // светлая макушка
+      else if (x < 7 && y < 4 && n > 14) c = C.leafL;                 // свет верх-лево
+      if (x > 9 && y > 5) c = mixC(c, C.leafDD, .55);                 // тень низ-право
+      if (y >= 2 && (x === 8 - hw || x === 8 + hw - 1 || y === 9)) c = C.leafDD;  // контур
       t.set(x, y, c);
     }
   }
@@ -323,7 +322,7 @@ function genTiles() {
   t.set(9, 10, C.trunkD); t.set(9, 11, C.trunkD); t.set(9, 13, C.trunkDD);                    // тёмная кора справа
   t.rect(8, 11, 1, 2, C.woodIn); t.set(8, 13, mixC(C.woodIn, C.trunkDD, .5));                 // дупло
   t.set(6, 14, C.trunkD); t.set(10, 14, C.trunkDD);                                           // корни
-  for (const [x, y] of [[6, 14], [9, 14], [5, 15], [6, 15], [10, 15], [9, 15]]) t.set(x, y, C.grassSh);
+  for (const [x, y] of [[6, 14], [9, 14], [5, 15], [6, 15], [10, 15], [9, 15], [7, 15], [8, 15]]) t.set(x, y, C.grassSh);
   s.blit(t, 80);
   // 6 — стена дома: тёсаный холодный камень, ржавая прожилка
   const wallStone = (tt) => {
@@ -403,9 +402,13 @@ function genTiles() {
   t.set(6, 3, C.berry); t.set(9, 3, C.berry); t.set(7, 6, C.berry);
   t.set(6, 2, C.berryL); t.set(9, 2, C.berryL);
   s.blit(t, 176);
-  // 12 — валун: сланец, ржавая прожилка, мох у основания
+  // 12 — валун: сланец, ржавая прожилка, мох у основания. Тёмная обводка —
+  // фикс «невидимых стен»: силуэт камня не должен сливаться с тёмной землёй.
   t = put(); grassBase(t, 4);
   t.rect(3, 14, 10, 1, C.grassSh); t.set(2, 14, C.grassSh); t.set(13, 14, C.grassSh);
+  for (let y = 7; y <= 13; y++) { t.set(3, y, C.rockDD); t.set(12, y, C.rockDD); }            // боковая обводка
+  t.rect(5, 4, 6, 1, C.rockDD); t.set(4, 5, C.rockDD); t.set(11, 5, C.rockDD);                // верхняя обводка
+  t.set(5, 6, C.rockDD); t.set(10, 6, C.rockDD);                                               // грани шапки
   t.rect(4, 7, 8, 7, C.rock); t.rect(6, 5, 4, 2, C.rock);
   t.rect(6, 5, 3, 1, C.rockXL); t.set(5, 7, C.rockL); t.set(6, 6, C.rockL);                    // верх-лево свет
   for (let y = 7; y <= 13; y++) {
@@ -419,9 +422,10 @@ function genTiles() {
   t.set(4, 12, C.mossD); t.set(5, 13, C.moss); t.set(4, 11, C.mossD);                          // мох у земли
   t.set(3, 13, C.grassD); t.set(12, 13, C.grassD);
   s.blit(t, 192);
-  // 13 — указатель: потемневшая доска с резьбой и кованым уголком
+  // 13 — указатель: потемневшая доска с резьбой и кованым уголком, тень у земли
   t = put(); grassBase(t, 6);
-  t.rect(7, 8, 2, 7, C.trunk); t.set(8, 10, C.trunkD); t.set(8, 13, C.trunkDD);
+  t.rect(5, 15, 6, 1, C.grassSh); t.rect(6, 14, 4, 1, C.grassSh);                             // тень под столбом
+  t.rect(6, 8, 3, 6, C.trunk); t.set(8, 10, C.trunkD); t.set(8, 13, C.trunkDD); t.set(6, 9, C.trunkL);
   for (const [x, y] of [[6, 14], [9, 14]]) t.set(x, y, C.grassSh);
   t.rect(3, 3, 10, 5, C.wood); t.rect(3, 3, 10, 1, C.woodHL); t.rect(3, 7, 10, 1, C.woodD);
   t.set(3, 3, C.woodHL); t.set(12, 3, C.woodD); t.set(12, 7, C.woodD);

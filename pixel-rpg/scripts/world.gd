@@ -11,6 +11,13 @@ const CHAR_TO_TILE := {
 	"D": 8, "#": 9, "r": 12, "s": 13, "T": 15,
 }
 const BLOCKING := [4, 5, 6, 7, 8, 9, 12, 13]
+## Коллизии «мелких» блокирующих тайлов: индекс -> [w, h, dx, dy] от центра клетки.
+## Полный тайл жмёт только крупняк; иначе вокруг столбика/камня образуются
+## «невидимые стены» — упираться в пустоту рядом с видимым предметом обидно.
+const BLOCK_SHAPES := {
+	12: [11, 10, 0, 1],   # валун: тело камня, не углы клетки
+	13: [6, 5, 0, 3],     # указатель: лишь столб у земли
+}
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 
@@ -131,12 +138,14 @@ func _build_walls() -> void:
 			var ch := row[x]
 			if not CHAR_TO_TILE.has(ch):
 				continue
-			if int(CHAR_TO_TILE[ch]) in BLOCKING:
+			var idx := int(CHAR_TO_TILE[ch])
+			if idx in BLOCKING:
+				var spec: Array = BLOCK_SHAPES.get(idx, [TILE, TILE, 0, 0])
 				var cs := CollisionShape2D.new()
 				var sh := RectangleShape2D.new()
-				sh.size = Vector2(TILE, TILE)
+				sh.size = Vector2(float(spec[0]), float(spec[1]))
 				cs.shape = sh
-				cs.position = Vector2(x * TILE + 8, y * TILE + 8)
+				cs.position = Vector2(x * TILE + 8 + float(spec[2]), y * TILE + 8 + float(spec[3]))
 				body.add_child(cs)
 
 func _spawn_player() -> void:
