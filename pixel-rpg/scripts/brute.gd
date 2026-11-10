@@ -240,7 +240,9 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 			var boss_key := "ng.boss_%d" % GameState.ng_wave()
 			if int(GameState.flags.get(boss_key, 0)) == 0:
 				GameState.set_flag(boss_key, 1)
-				Achv.grant_ash(3)
+				# Талант «Шёпот алтаря» (whisper, CONTRACT_TALENTS §3): +1 пепла
+				# за убитого босса круга; дедуп ng.boss_ выше не трогаем.
+				Achv.grant_ash(3 + (1 if GameState.tal_rank("whisper") > 0 else 0))
 			GameState.add_xp(BOSS_XP)
 			GameState.toast.emit("Гниль отступает!")
 			# tension смолкла: возвращаем тему пещеры, только если герой ещё в ней;
@@ -259,7 +261,8 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 ## Один бросок на материал со смерти моба — копия правила slime.gd; при полном
 ## рюкзаке — трофей теряется (дефицит). Зовётся ровно раз: hurt() по dying не проходит.
 func _roll_mat_drop() -> void:
-	if randf() >= MAT_DROP_CHANCE:
+	# Талант «Травничество» (herblore, CONTRACT_TALENTS §3): шанс дропа 0.25 -> 0.32.
+	if randf() >= (0.32 if GameState.tal_rank("herblore") > 0 else MAT_DROP_CHANCE):
 		return
 	var mid := String(MAT_DROP_TABLE[randi() % MAT_DROP_TABLE.size()])
 	if not GameState.add_material(mid):

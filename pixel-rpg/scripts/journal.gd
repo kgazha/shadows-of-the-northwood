@@ -15,7 +15,8 @@ extends CanvasLayer
 ## Прогресс/автостарты не считает: тиком дёргает QuestsData.refresh() —
 ## единственный источник правды о квестах. Уведомления — через GameState.toast.
 ##
-## Вкладки (P1.5, docs/RETENTION_NG_PLUS.md §2): «Квесты» / «Достижения».
+## Вкладки (P1.5, docs/RETENTION_NG_PLUS.md §2): «Квесты» / «Достижения» /
+## «Таланты» (CONTRACT_TALENTS §4).
 ## Самих данных в журнале нет — const-таблица AchvCatalog (канон §2),
 ## статусы читаются из GameState: флаг "ach.<id>" (в JSON-сейве может лежать
 ## float — сверяем через != null и float > 0), прогресс-подсказки из
@@ -27,7 +28,8 @@ extends CanvasLayer
 const TICK := 0.35  # сек между аудитами реестра квестов (автостарт/завершение)
 const TAB_QUESTS := 0
 const TAB_ACHV := 1
-const TAB_TITLES := ["Квесты", "Достижения"]
+const TAB_TALENTS := 2  # «Древо талантов» (CONTRACT_TALENTS §4), после достижений
+const TAB_TITLES := ["Квесты", "Достижения", "Таланты"]
 
 var _open := false
 var _dirty := true
@@ -41,6 +43,8 @@ var _tab := TAB_QUESTS
 var _tab_btns: Array = []        # Button на вкладку (стилизация flat-тегми)
 var _ach_list: VBoxContainer     # список 12 строк достижений (вкладка TAB_ACHV)
 var _ach_sig := -1               # подпись состояния ачивок: анлоки + счётчики
+var _tal_list: VBoxContainer     # колонки веток талантов (вкладка TAB_TALENTS)
+var _tal_sig := -1               # подпись: свободные очки + вложенные (уровень/траты)
 
 func _ready() -> void:
 	layer = 5  # поверх HUD (у hud.gd слой 1, виньетка — внутри hud)
@@ -98,6 +102,11 @@ func _ready() -> void:
 	_ach_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ach_list.visible = false
 	_scroll.add_child(_ach_list)
+	_tal_list = VBoxContainer.new()
+	_tal_list.add_theme_constant_override("separation", 4)
+	_tal_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tal_list.visible = false
+	_scroll.add_child(_tal_list)
 	var hint := _mk_label("J / Esc — закрыть, Tab — вкладка", 7, Color(1, 1, 1, 0.45))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	vb.add_child(hint)
@@ -122,6 +131,10 @@ func _process(delta: float) -> void:
 	# журнале (покупка у Гриима, варка) — дешёвая подпись вместо пересборки вслепую
 	if _open and _tab == TAB_ACHV and _ach_sig != _ach_sig_calc():
 		_rebuild_achv()
+	# вкладка талантов живая: уровень вырос (leveled_up не дёргает quest_changed),
+	# NG+ сбросил tal.* — подпись «очки+вложения» дёшеве пересборки вслепую
+	if _open and _tab == TAB_TALENTS and _tal_sig != _tal_sig_calc():
+		_rebuild_talents()
 
 # --- публичный API ---
 
@@ -160,9 +173,12 @@ func select_tab(i: int) -> void:
 	_tab_style()
 	_list.visible = _tab == TAB_QUESTS
 	_ach_list.visible = _tab == TAB_ACHV
+	_tal_list.visible = _tab == TAB_TALENTS
 	_scroll.scroll_vertical = 0
 	if _tab == TAB_ACHV:
 		_rebuild_achv()  # свежие статусы на каждый вход во вкладку
+	if _tab == TAB_TALENTS:
+		_rebuild_talents()  # свежие ранги/очки на каждый вход + мышь на кнопки
 
 func _tab_style() -> void:
 	for i in _tab_btns.size():
@@ -189,7 +205,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		close()
 		get_viewport().set_input_as_handled()
 	elif event.physical_keycode == KEY_TAB and _open:
-		select_tab(TAB_QUESTS if _tab == TAB_ACHV else TAB_ACHV)
+		# цикл по всем вкладкам: Квесты -> Достижения -> Таланты -> Квесты
+		select_tab((_tab + 1) % TAB_TITLES.size())
 		get_viewport().set_input_as_handled()
 
 # --- построение списка квестов ---
@@ -197,6 +214,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _rebuild() -> void:
 	if _tab == TAB_ACHV:
 		_rebuild_achv()
+		return
+	if _tab == TAB_TALENTS:
+		_rebuild_talents()
 		return
 	for ch in _list.get_children():
 		ch.queue_free()
@@ -287,6 +307,70 @@ func _rebuild_achv() -> void:
 			var goal := int(c.get("goal", 0))
 			_ach_list.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
 				7, Color(0.55, 0.85, 0.5) if cur >= goal else Color(1, 1, 1, 0.6)))
+
+# --- построение вкладки талантов (CONTRACT_TALENTS §4) ---
+
+## Дешёвая подпись состояния талантов: свободные очки и вложения. Уровень вырос
+## (очки) или куплен ранг (и то и другое) — подпись меняется, список пересобирается.
+func _tal_sig_calc() -> int:
+	return GameState.tal_points() * 64 + GameState.tal_spent()
+
+## Клик по узлу: трата очка в GameState.try_spend_talent (звук/отказ — внутри).
+## Журнал НЕМОДАЛЕН, а input_locked гасит его только следующим тиком _process —
+## поэтому клики сквозь открывшийся диалог/модалку отсекаем прямо здесь.
+func _on_tal_clicked(id: String) -> void:
+	if GameState.input_locked:
+		return
+	GameState.try_spend_talent(id)
+	_rebuild_talents()  # заголовок «Очки» и подсветка доступных — сразу
+
+## Три колонки-ветки (Сила/Лес/Пепел), порядок узлов — порядок NODES (§1).
+## Узел = кнопка "[название (ранг/max)]" + под ней desc; недоступный (нет очков
+## или кап ранга) — затенение той же палитрой, что закрытые ачивки.
+func _rebuild_talents() -> void:
+	_tal_sig = _tal_sig_calc()
+	for ch in _tal_list.get_children():
+		ch.queue_free()
+	var pts := GameState.tal_points()
+	_tal_list.add_child(_mk_label("Очки: %d" % pts, 9, Color(1, 0.9, 0.55)))
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 6)
+	cols.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tal_list.add_child(cols)
+	for raw_b in Talents.BRANCHES:
+		var bkey := String(raw_b)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 2)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cols.add_child(col)
+		col.add_child(_mk_label(String(Talents.BRANCHES[bkey]), 8, Color(1, 0.9, 0.55)))
+		for raw_n in Talents.NODES:
+			var id := String(raw_n)
+			var nd: Dictionary = Talents.NODES[raw_n]
+			if String(nd.get("branch", "")) != bkey:
+				continue
+			var mx := Talents.max_of(id)
+			var r := GameState.tal_rank(id)
+			var avail := r < mx and pts > 0
+			# цвета — существующая палитра журнала: открытый синий квестов,
+			# приглушённый закрытых ачивок, тёплое золото заголовков
+			var btn_col := Color(0.7, 0.88, 1.0) if avail else Color(0.6, 0.58, 0.54)
+			var b := Button.new()
+			b.flat = true
+			b.text = "[%s (%d/%d)]" % [String(nd.get("name", id)), r, mx]
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.focus_mode = Control.FOCUS_NONE  # клавиатурный фокус не воруем
+			b.add_theme_font_size_override("font_size", 8)
+			b.add_theme_color_override("font_color", btn_col)
+			b.add_theme_color_override("font_hover_color", Color(1, 0.9, 0.55) if avail else btn_col)
+			b.add_theme_color_override("font_pressed_color", btn_col)
+			b.pressed.connect(_on_tal_clicked.bind(id))
+			col.add_child(b)
+			var d := _mk_label("— " + String(nd.get("desc", "")), 7,
+				Color(0.85, 0.8, 0.7, 0.7) if avail else Color(0.85, 0.8, 0.7, 0.4))
+			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			d.custom_minimum_size = Vector2(88, 0)
+			col.add_child(d)
 
 # --- мелкие хелперы стиля (в тон hud.gd) ---
 

@@ -15,7 +15,8 @@ signal ng_plus_started
 
 # --- восстановление (B+F): внебойная регенерация + мана мага ---
 const COMBAT_HOLD := 6.0        # сколько секунд считаем «в бою» после контакта
-const HP_REGEN_EVERY := 4.0     # +1 HP каждые 4 с вне боя
+# HP_REGEN_EVERY переехал в hp_regen_interval(): базовые 4.0 с теперь левый
+# край таблицы таланта «Глубокое дыхание» (CONTRACT_TALENTS §3).
 const MANA_REGEN_EVERY := 2.0   # +2 маны каждые 2 с вне боя
 const MANA_REGEN_STEP := 2
 
@@ -95,13 +96,19 @@ func _ready() -> void:
 	quest_changed.connect(func() -> void: save_game())
 	gold_changed.connect(func() -> void: save_game())
 
+## Интервал регена HP: база 4.0 с, талант «Глубокое дыхание» (breath) сокращает
+## до 3.2/2.6 (CONTRACT_TALENTS §3: таблица [4.0, 3.2, 2.6], индекс 0..2).
+func hp_regen_interval() -> float:
+	var t := [4.0, 3.2, 2.6]
+	return float(t[clampi(tal_rank("breath"), 0, 2)])
+
 func _process(delta: float) -> void:
 	combat_t = maxf(0.0, combat_t - delta)
 	if combat_t > 0.0 or hp <= 0:
 		return  # в бою реген нет — только в тишине
 	if hp < max_hp:
 		_hp_regen_t += delta
-		if _hp_regen_t >= HP_REGEN_EVERY:
+		if _hp_regen_t >= hp_regen_interval():
 			_hp_regen_t = 0.0
 			hp += 1
 			stats_changed.emit()
@@ -278,6 +285,10 @@ static func _str(v: Variant, def: String) -> String:
 	return String(v) if typeof(v) == TYPE_STRING else def
 
 func add_xp(n: int) -> void:
+	# Талант «Рачительный опыт» (§3): +10% опыта за ранг — только на положительный
+	# приток (отрицательные корректировки, если появятся, множить нельзя).
+	if n > 0:
+		n = int(round(n * (1.0 + 0.10 * tal_rank("scholar"))))
 	xp += n
 	while xp >= xp_next:
 		xp -= xp_next
@@ -287,6 +298,11 @@ func add_xp(n: int) -> void:
 		heal_full()
 		toast.emit("Новый уровень: %d! Максимум HP вырос!" % level)
 		leveled_up.emit(level)
+		# Таланты открываются со 2-го уровня (первое очко) — контекстная подсказка
+		# первопроходцу (канон вызова как slime.gd: guard FirstHint.I != null;
+		# дедуп и очередь — внутри FirstHint.show_hint по флагу hint.talents).
+		if level == 2 and FirstHint.I != null:
+			FirstHint.I.show_hint("talents", "Новый уровень — очко таланта. J → Таланты.")
 	stats_changed.emit()
 
 # --- классы (спринт 2) ---
@@ -318,6 +334,38 @@ func set_class(id: String) -> void:
 	recalc_max_hp()
 	recalc_max_mana()
 	heal_full()
+
+# --- древо талантов (CONTRACT_TALENTS §2): ранги живут в flags "tal."+id ---
+## Никаких новых top-level полей сейва: только int-ранги 0..max в flags.
+## Реестр узлов и их максимумы — scripts/talents.gd (class_name Talents).
+## Кап CAP-128 на число ключей flags учитывает 14 ключей tal.* (док в from_dict).
+
+## Ранг узла talents (0..max_of); неизвестный id => max_of=0 => 0.
+func tal_rank(id: String) -> int:
+	return clampi(_num(flags.get("tal." + id, 0), 0), 0, Talents.max_of(id))
+
+## Сколько очков таланта уже вложено (сумма рангов по всем узлам).
+func tal_spent() -> int:
+	var s := 0
+	for id in Talents.NODES:
+		s += tal_rank(String(id))
+	return s
+
+## Свободные очки таланта: по одному за каждый уровень выше 1-го минус вложенные.
+func tal_points() -> int:
+	return maxi(level - 1 - tal_spent(), 0)
+
+## Потратить очко в узел id. false (со звуком ui_deny) — неизвестный id, узел
+## прокачан до cap или нет свободных очков. Успех — +1 ранг, ui_confirm и
+## quest_changed (тот же канал автосейва, что квесты/ачивки).
+func try_spend_talent(id: String) -> bool:
+	if not Talents.NODES.has(id) or tal_rank(id) >= Talents.max_of(id) or tal_points() <= 0:
+		GameAudio.sfx("ui_deny")
+		return false
+	flags["tal." + id] = tal_rank(id) + 1
+	quest_changed.emit()
+	GameAudio.sfx("ui_confirm")
+	return true
 
 func to_dict() -> Dictionary:
 	return {
@@ -407,6 +455,10 @@ func from_dict(d: Dictionary) -> void:
 	has_sword = String(gear["weapon"]) == "sword"
 	flags = {}
 	var fd: Variant = d.get("flags", {})
+	# CAP-128: load-лимит на число ключей flags. С деревом талантов сюда
+	# приходит до 14 ключей tal.* (по одному на узел): типичный полный сейв
+	# ~40 служебных ключей (ach./hint./meta./ng./q./ashen.) + 14 tal.* — до
+	# капа 128 запас более чем двукратный, обрезки не происходит.
 	if typeof(fd) == TYPE_DICTIONARY:
 		var n := 0
 		var truncated := false
@@ -509,7 +561,7 @@ func start_ng_plus() -> int:
 	var wipe_keys: Array = []
 	for k in flags:
 		var ks := String(k)
-		if ks.begins_with("q.") or ks.begins_with("ashen.") or ks.begins_with("ng.boss_"):
+		if ks.begins_with("q.") or ks.begins_with("ashen.") or ks.begins_with("ng.boss_") or ks.begins_with("tal."):
 			wipe_keys.append(k)
 	for k in wipe_keys:
 		flags.erase(k)

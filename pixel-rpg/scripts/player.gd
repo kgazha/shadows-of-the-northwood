@@ -128,7 +128,9 @@ func _physics_process(delta: float) -> void:
 
 	# --- WASD-ход ---
 	var mv := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	velocity = mv * float(class_data().speed)
+	# Талант «Скороход» (stride, CONTRACT_TALENTS §3): скорость хода +5% за ранг
+	# (рывок кувырка — своя константа ROLL_SPEED, талантом не ускоряется).
+	velocity = mv * float(class_data().speed) * (1.0 + 0.05 * GameState.tal_rank("stride"))
 	if velocity != Vector2.ZERO:
 		_set_facing_from(velocity)
 		anim.play(facing)
@@ -172,7 +174,8 @@ func _step_tick(delta: float) -> void:
 func start_roll(mv: Vector2) -> void:
 	roll_dir = mv.normalized() if mv != Vector2.ZERO else _aim_dir()
 	roll_t = ROLL_TIME
-	roll_cd = (ROLL_CD_FEET if int(GameState.flags.get("meta.feet", 0)) >= 1 else ROLL_CD) + ROLL_TIME
+	# Талант «Лёгкая поступь» (lightfoot): откат кувырка -0.1 с, пол 0.15 с.
+	roll_cd = maxf(0.15, (ROLL_CD_FEET if int(GameState.flags.get("meta.feet", 0)) >= 1 else ROLL_CD) + ROLL_TIME - 0.1 * GameState.tal_rank("lightfoot"))
 	GameAudio.sfx("roll")  # шорох ткани на старте кувырка
 	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
 	Fx.dust(global_position + roll_dir * 4.0, world)
@@ -187,7 +190,8 @@ func attack_at(p: Vector2) -> void:
 	if String(class_data().kind) == "melee":
 		do_attack()
 	else:
-		attack_cd = float(class_data().attack_speed)
+		# Талант «Берсеркова удаль» (zeal): задержка выстрела ×0.92 после класса.
+		attack_cd = float(class_data().attack_speed) * (0.92 if GameState.tal_rank("zeal") > 0 else 1.0)
 		var dir := global_position.direction_to(p)
 		_recoil_fx(dir)
 		fire_projectile(dir)
@@ -230,7 +234,8 @@ func dmg_vs(e: Node, mult: float) -> int:
 func do_attack() -> void:
 	if attack_cd > 0.0:
 		return
-	attack_cd = float(class_data().attack_speed)
+	# Талант «Берсеркова удаль» (zeal): задержка удара ×0.92 после класса.
+	attack_cd = float(class_data().attack_speed) * (0.92 if GameState.tal_rank("zeal") > 0 else 1.0)
 	var mult := pending_mult
 	pending_mult = 1.0
 	_lunge_fx(facing_dir(), 5.0)

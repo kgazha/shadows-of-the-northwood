@@ -135,7 +135,8 @@ func _die() -> void:
 
 ## Один бросок на материал со смерти; при полном рюкзаке — трофей теряется (дефицит).
 func _roll_mat_drop() -> void:
-	if randf() >= MAT_DROP_CHANCE:
+	# Талант «Травничество» (herblore, CONTRACT_TALENTS §3): шанс дропа 0.25 -> 0.32.
+	if randf() >= (0.32 if GameState.tal_rank("herblore") > 0 else MAT_DROP_CHANCE):
 		return
 	var mid := String(MAT_DROP_TABLE[randi() % MAT_DROP_TABLE.size()])
 	if not GameState.add_material(mid):

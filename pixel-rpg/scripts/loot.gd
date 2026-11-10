@@ -28,6 +28,9 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).
 	gold = int(round(gold * GameState.ng_gold_mult(GameState.ng_wave())))
+	# Талант «Уголёк в монете» (ember, CONTRACT_TALENTS §3): +15% золота мобов за
+	# ранг — стоит рядом с множителем волны, до жадности и до записи в GameState.
+	gold = int(round(gold * (1.0 + 0.15 * GameState.tal_rank("ember"))))
 	if gold <= 0:
 		return
 	# «Жадность» алтаря Пепла: +25% золота (поверх будущих ng_gold_mult — они встанут ниже).

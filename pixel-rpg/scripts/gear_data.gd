@@ -137,12 +137,16 @@ static func weapon_mult(gs: Object) -> float:
 		return LEGACY_SWORD_MULT
 	return 1.0
 
-## Броня в единицах урона из надетого armor-предмета; 0 — без брони.
+## Броня в единицах урона из надетого armor-предмета + талант «Толстая кожа»
+## (skin, +1/ранг, CONTRACT_TALENTS §3); 0 — без брони и таланта.
 static func armor_bonus(gs: Object) -> int:
+	var b := 0
 	var it := item(equipped_id(gs, "armor"))
-	if String(it.get("slot", "")) != "armor":
-		return 0
-	return int(it.get("armor_bonus", 0))
+	if String(it.get("slot", "")) == "armor":
+		b += int(it.get("armor_bonus", 0))
+	if gs != null:
+		b += gs.tal_rank("skin")
+	return b
 
 ## Урон после брони (для точки получения урона): любой ненулевой удар бьёт
 ## минимум на 1 (иначе кожа делала слаймов безвредными — дыра баланса).
@@ -159,7 +163,24 @@ static func player_damage(base: int, gs: Object) -> int:
 	var f := 0
 	if gs != null:
 		f = mini(int(gs.flags.get("meta.master", 0)), 3)
-	var d := int(round(float(base) * weapon_mult(gs) * (1.0 + 0.10 * f)))
-	if gs != null and bool(gs.get("has_amulet")):
-		d += 1
-	return maxi(1, d)
+	# Таланты (CONTRACT_TALENTS §3): «Точильный камень» — плоская прибавка +0.15
+	# к множителю оружия за ранг; «Яростная сила» — итоговый множитель урона;
+	# «Тяжёлый удар» — +1 до финального round(). Ранги читаем через gs (Object),
+	# «голый» герой (gs == null) считается без талантов.
+	var w_add := 0.0
+	var fury := 0
+	var heavy := 0
+	var amulet := false
+	if gs != null:
+		w_add = 0.15 * float(gs.tal_rank("whetstone"))
+		fury = gs.tal_rank("fury")
+		heavy = gs.tal_rank("heavy")
+		amulet = bool(gs.get("has_amulet"))
+	# Формула каноническая (см. шапку): база x оружие x мастерство, ярость —
+	# множит, амулет и тяжёлый удар — плоские +1 до округления.
+	var d := float(base) * (weapon_mult(gs) + w_add) * (1.0 + 0.10 * f)
+	d *= 1.0 + 0.05 * float(fury)
+	if amulet:
+		d += 1.0
+	d += float(heavy)
+	return maxi(1, int(round(d)))
