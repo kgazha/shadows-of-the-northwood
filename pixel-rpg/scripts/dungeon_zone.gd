@@ -56,13 +56,19 @@ func setup(p_world: Node2D) -> void:
 	# world.gd зовёт GameState.load_game() уже ПОСЛЕ постройки пещеры: сейв может
 	# отметить дверь открытой после сборки — дотягиваем состояние по факту.
 	GameState.stats_changed.connect(_sync_door)
+	GameState.stats_changed.connect(_sync_chest)
 	_sync_door()
 	_spawn_entities(m)
+	# Охранения в _spawn_entities читают флаги ДО load_game(), поэтому при заходе
+	# с открытыми дверью/сундуком узел всё же успел заспавниться — снимаем его.
+	_sync_door()
+	_sync_chest()
 
 func tile_to_world(t: Vector2i) -> Vector2:
 	return Vector2((t.x + 0.5) * TILE, (t.y + 0.5) * TILE + 2.0)
 
-## Проходимость клетки пещеры для поиска пути (дверь — с учётом door_opened).
+## Проходимость клетки пещеры для поиска пути (дверь — с учётом door_opened,
+## сундук — с учётом has_amulet: взятый амулет снимает сундук с клетки).
 func cell_walkable(t: Vector2i) -> bool:
 	if t.x < 0 or t.y < 0 or t.y >= map_h or t.x >= map_w:
 		return false
@@ -72,6 +78,8 @@ func cell_walkable(t: Vector2i) -> bool:
 	var ch := row[t.x]
 	if ch == "L":
 		return GameState.door_opened
+	if ch == "C":
+		return GameState.has_amulet
 	if not CHAR_TO_TILE.has(ch):
 		return true
 	return not (int(CHAR_TO_TILE[ch]) in BLOCKING)
@@ -145,8 +153,9 @@ func unlock_door(t: Vector2i) -> void:
 		_door_shapes[t].queue_free()
 		_door_shapes.erase(t)
 
-## Дверь открыта по сохранённому состоянию: тайл 3 -> 0 и снимаем блок.
-## Идемпотентно — нужно и при сборке, и когда сейв догрузился уже после неё.
+## Дверь открыта по сохранённому состоянию: тайл 3 -> 0, снимаем блок и фантом
+## «Открыть дверь». Идемпотентно — нужно и при сборке, и когда сейв догрузился
+## уже после неё (unlock_door() узел CaveDoor не трогает — только тайл и блок).
 func _sync_door() -> void:
 	if not GameState.door_opened:
 		return
@@ -155,6 +164,39 @@ func _sync_door() -> void:
 		for x in row.length():
 			if row[x] == "L":
 				unlock_door(Vector2i(x, y))
+	for n in get_children():
+		if n is CaveDoor:
+			_kill_ghost(n)
+
+## Сундук открыт (амулет взят): тайл 11 -> 12 и снимаем фантом «Открыть сундук».
+## Фантом не косметика: повторный клик по нему снова даёт heal(4) и реплику.
+## Идемпотентно — сборка пещеры, загрузка сейва, F9, открытие в этой сессии.
+func _sync_chest() -> void:
+	if not GameState.has_amulet:
+		return
+	# stats_changed летит и на хилке/уроне, поэтому тайл перекрашиваем, только если
+	# он всё ещё «закрыт» — иначе лишняя перекраска на каждом тике.
+	if chest_tile.x >= 0 and tilemap != null \
+			and tilemap.get_cell_atlas_coords(chest_tile).x != 12:
+		open_chest()
+	for n in get_children():
+		if n is CaveChest:
+			_kill_ghost(n)
+
+## Снять интерактив, уже неактуальный по сохранённому состоянию. Узел держит себя
+## в world.near (оттуда HUD берёт подсказку), а world чистит список лишь в
+## _process — убираем сразу, чтобы подсказка не мигнула и кадр, и обнуляем ссылку
+## маркера цели, висящую на этом узле.
+func _kill_ghost(n: Node) -> void:
+	if n == null or not is_instance_valid(n) or n.is_queued_for_deletion():
+		return
+	if n == chest_node:
+		chest_node = null
+	if world != null:
+		var near_list: Variant = world.get("near")  # список подсказок HUD
+		if near_list is Array and near_list.has(n):
+			near_list.erase(n)
+	n.queue_free()
 
 func _spawn_entities(m: Dictionary) -> void:
 	var her: Array = m.get("hermit", [])
@@ -290,6 +332,9 @@ class CaveDoor:
 	func get_hint() -> String:
 		return "Открыть дверь"
 	func try_interact() -> void:
+		if GameState.door_opened:
+			queue_free()  # дверь открыта по сейву/F9: без повторного сейва и тоста
+			return
 		if not GameState.has_key:
 			GameState.toast.emit("Нужен ключ Геральда")
 			return
@@ -325,8 +370,8 @@ class CaveChest:
 	func get_hint() -> String:
 		return "Открыть сундук"
 	func try_interact() -> void:
-		if used:
-			return
+		if used or GameState.has_amulet:
+			return  # амулет уже взят (сейв/F9 до синхронизации узла): без повторного heal
 		if not GameState.has_key:
 			GameState.toast.emit("Нужен ключ Геральда")
 			return
