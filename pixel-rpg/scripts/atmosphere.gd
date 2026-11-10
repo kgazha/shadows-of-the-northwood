@@ -27,6 +27,7 @@ const FEET_FALLBACK := {
 	"interactable": Vector2(0.0, 8.0),
 }
 const SCAN_PERIOD := 0.5       # пересканирование сущностей для теней, с
+const FULL_SCAN_DEBOUNCE := 0.15  # полный скан по child_entered — не чаще этого интервала, с
 const T_WALK := 0.35           # период смены кадра воды, с
 const T_TORCH := 0.25          # период смены кадра факела, с
 
@@ -63,6 +64,8 @@ var _altar_light: Light2D = null
 var _boss: Node2D = null
 var _boss_light: Light2D = null
 var _scan_t := 0.0
+var _scan_pending := false     # полный скан отложен: дебаунс шторма child_entered
+var _scan_cool := 0.0          # сек до разрешения следующего дебаунсного полного скана
 var _amb_village: Node2D       # деревенская атмосфера (тайлмапы-слои, факелы) — живёт в Village
 var _cave_container: Node2D    # свет/частицы пещеры — в Atmo, гасятся явно (зона PROCESS_MODE_DISABLED)
 var _cm: CanvasModulate = null
@@ -71,7 +74,8 @@ var _pollen: CPUParticles2D = null
 var _rad_cache: Dictionary = {}
 var _shadow_tex: Texture2D = null
 var _anim_tex: Texture2D = null
-var _feet_cache: Dictionary = {}   # instance_id текстуры кадра -> якорь ног в координатах кадра
+var _feet_cache: Dictionary = {}   # instance_id кадра -> {"tex": кадр, "feet": якорь}; ссылка на tex
+								   # не даёт id переиспользоваться, см. _frame_feet_cached
 
 ## Вызывается из world._ready() ПОСЛЕ спавна сущностей и постройки пещеры.
 func setup(p_world: Node2D) -> void:
@@ -135,6 +139,14 @@ func _process(delta: float) -> void:
 	if _scan_t >= SCAN_PERIOD:
 		_scan_t = 0.0
 		_scan_shadows()
+	# полный скан по child_entered — с дебаунсом (шторм FX-узлов не должен
+	# перечитывать всё дерево почти каждый кадр; поддерево сканируется сразу)
+	if _scan_cool > 0.0:
+		_scan_cool -= delta
+	if _scan_pending and _scan_cool <= 0.0:
+		_scan_pending = false
+		_scan_cool = FULL_SCAN_DEBOUNCE
+		_scan_shadows()
 	# вода: 4 кадра 16x16 из anim_tiles.png, цикл T_WALK
 	if water_layer != null and not water_cells.is_empty():
 		_water_t += delta
@@ -177,8 +189,14 @@ func _build_shadows() -> void:
 	_scan_t = 0.0
 	_scan_shadows()
 
-func _on_child_entered(_node: Node) -> void:
-	_scan_t = SCAN_PERIOD  # мгновенный скан: в дереве появилась новая сущность
+## Новый узел в мире: сразу и дёшево сканируем только вошедшее поддерево
+## (обычно это один FX/цифра урона), а полный скан — страховкой с дебаунсом
+## FULL_SCAN_DEBOUNCE: массовые спавны не должны перечитывать всё дерево.
+func _on_child_entered(node: Node) -> void:
+	if node is Node2D:
+		_try_shadow(node as Node2D)
+	_walk_shadowable(node)
+	_scan_pending = true
 
 func _scan_shadows() -> void:
 	if world == null:
@@ -197,7 +215,10 @@ func _try_shadow(e: Node2D) -> void:
 		return
 	if not e.is_in_group("enemy") and not e.is_in_group("player") and not e.has_method("get_hint"):
 		return
-	_ensure_shadow(e)
+	if e.has_node(SHADOW_NAME):
+		_sync_shadow(e)  # обновить видимость/позицию: пик травы, regrow, пепел, смена класса
+	else:
+		_ensure_shadow(e)
 
 ## true если узел — часть поддерева атмосферы (декор, контейнеры, свет).
 func _in_atmo(n: Node) -> bool:
@@ -216,12 +237,11 @@ func _in_atmo(n: Node) -> bool:
 func _ensure_shadow(e: Node2D) -> void:
 	if e.has_node(SHADOW_NAME):
 		return
-	# ищем спрайт с текстурой; у бесспрайтовых объектов (лестницы, триггеры) тени нет
-	var spr: Node2D = null
-	for ch in e.get_children():
-		if (ch is Sprite2D or ch is AnimatedSprite2D) and String(ch.name) != SHADOW_NAME:
-			spr = ch as Node2D
-			break
+	# ищем РЕАЛЬНЫЙ спрайт: первый видимый и с содержимым; у бесспрайтовых
+	# объектов (лестницы, триггеры) тени нет. Невидимые заглушки и пустые
+	# Sprite2D (плейсхолдер костра при AnimatedSprite2D) не должны становиться
+	# «несущим» спрайтом — иначе якорь берётся из FEET_FALLBACK, а не с кадров.
+	var spr := _pick_spr(e)
 	if spr == null or _shadow_tex == null:
 		return
 	var is_boss := e.is_in_group("boss")
@@ -241,6 +261,51 @@ func _ensure_shadow(e: Node2D) -> void:
 		idx += 1
 	e.add_child(sh)
 	e.move_child(sh, idx)  # child index 0 (или прямо перед спрайтом) — тень рисуется под сущностью
+	sh.visible = _shadow_visible(e, spr)
+
+## Первый «реальный» спрайт сущности: Sprite2D/AnimatedSprite2D, visible=true,
+## с текстурой/кадрами; сам узел-тень не считается.
+func _pick_spr(e: Node2D) -> Node2D:
+	for ch in e.get_children():
+		if String(ch.name) == SHADOW_NAME:
+			continue
+		if not (ch is Sprite2D or ch is AnimatedSprite2D):
+			continue
+		var s := ch as Node2D
+		if not (ch as CanvasItem).visible:
+			continue
+		if s is Sprite2D:
+			if (s as Sprite2D).texture == null:
+				continue
+		else:
+			var a := s as AnimatedSprite2D
+			if a.sprite_frames == null or not a.sprite_frames.has_animation(a.animation) \
+					or a.sprite_frames.get_frame_count(a.animation) == 0:
+				continue
+		return s
+	return null
+
+## Тень видима, только когда есть реальный видимый спрайт и объект не «в пепле»
+## (остывший костёр-привал: тень не нужна).
+func _shadow_visible(e: Node2D, spr: Node2D) -> bool:
+	if spr == null or not spr.visible:
+		return false
+	if e.get("is_campfire") == true and e.get("used") == true:
+		return false
+	return true
+
+## Актуализация существующей тени: видимость по эффективной видимости спрайта,
+## позиция — по текущему якорю (regrow, смена класса/текстуры сущности).
+func _sync_shadow(e: Node2D) -> void:
+	var sh := e.get_node(SHADOW_NAME) as Sprite2D
+	if sh == null:
+		return
+	var spr := _pick_spr(e)
+	sh.visible = _shadow_visible(e, spr)
+	if spr == null:
+		return
+	var blob := SHADOW_BOSS if e.is_in_group("boss") else SHADOW_CHAR
+	sh.position = _shadow_pos(e, spr, blob.size)
 
 ## Позиция тени в координатах сущности: центр блоба по x над пяткой,
 ## низ блоба — на линии ног + SHADOW_BIAS.
@@ -274,14 +339,21 @@ func _entity_feet(spr: Node2D) -> Vector2:
 	return spr.position + spr.scale * best
 
 ## Якорь кадра в координатах кадра (0,0 = центр) с кэшем по экземпляру текстуры.
+## В кэше держится ссылка на саму текстуру: освобождённый instance_id не может
+## быть переиспользован другой текстурой (иначе, например, после apply_class
+## новый AtlasTexture мог унаследовать якорь старого кадра), а проверка тождества
+## на входе — второй эшелон.
 func _frame_feet_cached(tex: Texture2D) -> Vector2:
 	if tex == null:
 		return Vector2.INF
 	var key := tex.get_instance_id()
-	if _feet_cache.has(key):
-		return _feet_cache[key]
+	var ent: Variant = _feet_cache.get(key)
+	if ent != null:
+		var d := ent as Dictionary
+		if d["tex"] == tex:
+			return d["feet"]
 	var f := _frame_feet(tex)
-	_feet_cache[key] = f
+	_feet_cache[key] = {"tex": tex, "feet": f}
 	return f
 
 ## (x — центр нижнего «пяточного» пятна, y — низ непрозрачных пикселей) в координатах
