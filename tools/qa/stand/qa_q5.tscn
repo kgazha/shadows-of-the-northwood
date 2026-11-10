@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://cqaq5stand1"]
 
-[ext_resource type="Script" path="res://tools/qa/stand/qa_q5.gd" id="1_qa"]
+[ext_resource type="Script" path="res://qa_q5.gd" id="1_qa"]
 
 [node name="QaQ5" type="Node"]
 script = ExtResource("1_qa")
