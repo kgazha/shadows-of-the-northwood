@@ -30,6 +30,25 @@ const TIERS := {
 	3: {"hp": 12, "dmg": 2, "speed": 33.0, "xp": 10, "cd": 4.5, "scale": 1.0},
 }
 
+## §D «Пепельные венцы» (NG+ P3): накопительные аффиксы Громы — один за круг,
+## на волне w активны венец 1..w (w5 — все пять). Только боевые примитивы:
+## контактный ожог / скорость / кибек / агрессия рывка / призыв мглокрысов.
+## Новых ассетов и звуков нет; Ведьма исключена фильтром get_script() ниже,
+## тир-мобы — веткой boss. Имена — только в код (никаких UI-индикаторов).
+const AFFIX_NAMES := ["Тлеющая плоть", "Пепельный ветер", "Костяная кора", "Пепельная ярость", "Улей из золы"]
+const AFFIX_SMOLDER := 1      # w1: удар в мили-контакт обжигает атакующего
+const AFFIX_ASHWIND := 2      # w2: +20% к скорости преследования
+const AFFIX_BONEBARK := 4     # w3: отбрасывание от удара почти не чувствуется
+const AFFIX_FURY := 8         # w4: рывок заметно чаще
+const AFFIX_SWARM := 16       # w5: из золы поднимаются мглокрысы
+const SMOLDER_DMG := 1
+const SMOLDER_REACH := 22.0   # «рука, занёсшая меч» — дальность ответного ожога
+const ASHWIND_MULT := 1.2
+const BONEBARK_KNOCK := 15.0  # базовый кибек в hurt() — 50.0
+const FURY_CD := 2.2          # базовый BOSS_CHARGE_CD — 4.0
+const SWARM_CD := 6.0         # период подъёма золы
+const SWARM_ALIVE_CAP := 2    # живых призывов одновременно — не больше
+
 var world: Node2D
 var boss := true           # false — обычный моб (ставит world.gd до setup)
 var tier := 3              # актуален только при boss=false
@@ -56,6 +75,11 @@ var home := Vector2.ZERO
 var wander_t := 0.0
 var wander_dir := Vector2.ZERO
 var base_tint := Color.WHITE
+## §D: битовая маска активных венцов (0 — чистый босс) и учёт «Улья из золы».
+var affix_mask := 0
+var ash_tile := Vector2i.ZERO
+var ash_timer := 0.0
+var ash_summons: Array = []   # инстансы поднятой золы (учёт SWARM_ALIVE_CAP)
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
@@ -76,6 +100,18 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		var w := GameState.ng_wave()
 		hp = int(round(hp * GameState.hp_mult(w)))
 		dmg += GameState.dmg_bonus(w)
+		# §D: венец носит настоящая Грома: тир-мобы — не боссы, Ведьма не проходит
+		# фильтр get_script() выше. hp_mult здесь НЕ применяется повторно — база
+		# уже проскейлена двумя строками выше; аффиксы живут на примитивах.
+		if boss and w >= 1:
+			ash_tile = tile
+			affix_mask = (1 << mini(w, AFFIX_NAMES.size())) - 1
+			if (affix_mask & AFFIX_ASHWIND) != 0:
+				speed *= ASHWIND_MULT
+			if (affix_mask & AFFIX_FURY) != 0:
+				charge_cd = FURY_CD
+			if (affix_mask & AFFIX_SWARM) != 0:
+				ash_timer = SWARM_CD
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4
@@ -139,6 +175,13 @@ func _physics_process(delta: float) -> void:
 		# герой впервые подошёл к боссу вплотную — саспенс-тема (кроссфейд внутри GameAudio)
 		tension_played = true
 		GameAudio.music("tension")
+	# §D w5 «Улей из золы»: пока герой в радиусе агрессии, зола поднимает мглокрыса
+	# раз в SWARM_CD; живых призывов не больше SWARM_ALIVE_CAP (учёт в _spawn_ash).
+	if boss and (affix_mask & AFFIX_SWARM) != 0 and d <= LEASH:
+		ash_timer -= delta
+		if ash_timer <= 0.0:
+			ash_timer = SWARM_CD
+			_spawn_ash()
 	if not boss and d > LEASH:
 		# героя далеко нет — не идём на весь cave, а сторожим свою часть пещеры
 		wander_t -= delta
@@ -180,7 +223,13 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg_in, "normal")
 	hp -= dmg_in
 	hurt_t = 0.3
-	velocity = (global_position - from).normalized() * 50.0
+	# §D w3 «Костяная кора»: удар почти не сносит Грому с места (база — 50.0).
+	velocity = (global_position - from).normalized() * (BONEBARK_KNOCK if (affix_mask & AFFIX_BONEBARK) != 0 else 50.0)
+	# §D w1 «Тлеющая плоть»: ударивший в мили-контакт обжигается пеплом.
+	# Ай-фреймы героя гасят повторные ожоги — сдвоенного урона не будет.
+	if (affix_mask & AFFIX_SMOLDER) != 0 and world.player != null \
+			and global_position.distance_to(world.player.global_position) <= SMOLDER_REACH:
+		world.player.take_damage(SMOLDER_DMG)
 	if hp <= 0:
 		dying = true
 		remove_from_group("enemy")  # мёртвый моб больше не бьёт и не целивается
@@ -217,3 +266,26 @@ func _roll_mat_drop() -> void:
 		GameState.toast.emit("Рюкзак полон — %s потерян" % GameState.mat_name(mid))
 		return
 	GameState.toast.emit("Трофей: %s (%d/%d)" % [GameState.mat_name(mid), GameState.mat_count(mid), GameState.MAT_CAP])
+
+## §D w5: один мглокрыс из золы. Существующий mob_swarmling со СВОИМ id стаи —
+## общий «испуг» не смешивает его с зональными стаями; трюк размещения — как у
+## стражей Ведьмы: в контейнер зоны босса, setup на клетку босса, затем ручной
+## оффсет (у пещерной зоны free_neighbours нет — поэтому сразу точкой).
+func _spawn_ash() -> void:
+	var alive := 0
+	for r in ash_summons:
+		if is_instance_valid(r):
+			alive += 1
+	if alive >= SWARM_ALIVE_CAP:
+		return  # зола не затапливает арену: потолок живых призывов
+	var rt = load("res://scripts/mob_swarmling.gd").new()
+	rt.swarm_id = "brute_ash_%d" % get_instance_id()
+	var zone: Node = get_parent()
+	if zone != null:
+		zone.add_child(rt)
+	else:
+		add_child(rt)
+	rt.setup(world, ash_tile)
+	rt.global_position = global_position + Vector2(randf_range(-14.0, 14.0), randf_range(-10.0, 10.0))
+	rt.self_modulate = Color(1.0, 0.82, 0.55)  # пепельный оттенок — приём Ведьмы, без нового ассета
+	ash_summons.append(rt)
