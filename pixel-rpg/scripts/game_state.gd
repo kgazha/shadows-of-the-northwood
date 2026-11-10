@@ -215,10 +215,9 @@ func equip_item(slot: String, item_id: String) -> String:
 	var prev := String(gear[slot])
 	gear[slot] = item_id
 	if slot == "weapon":
-		if item_id == "":
-			has_sword = false
-		elif item_id == "sword":
-			has_sword = true
+		# M1 (QA): флаг синхронизируется ЖЁСТКО — любой другой id (топор, клинок)
+		# обязан гасить has_sword, иначе при очистке слота остаётся «призрачный меч» x2.
+		has_sword = (item_id == "sword")
 		stats_changed.emit()
 	return prev
 
@@ -368,7 +367,17 @@ func from_dict(d: Dictionary) -> void:
 			materials[mid] = clampi(_num(md.get(mid, 0), 0), 0, MAT_CAP)
 	brewed_potions = clampi(_num(d.get("brewed", 0), 0), 0, BREWED_CAP)
 	var cu: Variant = d.get("campfires_used", {})
-	campfires_used = cu.duplicate() if typeof(cu) == TYPE_DICTIONARY else {}
+	# M4 (QA): каппим как сундуки (64) с varning — раньше кап был только у
+	# chests_used и молча резал данные, а campfires_used не валидировался вовсе.
+	campfires_used = {}
+	if typeof(cu) == TYPE_DICTIONARY:
+		var cn := 0
+		for ck in cu:
+			if cn >= 64:
+				push_warning("campfires_used: больше 64 ключей — остаток отброшен")
+				break
+			campfires_used[String(ck)] = cu[ck]
+			cn += 1
 	# сундуки: массив строк-ид; битые элементы молча пропускаем
 	chests_used = []
 	var chu: Variant = d.get("chests_used", [])
@@ -386,14 +395,30 @@ func from_dict(d: Dictionary) -> void:
 	# legacy-миграция: старый сейв с мечом => weapon="sword" (если слот пуст)
 	if has_sword and String(gear["weapon"]) == "":
 		gear["weapon"] = "sword"
+	# M2 (QA): обратная синхронизация — меч в gear всегда означает has_sword,
+	# иначе сейвы с gear.weapon="sword" + has_sword:false расходятся каналами.
+	if String(gear["weapon"]) == "sword":
+		has_sword = true
 	flags = {}
 	var fd: Variant = d.get("flags", {})
 	if typeof(fd) == TYPE_DICTIONARY:
 		var n := 0
+		var truncated := false
 		for k in fd:
-			if typeof(k) == TYPE_STRING and n < 128:
-				flags[String(k)] = fd[k]
-				n += 1
+			if typeof(k) != TYPE_STRING:
+				continue
+			if n >= 128:
+				truncated = true
+				break
+			# M3 (QA): JSON отдаёт float для целых — приводим целые значения
+			# обратно к int, иначе тип «плывёт» в сейве навсегда (typeof врёт).
+			var v: Variant = fd[k]
+			if typeof(v) == TYPE_FLOAT and not is_nan(v) and not is_inf(v) and v == floor(v) and absf(v) < 9.0e15:
+				v = int(v)
+			flags[String(k)] = v
+			n += 1
+		if truncated:
+			push_warning("flags: больше 128 ключей — остаток отброшен при загрузке")
 	player_pos = Vector2(_numf(d.get("px", 0.0), 0.0), _numf(d.get("py", 0.0), 0.0))
 	pos_valid = _flag(d.get("pos_valid", false), false)
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp
