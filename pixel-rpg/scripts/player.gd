@@ -44,10 +44,13 @@ func _ready() -> void:
 	# тик регенерации — видимая искра над героем
 	GameState.regen_hp_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			_spark(global_position + Vector2(0, -12), Color(0.45, 0.95, 0.5, 0.9), 5.0))
+			Fx.heal(global_position + Vector2(0, -12), world))
 	GameState.regen_mana_tick.connect(func() -> void:
 		if is_instance_valid(self):
 			_spark(global_position + Vector2(0, -12), Color(0.4, 0.65, 1.0, 0.9), 5.0))
+	GameState.leveled_up.connect(func(_l: int) -> void:
+		if is_instance_valid(self):
+			Fx.level_up(global_position + Vector2(0, -10), world))
 
 func class_data() -> Dictionary:
 	return Classes.class_data(GameState.class_id)
@@ -156,7 +159,7 @@ func start_roll(mv: Vector2) -> void:
 	roll_t = ROLL_TIME
 	roll_cd = ROLL_CD + ROLL_TIME
 	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
-	_spark(global_position + roll_dir * 6.0, Color(0.8, 0.72, 0.55, 0.7), 5.0)
+	Fx.dust(global_position + roll_dir * 4.0, world)
 	anim.modulate.a = 0.75
 
 ## Атака в мировую точку: встать лицом и ударить/выстрелить в её сторону.
@@ -288,7 +291,7 @@ func _spin_fx() -> void:
 ## Мгновенный мили-удар: враги в радиусе точки удара (12 px по facing).
 func melee_hit(mult: float, center := Vector2.INF, radius := 13.0, only: Node2D = null) -> void:
 	var c := center if center != Vector2.INF else global_position + facing_offset()
-	_spark(c)
+	Fx.hit(c, world)
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if not is_instance_valid(e) or not e.has_method("hurt"):
 			continue
@@ -394,9 +397,12 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			_rain_marker(pt)
 			get_tree().create_timer(0.5).timeout.connect(func(): _rain_burst(pt))
 		"firebolt":
-			fire_projectile(_shoot_dir(), 2.5, false, 12.0, 1)
+			var fb_dir := _shoot_dir()
+			fire_projectile(fb_dir, 2.5, false, 12.0, 1)
+			Fx.fire_trail(global_position + fb_dir * 8.0, global_position + fb_dir * 56.0, world)
 		"frost_nova":
 			_ring_fx(32.0, Color(0.55, 0.85, 1.0, 0.5))
+			Fx.frost_ring(global_position, 32.0, world)
 			for e in get_tree().get_nodes_in_group("enemy"):
 				if is_instance_valid(e) and "freeze_t" in e and global_position.distance_to(e.global_position) <= 32.0:
 					e.freeze_t = 3.0
@@ -404,6 +410,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			GameState.toast.emit("Морозная нова!")
 		"siphon":
 			siphon_t = 5.0
+			Fx.heal(global_position + Vector2(0, -8), world)
 			GameState.toast.emit("Поглощение: попадания снарядов лечат")
 		"firestorm":
 			for k in 3:
@@ -450,7 +457,7 @@ func _firestorm_tick() -> void:
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if is_instance_valid(e) and e.has_method("hurt") and global_position.distance_to(e.global_position) <= 36.0:
 			e.hurt(dmg_vs(e, 1.0), global_position)
-	_spark(global_position + Vector2(randf_range(-14, 14), randf_range(-14, 14)))
+	Fx.fire_burst(global_position + Vector2(randf_range(-14, 14), randf_range(-14, 14)), world)
 
 # --- получение урона ---
 
@@ -461,6 +468,7 @@ func take_damage(n: int) -> void:
 	_flash_t = 0.35
 	GameState.entered_combat()  # реген «замолкает» на время боя
 	GameState.hurt(n)
+	Fx.hit(global_position + Vector2(0, -6), world)
 	if GameState.hp <= 0:
 		cancel_orders()
 		world.on_player_death()

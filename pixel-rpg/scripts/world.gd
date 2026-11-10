@@ -226,8 +226,18 @@ func _build_cave() -> void:
 	cave_zone.add_child(dz)
 	dz.setup(self)
 	dungeon_zone = dz
+	_spawn_cave_embers()
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
+
+## Тлеющие угли — 3 точки пещеры (у входа, у комнаты отшельника, у зала босса).
+## Генераторы живут в cave_zone: с выходом из пещеры замирают (DISABLED),
+## со сменой сцены удаляются вместе с зоной — утечек нет.
+func _spawn_cave_embers() -> void:
+	for t: Vector2i in [Vector2i(15, 2), Vector2i(23, 11), Vector2i(13, 15)]:
+		var e := Fx.ember_bed(Vector2(t.x * TILE + 8, t.y * TILE + 10))
+		if e != null:
+			cave_zone.add_child(e)
 
 func _build_cave_entrance() -> void:
 	var stairs := CaveStairs.new()
