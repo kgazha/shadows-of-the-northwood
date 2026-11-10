@@ -220,7 +220,23 @@ func _rebuild() -> void:
 		return
 	for ch in _list.get_children():
 		ch.queue_free()
-	var entries: Array = QuestsData.entries(GameState)
+	# JC-4 (QA-4): журнал рисует сюжетки только реально взятые (elder_quest /
+	# cave_state >= 1). Слой данных не тронут: visible_in_journal — канон HUD и
+	# стендов (qa_q5 A1 «elder+cave видны с нуля») — правка только рендера:
+	# у нового героя журнал обязан пустовать, иначе подсказка ниже мертва,
+	# а «Гром» спойлерит пещеру до Геральда. «Слаймы» и «Ведьма» уже gate'ятся
+	# слоем данных (slime_quest / ashen.intro_seen).
+	var entries: Array = []
+	for raw_v in QuestsData.entries(GameState):
+		var ev: Dictionary = raw_v
+		match String(ev.get("id", "")):
+			"elder":
+				if int(GameState.elder_quest) < 1:
+					continue
+			"cave":
+				if int(GameState.cave_state) < 1:
+					continue
+		entries.append(ev)
 	if entries.is_empty():
 		_list.add_child(_mk_label("Записей пока нет.\nПоговори со старейшиной в деревне.", 8, Color(0.85, 0.8, 0.7, 0.8)))
 		return

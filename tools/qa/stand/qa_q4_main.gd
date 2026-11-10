@@ -115,9 +115,13 @@ func _sv_group() -> void:
 	var p4 := b2raw(JSON.stringify({"gold": 13, "flags": {"ach.x": {"nested": 1}}}))
 	snap()
 	r = SaveVault.import_text("TSNL1:" + Marshalls.raw_to_base64(p4))
+	# Порт-фикс харнесса (правка съёма наблюдения, НЕ ассерта): fk читался ДО
+	# load_game, которую этот же чек и вызывает → наблюдение всегда снимало
+	# предыдущее состояние (t=0). Ассерт ниже дословно тот же.
+	var ok2b: bool = r == OK and GameState.load_game()
 	var fk: Variant = GameState.flags.get("ach.x")
 	chk(g, "2b flags[dict] сквозняком: load жив, 1 ключ, тип-ловушка видна",
-		r == OK and GameState.load_game() and GameState.flags.size() == 1 and typeof(fk) == TYPE_DICTIONARY,
+		ok2b and GameState.flags.size() == 1 and typeof(fk) == TYPE_DICTIONARY,
 		"res=%d size=%d t=%d" % [r, GameState.flags.size(), typeof(fk)])
 	GameState.flags.clear()
 
