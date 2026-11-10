@@ -18,6 +18,11 @@ const BOSS_DMG := 3
 const BOSS_SPEED := 34.0
 const BOSS_CHARGE_CD := 4.0
 const BOSS_XP := 40
+## Дроп алхимических материалов с обычных мобов — то же правило, что у слайма
+## (slime.gd): один бросок со смерти, шанс 25%, suhotsvet/zhim 50/50. Босс
+## материалов не даёт (материалы — за гринд мобов, не за босса).
+const MAT_DROP_CHANCE := 0.25
+const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
 ## Ярусы мобов: чем глубже, тем жирнее, злее и быстрее (xp — за убийство).
 const TIERS := {
 	1: {"hp": 6, "dmg": 1, "speed": 24.0, "xp": 6, "cd": 0.0, "scale": 0.72},
@@ -44,6 +49,9 @@ var rush_dir := Vector2.ZERO
 ## Страж повторной смерти: queue_free откладывается до конца кадра, и залп
 ## (volley) успевал «убить» моба 2–3 раза — двойной XP и quest_changed (фикс T3).
 var dying := false
+## Однократный флаг на инстанс босса: первый заход героя в радиус агрессии
+## (LEASH) включает tension-тему. Обычные мобы её НЕ триггерят.
+var tension_played := false
 var home := Vector2.ZERO
 var wander_t := 0.0
 var wander_dir := Vector2.ZERO
@@ -119,6 +127,10 @@ func _physics_process(delta: float) -> void:
 		return
 	var player: CharacterBody2D = world.player
 	var d := global_position.distance_to(player.global_position)
+	if boss and not tension_played and d <= LEASH:
+		# герой впервые подошёл к боссу вплотную — саспенс-тема (кроссфейд внутри GameAudio)
+		tension_played = true
+		GameAudio.music("tension")
 	if not boss and d > LEASH:
 		# героя далеко нет — не идём на весь cave, а сторожим свою часть пещеры
 		wander_t -= delta
@@ -167,8 +179,24 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 			GameState.boss_defeated = true
 			GameState.add_xp(BOSS_XP)
 			GameState.toast.emit("Гниль отступает!")
+			# tension смолкла: возвращаем тему пещеры, только если герой ещё в ней;
+			# при выходе из пещеры «forest» поставит world.apply_zone как обычно
+			if GameState.in_cave:
+				GameAudio.music("cave")
 		else:
 			GameState.add_xp(kill_xp)
 			GameState.toast.emit("Отпрыск гнили повержен! (+%d XP)" % kill_xp)
+			_roll_mat_drop()
 		GameState.quest_changed.emit()
 		queue_free()
+
+## Один бросок на материал со смерти моба — копия правила slime.gd; при полном
+## рюкзаке — трофей теряется (дефицит). Зовётся ровно раз: hurt() по dying не проходит.
+func _roll_mat_drop() -> void:
+	if randf() >= MAT_DROP_CHANCE:
+		return
+	var mid := String(MAT_DROP_TABLE[randi() % MAT_DROP_TABLE.size()])
+	if not GameState.add_material(mid):
+		GameState.toast.emit("Рюкзак полон — %s потерян" % GameState.mat_name(mid))
+		return
+	GameState.toast.emit("Трофей: %s (%d/%d)" % [GameState.mat_name(mid), GameState.mat_count(mid), GameState.MAT_CAP])
