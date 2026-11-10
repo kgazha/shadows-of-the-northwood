@@ -20,6 +20,13 @@ const BLOCK_SHAPES := {
 }
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
+## Костры-привалы (id -> тайл): у дороги к торговцу, в травяном поле слаймов,
+## у входа в пещеру. Одноразовые — последний привал перед опасным рывком.
+const CAMPFIRE_SPOTS := {
+	"cf_village": Vector2i(18, 13),
+	"cf_forest": Vector2i(12, 19),
+	"cf_cave": Vector2i(38, 18),
+}
 
 var map_rows: Array = []
 var map_w := 0
@@ -40,6 +47,7 @@ var village_return_pos := Vector2.INF  # куда возвращаться из 
 var cur_move: Texture2D    # курсор «идти» (cursor_move.png)
 var cur_enemy: Texture2D   # курсор «атака» (cursor_enemy.png)
 var atmosphere             # scripts/atmosphere.gd: свет/тени/частицы/цветокор (весь визуал спринта «Атмосфера»)
+var campfires: Array = []  # scripts/campfire.gd (hud читает для панели варки/полосы отдыха)
 
 func _ready() -> void:
 	var mf := FileAccess.open("res://data/map_village.json", FileAccess.READ)
@@ -70,6 +78,7 @@ func _ready() -> void:
 	_build_walls()
 	_spawn_player()
 	_spawn_entities()
+	_build_campfires()
 	_build_cave()
 	_build_cave_entrance()
 	atmosphere = load("res://scripts/atmosphere.gd").new()
@@ -189,6 +198,28 @@ func _spawn_entities() -> void:
 		var slime = slime_script.new()
 		village_zone.add_child(slime)
 		slime.setup(self, Vector2i(int(e[0]), int(e[1])))
+
+## Костры-привалы (E-отдых + варка). Костёр — Area2D, использует тот же паттерн
+## world.near, что NPC/травы; одноразовость живёт в GameState.campfires_used.
+func _build_campfires() -> void:
+	var cf_script := load("res://scripts/campfire.gd")
+	for id in CAMPFIRE_SPOTS:
+		var cf = cf_script.new()
+		village_zone.add_child(cf)
+		cf.setup(self, String(id), CAMPFIRE_SPOTS[id])
+		campfires.append(cf)
+
+## Ближайший живой (не использованный) костёр в зоне E — или null.
+func campfire_near() -> Node2D:
+	var best: Node2D = null
+	var bd := INF
+	for n in near:
+		if n.get("is_campfire") == true and n.get("used") == false and player != null:
+			var d := player.global_position.distance_squared_to(n.global_position)
+			if d < bd:
+				bd = d
+				best = n
+	return best
 
 func _build_cave() -> void:
 	var dz = load("res://scripts/dungeon_zone.gd").new()

@@ -16,6 +16,12 @@ const HP_REGEN_EVERY := 4.0     # +1 HP каждые 4 с вне боя
 const MANA_REGEN_EVERY := 2.0   # +2 маны каждые 2 с вне боя
 const MANA_REGEN_STEP := 2
 
+# --- привалы и алхимия (дефицит: дроп редкий, перенос ограничен, костёр одноразовый) ---
+const MAT_CAP := 5              # лимит переноса на каждый материал
+const BREWED_CAP := 2           # запас варёных зелий (крепких)
+const STRONG_POTION_HEAL := 6   # HP за крепкое зелье (обычное травяное — 3)
+const MAT_NAMES := {"suhotsvet": "Сухоцвет", "zhim": "Жим"}
+
 var max_hp := 10
 var hp := 10
 var mana := 0
@@ -39,6 +45,11 @@ var damage: int:
 		pass
 var herbs := 0
 var slime_kills := 0
+## Алхимия: материалы с врагов (id -> кол-во, см. MAT_NAMES) и заряды варёных зелий.
+var materials := {"suhotsvet": 0, "zhim": 0}
+var brewed_potions := 0
+## Костры-привалы: id -> true, если уже использован (одноразовые).
+var campfires_used := {}
 ## Квесты: 0 = не начат, 1 = активен, 2 = выполнен
 var elder_quest := 0
 var slime_quest := 0
@@ -122,6 +133,34 @@ func heal(n: int) -> void:
 	hp = min(max_hp, hp + n)
 	stats_changed.emit()
 
+# --- привалы и алхимия ---
+
+func mat_name(mid: String) -> String:
+	return String(MAT_NAMES.get(mid, mid))
+
+func mat_count(mid: String) -> int:
+	return int(materials.get(mid, 0))
+
+## Положить материал в рюкзак; false — неизвестный id или лимит переноса.
+func add_material(mid: String) -> bool:
+	if not materials.has(mid):
+		push_warning("Неизвестный материал: %s" % mid)
+		return false
+	if mat_count(mid) >= MAT_CAP:
+		return false
+	materials[mid] = mat_count(mid) + 1
+	return true
+
+## Списать набор материалов; false (с тостом) — не хватает. Тратит только если всего хватает.
+func try_spend_materials(cost: Dictionary) -> bool:
+	for mid in cost:
+		if mat_count(String(mid)) < int(cost[mid]):
+			toast.emit("Не хватает: %s (нужно %d, есть %d)" % [mat_name(String(mid)), int(cost[mid]), mat_count(String(mid))])
+			return false
+	for mid in cost:
+		materials[String(mid)] = mat_count(String(mid)) - int(cost[mid])
+	return true
+
 func add_xp(n: int) -> void:
 	xp += n
 	while xp >= xp_next:
@@ -175,6 +214,8 @@ func to_dict() -> Dictionary:
 		"door_opened": door_opened,
 		"in_cave": in_cave, "seen_cave_intro": seen_cave_intro,
 		"seen_boss_intro": seen_boss_intro, "boss_defeated": boss_defeated,
+		"materials": materials.duplicate(), "brewed": brewed_potions,
+		"campfires_used": campfires_used.duplicate(),
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
 	}
 
@@ -202,6 +243,15 @@ func from_dict(d: Dictionary) -> void:
 	seen_boss_intro = bool(d.get("seen_boss_intro", false))
 	if bool(d.get("boss_defeated", false)):
 		cave_state = maxi(cave_state, 2)
+	# привалы и алхимия: СТАРЫЕ сейвы без этих полей => пустой рюкзак, костры целы
+	materials = {"suhotsvet": 0, "zhim": 0}
+	var md: Variant = d.get("materials", {})
+	if typeof(md) == TYPE_DICTIONARY:
+		for mid in materials:
+			materials[mid] = clampi(int(md.get(mid, 0)), 0, MAT_CAP)
+	brewed_potions = clampi(int(d.get("brewed", 0)), 0, BREWED_CAP)
+	var cu: Variant = d.get("campfires_used", {})
+	campfires_used = cu.duplicate() if typeof(cu) == TYPE_DICTIONARY else {}
 	player_pos = Vector2(float(d.get("px", 0)), float(d.get("py", 0)))
 	pos_valid = bool(d.get("pos_valid", false))
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp

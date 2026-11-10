@@ -1241,6 +1241,120 @@ function genShadow() {
   s.save('shadow.png');
 }
 
+// ================= СПРИНТ «ПРИВАЛЫ + АЛХИМИЯ»: костёр и иконки материалов =================
+// campfire.png 80x16: 4 кадра пламени (мерцание) + кадр 4 — пепел (использованный костёр).
+// alch_icons.png 48x16: 0 сухоцвет, 1 жим, 2 крепкое зелье — стиль иконок скиллов (плитка+обводка).
+
+// Общий низ костра: камни по бокам, два бревна, тлеющие угли в щели.
+function campfireBase(t, ash) {
+  const log = ash ? mixC(C.wood, [42, 38, 44], .55) : C.wood;
+  const logD = ash ? mixC(C.woodD, [30, 28, 34], .55) : C.woodD;
+  const logL = ash ? mixC(C.woodD, [70, 66, 72], .5) : mixC(C.wood, [255, 236, 200], .3);
+  // камни-ограда
+  t.rect(0, 12, 2, 3, C.rock); t.rect(0, 14, 2, 1, C.rockD); t.set(0, 12, C.rockL);
+  t.rect(14, 12, 2, 3, C.rock); t.rect(14, 14, 2, 1, C.rockD); t.set(15, 12, C.rockD);
+  // верхнее бревно: два коротких с зазором x=8 (щель с углями)
+  t.rect(4, 11, 3, 2, log); t.rect(4, 12, 3, 1, logD); t.set(4, 11, logL);
+  t.rect(9, 11, 3, 2, log); t.rect(9, 12, 3, 1, logD); t.set(11, 11, logD);
+  // нижнее бревно горизонтальное
+  t.rect(3, 13, 10, 2, log); t.rect(3, 14, 10, 1, logD); t.set(3, 13, logL); t.set(12, 13, logD);
+  // угли в щели (после пламени перекрашиваются слабее)
+  t.set(8, 11, ash ? C.fireD : C.fireL); t.set(8, 12, ash ? C.rockD : C.fire); t.set(7, 12, C.fireD);
+  // контактная тень
+  t.rect(3, 15, 10, 1, [0, 0, 0, 46]);
+  t.set(2, 15, [0, 0, 0, 24]); t.set(13, 15, [0, 0, 0, 24]);
+}
+// ряды пламени: кромка fireD, тело fire, ядро fireL
+function flameRows(t, rows, core) {
+  for (const [x0, x1, y] of rows) {
+    for (let x = x0; x <= x1; x++) t.set(x, y, (x === x0 || x === x1) ? C.fireD : C.fire);
+  }
+  for (const [x, y] of core) t.set(x, y, C.fireL);
+}
+function genCampfire() {
+  const s = new Img(80, 16);
+  let t = new Img(16, 16);
+  // кадр 0 — высокий прямо пламя
+  campfireBase(t, false);
+  flameRows(t, [[8, 8, 2], [7, 9, 3], [7, 9, 4], [6, 10, 5], [6, 10, 6], [6, 10, 7], [6, 10, 8], [6, 10, 9], [7, 9, 10]],
+    [[8, 5], [7, 6], [8, 6], [8, 7], [8, 8], [7, 9]]);
+  t.set(11, 3, C.fire); t.set(4, 6, C.fireD);                       // искры
+  outlineAA(t, { skipDown: true });
+  s.blit(t, 0);
+  // кадр 1 — средний, наклонён влево
+  t = new Img(16, 16); campfireBase(t, false);
+  flameRows(t, [[7, 7, 4], [6, 8, 5], [6, 9, 6], [5, 10, 7], [6, 10, 8], [6, 10, 9], [7, 9, 10]],
+    [[7, 6], [7, 7], [8, 7], [7, 8]]);
+  t.set(11, 6, C.fire);
+  outlineAA(t, { skipDown: true });
+  s.blit(t, 16);
+  // кадр 2 — низкий двузубый
+  t = new Img(16, 16); campfireBase(t, false);
+  flameRows(t, [[6, 7, 5], [9, 9, 5], [6, 7, 6], [9, 10, 6], [5, 8, 7], [9, 10, 7], [6, 10, 8], [6, 10, 9], [7, 9, 10]],
+    [[7, 7], [7, 8], [8, 8], [9, 8]]);
+  t.set(4, 4, C.fireD); t.set(12, 5, C.fire);
+  outlineAA(t, { skipDown: true });
+  s.blit(t, 32);
+  // кадр 3 — восстанавливается, вправо
+  t = new Img(16, 16); campfireBase(t, false);
+  flameRows(t, [[9, 9, 3], [8, 10, 4], [8, 10, 5], [7, 11, 6], [6, 10, 7], [6, 10, 8], [6, 10, 9], [7, 9, 10]],
+    [[9, 4], [8, 6], [9, 6], [8, 7], [8, 8]]);
+  t.set(4, 4, C.fire); t.set(5, 2, C.fireD);
+  outlineAA(t, { skipDown: true });
+  s.blit(t, 48);
+  // кадр 4 — пепел: костёр использован, дымок
+  t = new Img(16, 16); campfireBase(t, true);
+  t.set(8, 9, [204, 204, 214, 120]); t.set(7, 7, [190, 192, 202, 88]); t.set(8, 5, [180, 182, 194, 58]);
+  t.set(7, 10, [200, 200, 210, 70]);
+  t.set(7, 12, [120, 70, 40]);                                       // едва тлеющий уголёк
+  outlineAA(t, { skipDown: true });
+  s.blit(t, 64);
+  s.save('campfire.png');
+}
+
+function genAlchIcons() {
+  const s = new Img(48, 16);
+  let im = iconBase();
+  // 0 — сухоцвет: сухой золотой цветок на жёстком стебле
+  for (let y = 8; y <= 13; y++) im.set(8, y, y === 13 ? C.reedD : C.reed);
+  im.set(7, 10, C.leafD); im.set(9, 12, C.reedD);
+  im.rect(7, 4, 3, 2, C.gold2); im.set(8, 3, C.gold2);
+  im.set(6, 3, C.mapleD); im.set(10, 3, C.gold); im.set(5, 5, C.maple); im.set(11, 5, C.gold);
+  im.set(6, 6, C.mapleD); im.set(10, 6, C.mapleD); im.set(8, 5, C.goldL || C.gold2);
+  im.set(8, 4, [255, 240, 190]);                                     // сердцевина светлее
+  autoOutline(im);
+  s.blit(im, 0);
+  // 1 — жим: банке с зелёной слизью, капель
+  im = iconBase();
+  im.rect(7, 3, 3, 1, C.wood); im.set(7, 3, C.woodHL);               // пробка
+  im.rect(6, 4, 5, 1, C.iron); im.set(10, 4, C.ironD);               // горло
+  for (let y = 5; y <= 11; y++) {
+    const x0 = y === 5 ? 6 : 5, x1 = y === 5 ? 10 : (y >= 11 ? 9 : 11);
+    for (let x = x0; x <= x1; x++) {
+      const edge = (x === x0 || x === x1 || y === 11);
+      im.set(x, y, edge ? C.steelD : y <= 6 ? C.iceL : C.slimeG);    // пустая часть — блик стекла, ниже — слизь
+    }
+  }
+  im.set(7, 7, C.slimeL); im.set(7, 8, C.slimeL);                    // блик на слизи
+  im.set(12, 6, C.slimeG); im.set(12, 7, C.slimeD);                  // капля с бока
+  autoOutline(im);
+  s.blit(im, 16);
+  // 2 — крепкое зелье: круглая фляга с алым зельем
+  im = iconBase();
+  im.rect(7, 2, 3, 1, C.wood); im.set(7, 2, C.woodHL);               // пробка
+  im.rect(7, 3, 3, 1, C.steelD);                                     // горло
+  const flask = [[6, 10, 4], [5, 11, 5], [5, 11, 6], [4, 12, 7], [4, 12, 8], [4, 12, 9], [4, 12, 10], [5, 11, 11], [6, 10, 12]];
+  for (const [x0, x1, y] of flask) {
+    for (let x = x0; x <= x1; x++) im.set(x, y, (x === x0 || x === x1 || y === 12) ? C.steelD : C.red2);
+  }
+  im.set(6, 5, C.steelL); im.set(6, 6, C.steelL); im.set(5, 7, C.steelL); im.set(5, 8, C.steelL);  // блик стекла
+  im.set(8, 8, C.redL); im.set(9, 9, C.redL); im.set(7, 10, C.redL);                              // пузыри
+  im.set(8, 4, C.redD2); im.set(8, 5, C.redD2);                                                   // зелье в горле
+  autoOutline(im);
+  s.blit(im, 32);
+  s.save('alch_icons.png');
+}
+
 // ---------- запуск ----------
 genDungeonTiles();
 genTilesPolished();                              // tiles.png — те же 16 индексов
@@ -1262,6 +1376,8 @@ genCursors();
 genDecor();
 genAnimTiles();
 genShadow();
+genCampfire();
+genAlchIcons();
 
 console.log('--- verification ---');
 for (const [name, w, h] of [['dungeon_tiles.png', 256, 16], ['brute.png', 64, 32],
@@ -1273,6 +1389,7 @@ for (const [name, w, h] of [['dungeon_tiles.png', 256, 16], ['brute.png', 64, 32
                             ['npc_elder.png', 16, 16], ['npc_merchant.png', 16, 16], ['npc_farmer.png', 16, 16],
                             ['portraits.png', 120, 40], ['heart.png', 7, 6],
                             ['decor.png', 128, 16], ['anim_tiles.png', 128, 16], ['shadow.png', 32, 16],
+                            ['campfire.png', 80, 16], ['alch_icons.png', 48, 16],
                              ['player.png', 48, 64]]) {
   const b = fs.readFileSync(path.join(OUT, name));
   const sig = [...b.slice(0, 8)].map(v => v.toString(16).padStart(2, '0').toUpperCase()).join(' ');

@@ -3,6 +3,8 @@ extends CanvasLayer
 ## этап создания героя (модалка выбора класса) и панель скиллов (спринт 2).
 
 const Classes := preload("res://scripts/classes_data.gd")
+const Alch := preload("res://scripts/alchemy.gd")
+const Campfire := preload("res://scripts/campfire.gd")
 
 const NAMES := {
 	"hero": "Герой", "elder": "Старейшина", "merchant": "Торговец",
@@ -49,6 +51,13 @@ var marker_t := 0.0
 var modal: Control
 var modal_shown := false
 var class_chosen_cb := Callable()
+# --- привалы и алхимия ---
+var mat_lbl: Label              # счётчик материалов над Q-иконкой
+var brewed_btn: Button          # крепкое зелье (заряды), справа от Q
+var camp_panel: PanelContainer  # панель варки: только у горящего костра
+var camp_btns := {}             # rid -> Button
+var rest_bg: ColorRect          # полоса канала отдыха
+var rest_fill: ColorRect
 
 func setup(p_world: Node2D) -> void:
 	world = p_world
@@ -163,6 +172,7 @@ func setup(p_world: Node2D) -> void:
 	panel.visible = false
 
 	_build_skill_panel(th)
+	_build_alch_ui(th)
 	_build_class_modal(th)
 	# стрелка-указатель цели: рисуется на канвасе CanvasLayer = экранные координаты
 	marker = Polygon2D.new()
@@ -200,6 +210,7 @@ func _process(delta: float) -> void:
 			typing = false
 		dtext.visible_characters = int(chars_shown)
 	_update_skill_states()
+	_update_camp_ui()
 	_update_marker(delta)
 
 ## Стрелка к цели: видна, только когда цель за краем экрана.
@@ -280,6 +291,13 @@ func refresh() -> void:
 	if potion_btn != null:
 		potion_btn.visible = GameState.class_id != ""
 		potion_btn.text = "x%d" % GameState.herbs
+	if mat_lbl != null:
+		mat_lbl.visible = GameState.class_id != ""
+		mat_lbl.text = "Сухоцвет %d/%d · Жим %d/%d" % [GameState.mat_count("suhotsvet"), GameState.MAT_CAP, GameState.mat_count("zhim"), GameState.MAT_CAP]
+		mat_lbl.tooltip_text = "Материалы слаймов. Вари у костра (появится кнопка варки)."
+	if brewed_btn != null:
+		brewed_btn.visible = GameState.class_id != ""
+		brewed_btn.text = "x%d" % GameState.brewed_potions
 
 func show_toast(text: String) -> void:
 	toast_lbl.text = text
@@ -435,6 +453,138 @@ func _build_skill_panel(th: Theme) -> void:
 func _on_potion_pressed() -> void:
 	if world != null and world.has_method("drink_potion"):
 		world.drink_potion()
+
+# --- привалы и алхимия: индикаторы, кнопка заряда, панель варки, полоса отдыха ---
+
+func _build_alch_ui(th: Theme) -> void:
+	var atex: Texture2D = null
+	if ResourceLoader.exists("res://assets/alch_icons.png"):
+		atex = load("res://assets/alch_icons.png")
+	mat_lbl = Label.new()
+	mat_lbl.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	mat_lbl.offset_left = 74
+	mat_lbl.offset_right = 246
+	mat_lbl.offset_top = -55
+	mat_lbl.offset_bottom = -43
+	mat_lbl.add_theme_font_size_override("font_size", 7)
+	mat_lbl.add_theme_color_override("font_color", Color(0.85, 0.95, 0.75))
+	mat_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	mat_lbl.add_theme_constant_override("outline_size", 3)
+	mat_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mat_lbl.theme = th
+	mat_lbl.visible = false
+	add_child(mat_lbl)
+	# крепкое зелье — кнопка-заряд сразу за Q-зельем
+	brewed_btn = Button.new()
+	brewed_btn.add_theme_font_size_override("font_size", 8)
+	brewed_btn.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	brewed_btn.offset_left = 128
+	brewed_btn.offset_right = 176
+	brewed_btn.offset_top = -40
+	brewed_btn.offset_bottom = -4
+	brewed_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	brewed_btn.tooltip_text = "Крепкое зелье: +%d HP (клик). Варится у костра." % GameState.STRONG_POTION_HEAL
+	if atex != null:
+		var at := AtlasTexture.new()
+		at.atlas = atex
+		at.region = Rect2(2 * 16, 0, 16, 16)
+		brewed_btn.icon = at
+	brewed_btn.pressed.connect(_on_brewed_pressed)
+	brewed_btn.theme = th
+	brewed_btn.visible = false
+	add_child(brewed_btn)
+	# полоса канала отдыха — над панелью скиллов
+	rest_bg = ColorRect.new()
+	rest_bg.color = Color(0.08, 0.07, 0.09, 0.9)
+	rest_bg.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	rest_bg.offset_left = -60
+	rest_bg.offset_right = 60
+	rest_bg.offset_top = -62
+	rest_bg.offset_bottom = -55
+	rest_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rest_fill = ColorRect.new()
+	rest_fill.color = Color(0.95, 0.62, 0.25)
+	rest_fill.position = Vector2(1, 1)
+	rest_bg.add_child(rest_fill)
+	var rtxt := Label.new()
+	rtxt.text = "Отдых…"
+	rtxt.position = Vector2(2, -1)
+	rtxt.add_theme_font_size_override("font_size", 7)
+	rtxt.add_theme_color_override("font_color", Color(1, 0.95, 0.85))
+	rtxt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	rtxt.add_theme_constant_override("outline_size", 3)
+	rtxt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rest_bg.add_child(rtxt)
+	rest_bg.visible = false
+	add_child(rest_bg)
+	# панель варки — только у горящего костра
+	camp_panel = PanelContainer.new()
+	camp_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	camp_panel.offset_left = -170
+	camp_panel.offset_right = 170
+	camp_panel.offset_top = -122
+	camp_panel.offset_bottom = -66
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 2)
+	var head := Label.new()
+	head.text = "У костра — алхимия:"
+	head.add_theme_color_override("font_color", Color(1, 0.84, 0.45))
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(head)
+	for rid in Alch.recipes():
+		var r: Variant = Alch.recipes()[rid]
+		if typeof(r) != TYPE_DICTIONARY:
+			continue
+		var btn := Button.new()
+		btn.add_theme_font_size_override("font_size", 8)
+		btn.text = "%s — %s" % [String(r.get("name", String(rid))), Alch.cost_text(String(rid))]
+		btn.tooltip_text = String(r.get("desc", ""))
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.pressed.connect(Alch.brew.bind(String(rid)))
+		vb.add_child(btn)
+		camp_btns[String(rid)] = btn
+	if camp_btns.is_empty():
+		var none := Label.new()
+		none.text = "Рецептов нет (data/alchemy.json)."
+		none.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vb.add_child(none)
+	camp_panel.add_child(vb)
+	camp_panel.theme = th
+	camp_panel.visible = false
+	add_child(camp_panel)
+
+func _on_brewed_pressed() -> void:
+	Alch.drink_brewed()
+
+## Кадровая часть: панель варки у костра, доступность рецептов, полоса отдыха.
+func _update_camp_ui() -> void:
+	if mat_lbl == null or camp_panel == null:
+		return
+	var show_panel := false
+	if world != null and world.has_method("campfire_near") and not GameState.input_locked \
+			and not is_dialog_open() and not is_modal_open():
+		show_panel = world.campfire_near() != null and not Alch.recipes().is_empty()
+	camp_panel.visible = show_panel
+	if show_panel:
+		for rid in camp_btns:
+			var r := Alch.recipe(String(rid))
+			var afford := true
+			for mid in r.get("cost", {}):
+				if GameState.mat_count(String(mid)) < int(r["cost"][mid]):
+					afford = false
+			(camp_btns[rid] as Button).modulate = Color.WHITE if afford else Color(0.55, 0.55, 0.6)
+	# полоса отдыха: ищем костёр с активным каналом (world.campfires — массив костров)
+	var cf_rest = null
+	if world != null:
+		var cfs: Variant = world.get("campfires")
+		if typeof(cfs) == TYPE_ARRAY:
+			for cf in cfs:
+				if is_instance_valid(cf) and cf.get("resting") == true:
+					cf_rest = cf
+	rest_bg.visible = cf_rest != null
+	if cf_rest != null:
+		var frac := clampf(float(cf_rest.get("rest_t")) / Campfire.REST_TIME, 0.0, 1.0)
+		rest_fill.size = Vector2(118.0 * frac, 5)
 
 ## Перестроить иконки под текущий класс (после создания героя, загрузки сейва).
 func refresh_skills() -> void:

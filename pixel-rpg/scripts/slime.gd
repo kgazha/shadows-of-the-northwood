@@ -7,6 +7,9 @@ const SPEED_CHASE := 40.0
 const SPEED_WANDER := 16.0
 ## Возобновляемый ресурс прокачки: слайм отрастает у дома через ~50 с.
 const RESPAWN := 50.0
+## Дроп алхимических материалов: умеренный шанс (дефицит — ~4 слайма на материал).
+const MAT_DROP_CHANCE := 0.25
+const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
 
 var world: Node2D
 var hp := 3
@@ -104,12 +107,23 @@ func _die() -> void:
 	GameState.slime_kills += 1
 	GameState.add_xp(7)
 	GameState.toast.emit("Слайм повержен! (+7 опыта)")
+	_roll_mat_drop()
 	GameState.quest_changed.emit()
 	if GameState.slime_quest == 1 and GameState.slime_kills == 3:
 		GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")
 	remove_from_group("enemy")
 	visible = false
 	_shape.disabled = true
+
+## Один бросок на материал со смерти; при полном рюкзаке — трофей теряется (дефицит).
+func _roll_mat_drop() -> void:
+	if randf() >= MAT_DROP_CHANCE:
+		return
+	var mid := String(MAT_DROP_TABLE[randi() % MAT_DROP_TABLE.size()])
+	if not GameState.add_material(mid):
+		GameState.toast.emit("Рюкзак полон — %s потерян" % GameState.mat_name(mid))
+		return
+	GameState.toast.emit("Трофей: %s (%d/%d)" % [GameState.mat_name(mid), GameState.mat_count(mid), GameState.MAT_CAP])
 
 func _respawn() -> void:
 	dying = false
