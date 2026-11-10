@@ -10,9 +10,22 @@ const WorldScript := preload("res://scripts/world.gd")
 
 const DECOR_TEX := "res://assets/decor.png"        # 128x16: 0 куст+ягоды, 1 папоротник, 2 кленовый лист, 3 мухомор, 4 пень, 5 камыши, 6 рогоз, 7 камни
 const ANIM_TEX := "res://assets/anim_tiles.png"    # 128x16: 0-3 вода, 4-5 факел, 6-7 светящийся мох
-const SHADOW_TEX := "res://assets/shadow.png"      # 32x16: тень персонажа Rect(0,0,16,8), тень босса Rect(8,7,24,9)
+const SHADOW_TEX := "res://assets/shadow.png"      # 32x16: блоб персонажа Rect(0,0,16,6), блоб босса Rect(8,7,24,9)
 
 const SHADOW_NAME := "AtmoShadow"
+const SHADOW_CHAR := Rect2(0, 0, 16, 6)   # блоб «персонаж» в листе shadow.png
+const SHADOW_BOSS := Rect2(8, 7, 24, 9)   # блоб «босс»
+const SHADOW_BIAS := 1.0                  # низ блоба опускаем на столько px ниже линии ног
+const ALPHA_MIN := 20.0                   # порог «непрозрачный пиксель» при измерении якоря
+# запасной якорь в координатах кадра (x — центр «пяточного» пятна, y — низ ног),
+# когда пиксели кадра недоступны read-back; по подстроке скрипта/группам сущности
+const FEET_FALLBACK := {
+	"player": Vector2(0.0, 5.0),
+	"slime": Vector2(0.0, 6.0),
+	"npc": Vector2(0.0, 5.0),
+	"brute": Vector2(0.0, 12.0),
+	"interactable": Vector2(0.0, 8.0),
+}
 const SCAN_PERIOD := 0.5       # пересканирование сущностей для теней, с
 const T_WALK := 0.35           # период смены кадра воды, с
 const T_TORCH := 0.25          # период смены кадра факела, с
@@ -58,6 +71,7 @@ var _pollen: CPUParticles2D = null
 var _rad_cache: Dictionary = {}
 var _shadow_tex: Texture2D = null
 var _anim_tex: Texture2D = null
+var _feet_cache: Dictionary = {}   # instance_id текстуры кадра -> якорь ног в координатах кадра
 
 ## Вызывается из world._ready() ПОСЛЕ спавна сущностей и постройки пещеры.
 func setup(p_world: Node2D) -> void:
@@ -194,28 +208,32 @@ func _in_atmo(n: Node) -> bool:
 		p = p.get_parent()
 	return false
 
-## Вешает Sprite2D-тень child'ом в сущность index 0 (перед её спрайтом), якорь — ноги.
+## Вешает Sprite2D-тень child'ом в сущность (перед её спрайтом), привязывая к ногам.
+## Блоб вырезается из листа 32x16 через region: без region рисуется ЛИСТ ЦЕЛИКОМ,
+## и его непрозрачные пятна (например, блоб босса в x 9..31, y 7..15) выглядят как
+## вторая тень/грязное пятно в стороне — «персонаж и монстры летают».
+## Якорь по x — центр «пяточного» пятна кадра, по y — низ непрозрачных пикселей.
 func _ensure_shadow(e: Node2D) -> void:
 	if e.has_node(SHADOW_NAME):
 		return
-	# ищем видимый спрайт; у бесспрайтовых объектов (лестницы, триггеры) тени нет
-	var spr: CanvasItem = null
+	# ищем спрайт с текстурой; у бесспрайтовых объектов (лестницы, триггеры) тени нет
+	var spr: Node2D = null
 	for ch in e.get_children():
 		if (ch is Sprite2D or ch is AnimatedSprite2D) and String(ch.name) != SHADOW_NAME:
-			spr = ch
+			spr = ch as Node2D
 			break
 	if spr == null or _shadow_tex == null:
 		return
 	var is_boss := e.is_in_group("boss")
+	var blob := SHADOW_BOSS if is_boss else SHADOW_CHAR
 	var sh := Sprite2D.new()
 	sh.name = SHADOW_NAME
 	sh.texture = _shadow_tex
 	sh.centered = false
-	if is_boss:
-		sh.region_enabled = true
-		sh.region_rect = Rect2(8, 7, 24, 9)
+	sh.region_enabled = true  # блоб занимает лишь часть листа — без region рисуется весь лист
+	sh.region_rect = blob
 	sh.modulate = Color(0, 0, 0, 0.5)
-	sh.position = Vector2(-12, 7) if is_boss else Vector2(-8, 2)
+	sh.position = _shadow_pos(e, spr, blob.size)
 	var idx := 0
 	for ch2 in e.get_children():
 		if ch2 == spr:
@@ -223,6 +241,112 @@ func _ensure_shadow(e: Node2D) -> void:
 		idx += 1
 	e.add_child(sh)
 	e.move_child(sh, idx)  # child index 0 (или прямо перед спрайтом) — тень рисуется под сущностью
+
+## Позиция тени в координатах сущности: центр блоба по x над пяткой,
+## низ блоба — на линии ног + SHADOW_BIAS.
+func _shadow_pos(e: Node2D, spr: Node2D, blob: Vector2) -> Vector2:
+	var feet := _entity_feet(spr)
+	if feet == Vector2.INF:
+		feet = _feet_fallback(e, spr)
+	return Vector2(feet.x - blob.x * 0.5, feet.y + SHADOW_BIAS - blob.y)
+
+## Низ ног сущности в координатах сущности: самый нижний непрозрачный пиксель
+## отображаемых кадров (для walk-циклов — самый низкий кадр), с position/scale
+## спрайта. Vector2.INF — измерение пикселей недоступно.
+func _entity_feet(spr: Node2D) -> Vector2:
+	var frames: Array = []
+	if spr is Sprite2D:
+		frames.append((spr as Sprite2D).texture)
+	elif spr is AnimatedSprite2D:
+		var a := spr as AnimatedSprite2D
+		if a.sprite_frames != null and a.sprite_frames.has_animation(a.animation):
+			for i in a.sprite_frames.get_frame_count(a.animation):
+				frames.append(a.sprite_frames.get_frame_texture(a.animation, i))
+	var best := Vector2.INF
+	for t in frames:
+		var f := _frame_feet_cached(t as Texture2D)
+		if f == Vector2.INF:
+			continue
+		if best == Vector2.INF or f.y > best.y:
+			best = f
+	if best == Vector2.INF:
+		return Vector2.INF
+	return spr.position + spr.scale * best
+
+## Якорь кадра в координатах кадра (0,0 = центр) с кэшем по экземпляру текстуры.
+func _frame_feet_cached(tex: Texture2D) -> Vector2:
+	if tex == null:
+		return Vector2.INF
+	var key := tex.get_instance_id()
+	if _feet_cache.has(key):
+		return _feet_cache[key]
+	var f := _frame_feet(tex)
+	_feet_cache[key] = f
+	return f
+
+## (x — центр нижнего «пяточного» пятна, y — низ непрозрачных пикселей) в координатах
+## кадра (центр кадра = 0); для AtlasTexture считаем только его область атласа.
+## Vector2.INF — read-back пикселей недоступен или кадр пуст.
+func _frame_feet(tex: Texture2D) -> Vector2:
+	var img: Image = null
+	var reg := Rect2(0, 0, tex.get_width(), tex.get_height())
+	if tex is AtlasTexture and (tex as AtlasTexture).atlas != null:
+		reg = (tex as AtlasTexture).region
+		img = (tex as AtlasTexture).atlas.get_image()
+	else:
+		img = tex.get_image()
+	if img == null or img.is_empty():
+		return Vector2.INF
+	var x0i := clampi(int(reg.position.x), 0, img.get_width())
+	var x1i := clampi(int(reg.end.x), 0, img.get_width()) - 1
+	var y0i := clampi(int(reg.position.y), 0, img.get_height())
+	var y1i := clampi(int(reg.end.y), 0, img.get_height()) - 1
+	var bx0 := x1i + 1
+	var bx1 := x0i - 1
+	var by1 := y0i - 1
+	for y in range(y0i, y1i + 1):
+		for x in range(x0i, x1i + 1):
+			if img.get_pixel(x, y).a * 255.0 > ALPHA_MIN:
+				bx0 = mini(bx0, x)
+				bx1 = maxi(bx1, x)
+				by1 = y
+	if bx1 < bx0:
+		return Vector2.INF
+	var sx := 0.0
+	var n := 0
+	for y in range(maxi(by1 - 1, y0i), by1 + 1):
+		for x in range(bx0, bx1 + 1):
+			if img.get_pixel(x, y).a * 255.0 > ALPHA_MIN:
+				sx += float(x)
+				n += 1
+	var heel := float(bx0 + bx1) * 0.5
+	if n > 0:
+		heel = sx / float(n)
+	return Vector2(
+		heel - float(int(reg.position.x)) + 0.5 - float(int(reg.size.x)) * 0.5,
+		float(by1 - int(reg.position.y) + 1) - float(int(reg.size.y)) * 0.5)
+
+## Запасной якорь (в координатах сущности), если read-back пикселей недоступен:
+## таблица по подстроке скрипта/группам, иначе общий «низ кадра минус 2 px».
+func _feet_fallback(e: Node2D, spr: Node2D) -> Vector2:
+	var s := String(e.get_script().resource_path) if e.get_script() != null else ""
+	var feet := Vector2.ZERO
+	if e.is_in_group("boss") or s.contains("brute"):
+		feet = FEET_FALLBACK["brute"]
+	elif s.contains("slime"):
+		feet = FEET_FALLBACK["slime"]
+	elif e.is_in_group("player"):
+		feet = FEET_FALLBACK["player"]
+	elif s.contains("npc"):
+		feet = FEET_FALLBACK["npc"]
+	elif s.contains("interactable"):
+		feet = FEET_FALLBACK["interactable"]
+	else:
+		var h := 16.0
+		if spr is Sprite2D and (spr as Sprite2D).texture != null:
+			h = float((spr as Sprite2D).texture.get_height())
+		feet = Vector2(0.0, h * 0.5 - 2.0)
+	return spr.position + spr.scale * feet
 
 # ---------- вода (деревня) ----------
 
