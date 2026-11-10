@@ -8,7 +8,7 @@ const TILE := 16
 const Nav := preload("res://scripts/nav.gd")
 const CHAR_TO_TILE := {
 	"g": 0, "G": 1, "f": 2, "d": 3, "w": 4, "t": 5, "W": 6, "R": 7,
-	"D": 8, "#": 9, "r": 12, "s": 13, "T": 15,
+	"D": 8, "#": 9, "r": 12, "s": 13, "T": 15, "A": 3,
 }
 const BLOCKING := [4, 5, 6, 7, 8, 9, 12, 13]
 ## Коллизии «мелких» блокирующих тайлов: индекс -> [w, h, dx, dy] от центра клетки.
@@ -29,6 +29,8 @@ const CAVE_BLOCK_SHAPES := {
 const DZ := preload("res://scripts/dungeon_zone.gd")
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
+const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
+const ASHEN_ENTRANCE_TILE := Vector2i(45, 20) # «A» — выжженная аршина на восточной окраине
 ## Костры-привалы (id -> тайл): у дороги к торговцу, в травяном поле слаймов,
 ## у входа в пещеру. Одноразовые — последний привал перед опасным рывком.
 const CAMPFIRE_SPOTS := {
@@ -55,9 +57,13 @@ var hint_label: Label
 var village_zone: Node2D
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
+var ashen_zone: Node2D
+var ashen_grid    # scripts/ashen_zone.gd (слабо: setup/spawn_world_pos/map_w/map_h/portal_node)
+var active_area := "village"  # "village" | "cave" | "ashen" — где сейчас герой
 var cam: Camera2D
 var fade_rect: ColorRect
 var village_return_pos := Vector2.INF  # куда возвращаться из пещеры (то место, где вошли)
+var ashen_return_pos := Vector2.INF    # куда возвращаться из Пепелища
 var cur_move: Texture2D    # курсор «идти» (world: прицел assets/ui/cursor_crosshair.png, фолбэк cursor_move.png)
 var cur_enemy: Texture2D   # курсор «атака» (cursor_enemy.png)
 var cur_arrow: Texture2D   # стрелка для диалогов/модалок (assets/ui/cursor_arrow.png)
@@ -111,6 +117,10 @@ func _ready() -> void:
 	cave_zone.name = "Cave"
 	cave_zone.position = CAVE_OFFSET
 	add_child(cave_zone)
+	ashen_zone = Node2D.new()
+	ashen_zone.name = "Ashen"
+	ashen_zone.position = ASHEN_OFFSET
+	add_child(ashen_zone)
 	_build_tiles()
 	_build_walls()
 	_spawn_player()
@@ -118,6 +128,8 @@ func _ready() -> void:
 	_build_campfires()
 	_build_cave()
 	_build_cave_entrance()
+	_build_ashen()
+	_build_ashen_entrance()
 	atmosphere = load("res://scripts/atmosphere.gd").new()
 	add_child(atmosphere)
 	atmosphere.setup(self)
@@ -135,6 +147,8 @@ func _ready() -> void:
 		apply_zone(GameState.in_cave, false)
 		if GameState.pos_valid:
 			player.global_position = GameState.player_pos
+			if player.global_position.y > ASHEN_OFFSET.y:
+				apply_area("ashen", false)  # сейв оставил героя в Пепелище
 		player.apply_class()
 		hud.refresh_skills()
 		_apply_chest_states()  # страховка: спавн уже видит сейв, идемпотентно (нужно для F9)
@@ -433,6 +447,21 @@ func _build_cave_entrance() -> void:
 	village_zone.add_child(stairs)
 	stairs.setup(self, CAVE_ENTRANCE_TILE)
 
+## Пепелище: контейнер ashen_zone уже в _ready (сдвиг ASHEN_OFFSET). Зона
+## строится после load_game() — персист ведьмы/сундука читается из флагов.
+func _build_ashen() -> void:
+	var az = load("res://scripts/ashen_zone.gd").new()
+	ashen_zone.add_child(az)
+	az.setup(self)
+	ashen_grid = az
+	ashen_zone.visible = false
+	ashen_zone.process_mode = Node.PROCESS_MODE_DISABLED
+
+func _build_ashen_entrance() -> void:
+	var gate := AshenGate.new()
+	village_zone.add_child(gate)
+	gate.setup(self, ASHEN_ENTRANCE_TILE)
+
 func _build_fade() -> void:
 	var cl := CanvasLayer.new()
 	cl.layer = 10
@@ -529,6 +558,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			apply_zone(GameState.in_cave, false)
 			if GameState.pos_valid:
 				player.global_position = GameState.player_pos
+				if player.global_position.y > ASHEN_OFFSET.y:
+					apply_area("ashen", false)  # F9 из Пепелища: сейв не знает про in_ashen
 			player.apply_class()
 			hud.refresh_skills()
 			_apply_chest_states()  # сундуки после F9-загрузки (фикс T2)
@@ -571,12 +602,23 @@ func objective_pos() -> Vector2:
 	if target == Vector2.INF or player == null:
 		return Vector2.INF
 	# цель в другой зоне — стрелка ведёт к переходу
-	var target_in_cave: bool = target.y > CAVE_OFFSET.y - 1000.0
-	if target_in_cave != GameState.in_cave:
-		if GameState.in_cave and dungeon_zone != null and dungeon_zone.stairs_node != null:
+	# эвристика «y > CAVE_OFFSET.y - 1000» одна только не различает два «этажа»
+	# ниже деревни: у Пепелища (y=9600) она звала бы в пещеру
+	var target_zone := "village"
+	if target.y > ASHEN_OFFSET.y - 1000.0:
+		target_zone = "ashen"
+	elif target.y > CAVE_OFFSET.y - 1000.0:
+		target_zone = "cave"
+	if target_zone != active_area:
+		if active_area == "cave" and dungeon_zone != null and dungeon_zone.stairs_node != null:
 			return dungeon_zone.stairs_node.global_position
-		if not GameState.in_cave:
+		if active_area == "ashen":
+			if ashen_grid != null and ashen_grid.portal_node != null:
+				return ashen_grid.portal_node.global_position  # наружу — через выжженную аршину
+			return target
+		if target_zone == "cave":
 			return tile_to_world(CAVE_ENTRANCE_TILE)
+		return tile_to_world(ASHEN_ENTRANCE_TILE)
 	return target
 
 func _objective_raw() -> Vector2:
@@ -648,6 +690,8 @@ func _village_walkable(t: Vector2i) -> bool:
 	return not (int(CHAR_TO_TILE[ch]) in BLOCKING)
 
 func _active_nav() -> Dictionary:
+	if active_area == "ashen" and ashen_grid != null:
+		return {"w": ashen_grid.map_w, "h": ashen_grid.map_h, "walk": ashen_grid.cell_walkable, "base": ASHEN_OFFSET}
 	if GameState.in_cave and dungeon_zone != null:
 		return {"w": dungeon_zone.map_w, "h": dungeon_zone.map_h, "walk": dungeon_zone.cell_walkable, "base": CAVE_OFFSET}
 	return {"w": map_w, "h": map_h, "walk": _village_walkable, "base": Vector2.ZERO}
@@ -677,34 +721,60 @@ func line_clear(a: Vector2, b: Vector2) -> bool:
 
 # --- переход между зонами ---
 
-## Смена активной зоны. teleport=false — позиция останется из сейва (загрузка).
+## Смена активной зоны (легаси-API пещеры): true — пещера, false — деревня.
+## teleport=false — позиция останется из сейва (загрузка).
 func apply_zone(to_cave: bool, teleport: bool = true) -> void:
+	apply_area("cave" if to_cave else "village", teleport)
+
+## Смена активной области: "village" | "cave" | "ashen". Общее правило: видима и
+## жива (PROCESS_MODE_INHERIT) только активная — остальные снимаются с физики.
+## GameState.in_cave остаётся «пещерным» флагом: в Пепелище герой НЕ в пещере.
+func apply_area(area: String, teleport: bool = true) -> void:
+	var prev := active_area
+	active_area = area
+	var to_cave := area == "cave"
 	GameState.in_cave = to_cave
-	village_zone.visible = not to_cave
+	village_zone.visible = area == "village"
 	cave_zone.visible = to_cave
-	village_zone.process_mode = Node.PROCESS_MODE_DISABLED if to_cave else Node.PROCESS_MODE_INHERIT
+	ashen_zone.visible = area == "ashen"
+	village_zone.process_mode = Node.PROCESS_MODE_INHERIT if area == "village" else Node.PROCESS_MODE_DISABLED
 	cave_zone.process_mode = Node.PROCESS_MODE_INHERIT if to_cave else Node.PROCESS_MODE_DISABLED
+	ashen_zone.process_mode = Node.PROCESS_MODE_INHERIT if area == "ashen" else Node.PROCESS_MODE_DISABLED
 	near.clear()
 	player.cancel_orders()  # приказы прошлой зоны не тянем в новую
 	if teleport:
-		if to_cave:
+		if area == "cave":
 			village_return_pos = player.global_position
 			if dungeon_zone != null:
 				player.global_position = CAVE_OFFSET + dungeon_zone.spawn_world_pos
+		elif area == "ashen":
+			ashen_return_pos = player.global_position
+			if ashen_grid != null:
+				player.global_position = ASHEN_OFFSET + ashen_grid.spawn_world_pos
+		elif prev == "ashen":
+			player.global_position = ashen_return_pos if ashen_return_pos != Vector2.INF else tile_to_world(spawn_tile)
 		else:
 			player.global_position = village_return_pos if village_return_pos != Vector2.INF else tile_to_world(spawn_tile)
-	_set_cam_limits(to_cave)
+	_set_cam_limits(area)
 	if atmosphere != null:
+		# Пепелище — НАЗЕМНЫЙ тон: пещерной палитры не просим (false), серый
+		# холодок зоны рисует сам ashen_zone (self_modulate тайлмапа)
 		atmosphere.zone_changed(to_cave)
-	# музыка по зоне: пещера — своя тема, выход — лес (кроссфейд внутри GameAudio)
-	GameAudio.music("cave" if to_cave else "forest")
+	# музыка по зоне: пещера — своя тема, Пепелище — тот же мрачный трек (новых
+	# ассетов не заводим), выход — лес (кроссфейд внутри GameAudio)
+	GameAudio.music("cave" if to_cave or area == "ashen" else "forest")
 
-func _set_cam_limits(to_cave: bool) -> void:
-	if to_cave and dungeon_zone != null:
+func _set_cam_limits(area: String) -> void:
+	if area == "cave" and dungeon_zone != null:
 		cam.limit_left = int(CAVE_OFFSET.x)
 		cam.limit_top = int(CAVE_OFFSET.y)
 		cam.limit_right = int(CAVE_OFFSET.x) + int(dungeon_zone.map_w) * TILE
 		cam.limit_bottom = int(CAVE_OFFSET.y) + int(dungeon_zone.map_h) * TILE
+	elif area == "ashen" and ashen_grid != null:
+		cam.limit_left = int(ASHEN_OFFSET.x)
+		cam.limit_top = int(ASHEN_OFFSET.y)
+		cam.limit_right = int(ASHEN_OFFSET.x) + int(ashen_grid.map_w) * TILE
+		cam.limit_bottom = int(ASHEN_OFFSET.y) + int(ashen_grid.map_h) * TILE
 	else:
 		cam.limit_left = 0
 		cam.limit_top = 0
@@ -714,10 +784,13 @@ func _set_cam_limits(to_cave: bool) -> void:
 ## Плавный переход: затемнение -> смена зоны -> просветление.
 ## after — что сделать после (обычно диалог); без него просто снимаем блокировку ввода.
 func transition_to(to_cave: bool, after: Callable = Callable()) -> void:
+	transition_to_area("cave" if to_cave else "village", after)
+
+func transition_to_area(area: String, after: Callable = Callable()) -> void:
 	GameState.input_locked = true
 	var t := get_tree().create_tween()
 	t.tween_property(fade_rect, "color:a", 1.0, 0.25)
-	t.tween_callback(apply_zone.bind(to_cave))
+	t.tween_callback(apply_area.bind(area))
 	t.tween_property(fade_rect, "color:a", 0.0, 0.25)
 	t.tween_callback(func():
 		if after.is_valid():
@@ -746,6 +819,31 @@ func exit_cave() -> void:
 	if not GameState.in_cave:
 		return
 	transition_to(false)
+
+## Восточные «выжженные полы»: вход по E у аршины "A", как пещера — по E у "T".
+## Первый заход — диалог ashen_intro (когда допишут ключ) или тост-заглушка;
+## флаг seen — в GameState.flags (сейв v2-совместимо, новых полей не заводим).
+func enter_ashen() -> void:
+	if active_area == "ashen":
+		return
+	var first: bool = String(GameState.flags.get("ashen.intro_seen", "")) != "1"
+	transition_to_area("ashen", func():
+		if first:
+			GameState.set_flag("ashen.intro_seen", "1")
+			if dialogues.has("ashen_intro"):
+				start_dialogue("ashen_intro")
+				if not hud.is_dialog_open():
+					GameState.input_locked = false
+			else:
+				GameState.input_locked = false
+				GameState.toast.emit("Пепелище: воздух стоит от золы. С дальней поляны на вас смотрит ведьма...")
+		else:
+			GameState.input_locked = false)
+
+func exit_ashen() -> void:
+	if active_area != "ashen":
+		return
+	transition_to_area("village")
 
 # --- диалоги и квесты ---
 
@@ -846,7 +944,9 @@ func on_player_death() -> void:
 
 func respawn_player() -> void:
 	player.cancel_orders()
-	if GameState.in_cave and dungeon_zone != null:
+	if active_area == "ashen" and ashen_grid != null:
+		player.global_position = ASHEN_OFFSET + ashen_grid.spawn_world_pos
+	elif GameState.in_cave and dungeon_zone != null:
 		player.global_position = CAVE_OFFSET + dungeon_zone.spawn_world_pos
 	else:
 		player.global_position = tile_to_world(spawn_tile)
@@ -889,6 +989,50 @@ class CaveStairs:
 		return "Спуститься в пещеру"
 	func try_interact() -> void:
 		world.enter_cave()
+	func _on_enter(b: Node) -> void:
+		if b.is_in_group("player"):
+			world.near.append(self)
+	func _on_exit(b: Node) -> void:
+		if b.is_in_group("player"):
+			world.near.erase(self)
+
+class AshenGate:
+	extends Area2D
+	## Выжженная аршина на восточной окраине (тайл "A"): вход в Пепелище по E,
+	## симметрично лестнице пещеры. Тайл "A" проходим (CHAR_TO_TILE -> 3, грунт),
+	## визуальный портал — спрайт из ashen_tiles.png (тайл 7), новых ассетов нет.
+	var world
+	func setup(p_world: Node2D, tile: Vector2i) -> void:
+		world = p_world
+		position = world.tile_to_world(tile)
+		if ResourceLoader.exists("res://assets/ashen_tiles.png"):
+			var spr := Sprite2D.new()
+			var at := AtlasTexture.new()
+			at.atlas = load("res://assets/ashen_tiles.png")
+			at.region = Rect2(7 * 16, 0, 16, 16)
+			spr.texture = at
+			add_child(spr)
+		else:
+			push_warning("Нет ассета: assets/ashen_tiles.png — заглушка входа в Пепелище")
+			var ph := ColorRect.new()
+			ph.color = Color(0.35, 0.32, 0.4)
+			ph.size = Vector2(14, 14)
+			ph.position = Vector2(-7, -5)
+			ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(ph)
+		var cs := CollisionShape2D.new()
+		var sh := RectangleShape2D.new()
+		sh.size = Vector2(16, 16)
+		cs.shape = sh
+		add_child(cs)
+		collision_layer = 0
+		collision_mask = 1
+		body_entered.connect(_on_enter)
+		body_exited.connect(_on_exit)
+	func get_hint() -> String:
+		return "Войти в Пепелище"
+	func try_interact() -> void:
+		world.enter_ashen()
 	func _on_enter(b: Node) -> void:
 		if b.is_in_group("player"):
 			world.near.append(self)
