@@ -252,8 +252,10 @@ class AshenChest:
 	## что у Loot.chest_reward), персист — GameState.flags["ashen.chest"].
 	var zone
 	var used := false
+	var uid := ""  # канон-схема GameState "chest@x,y" (interactable._uid)
 	func setup(p_zone, tile: Vector2i) -> void:
 		zone = p_zone
+		uid = "chest@%d,%d" % [tile.x, tile.y]
 		position = zone.tile_to_world(tile)
 		if ResourceLoader.exists("res://assets/tiles.png"):
 			var spr := Sprite2D.new()
@@ -278,8 +280,10 @@ class AshenChest:
 			return
 		used = true
 		GameState.set_flag("ashen.chest", "taken")
+		GameState.chest_mark_used(uid)  # «Клад» считается и этим сундуком (схема T2)
 		Loot.chest_reward(GameState)
 		Loot._give_item(GameState, "potion", 1)  # гарантированная награда-экипировка
+		Achv.on_chest_opened()
 		GameState.quest_changed.emit()          # автосейв: флаг осядет в сохранении
 		queue_free()
 	func _on_enter(b: Node) -> void:

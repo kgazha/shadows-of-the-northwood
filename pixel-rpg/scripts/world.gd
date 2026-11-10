@@ -880,7 +880,7 @@ func talk(id: String) -> void:
 					if GameState.herbs >= 3:
 						start_dialogue("elder_done", func():
 							GameState.elder_quest = 2
-							GameState.herbs = 0  # травы реально отданы (фикс T6)
+							GameState.herbs -= 3  # сдаёт ровно три — излишек живёт в сумке (Q5-H1)
 							GameState.add_xp(25)
 							GameState.heal_full()
 							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
@@ -899,7 +899,7 @@ func talk(id: String) -> void:
 						GameState.slime_quest = 1
 						GameState.quest_changed.emit())
 				1:
-					if GameState.slime_kills >= 3:
+					if GameState.slime_kills_circle >= 3:  # работа текущего круга (total — у ачивок)
 						start_dialogue("merchant_done", func():
 							GameState.slime_quest = 2
 							GameState.add_xp(30)  # урон теперь от класса/меча/амулета

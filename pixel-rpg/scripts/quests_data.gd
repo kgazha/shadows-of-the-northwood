@@ -31,6 +31,10 @@ const STATUS_DONE := 2     # выполнен
 ## Реестр. Порядок словаря = порядок показа в журнале (сюжетные первыми).
 ## Цели: {"type", "label", "need", ["mat"]} — прогресс считает progress() по type.
 ## Поле "when" (только побочки) — код условия автостарта в _cond_met().
+## Поле "reward": {"xp": N} (побочки) — выдаётся однократно при автозавершении
+## (флаг DONE ставится до выдачи — повтор исключён идемпотентностью статуса).
+## Поле "permanent_done": "<flag>" — доп. метка завершения, переживающая вайп
+## "q.*" при смене круга (мгновенный ре-фарш badge-квестов в NG+ исключён).
 const QUESTS := {
 	"elder": {
 		"title": "Травы для старейшины",
@@ -64,6 +68,14 @@ const QUESTS := {
 			{"type": "return_amulet", "label": "Вернуть амулет Геральду", "need": 1},
 		],
 	},
+	"witch": {
+		"title": "Ведьма Пепелища",
+		"desc": "В выжженной пустоши на востоке за деревней затаилась Ведьма. Пока она цела, круг пепла не замкнётся — и не разомкнётся.",
+		"story": true,
+		"targets": [
+			{"type": "kill_witch", "label": "Найти и покончить с Ведьмой", "need": 1},
+		],
+	},
 	"q_suhotsvet": {
 		"title": "Сухоцвет впрок",
 		"desc": "Сухоцвет — трофей со слаймов, основа зелий. Собери пять штук: считается накопленное, варить можно.",
@@ -85,7 +97,35 @@ const QUESTS := {
 		"desc": "Торговец просит не останавливаться на трёх: вычисти лес так, чтобы слаймов стало вполовину меньше.",
 		"when": "slime_quest_done",
 		"targets": [
-			{"type": "kill_slime", "label": "Уничтожить слаймов (всего)", "need": 8},
+			{"type": "kill_slime", "label": "Уничтожить слаймов (в этом круге)", "need": 8},
+		],
+	},
+	"q_brewer": {
+		"title": "Варка на славу",
+		"desc": "Знахарка варит не по одному зелью за присест. Свари шесть зелий — пояс тут ни при чём, считается мастерство.",
+		"when": "brewer_watch",
+		"permanent_done": "meta.q_brewer_done",
+		"reward": {"xp": 25},
+		"targets": [
+			{"type": "brew_total", "label": "Сварить зелий (за всё время)", "need": 6},
+		],
+	},
+	"q_wealth": {
+		"title": "Богач леса",
+		"desc": "Гриим говорит: настоящие деньги — те, что лежат в руке. Держи 250 золотых на руках.",
+		"when": "wealth_watch",
+		"permanent_done": "meta.q_wealth_done",
+		"targets": [
+			{"type": "hold_gold", "label": "Держать золота на руках", "need": 250},
+		],
+	},
+	"q_ashen": {
+		"title": "Пепелище",
+		"desc": "Проследи, что стало с землёй к востоку за деревней.",
+		"when": "amulet_returned",
+		"reward": {"xp": 25},
+		"targets": [
+			{"type": "visit_ashen", "label": "Побывать на Пепелище", "need": 1},
 		],
 	},
 }
@@ -110,6 +150,10 @@ static func status(gs, id: String) -> int:
 			return sq
 		"cave":
 			return STATUS_DONE if int(gs.cave_state) >= 4 else STATUS_ACTIVE
+		"witch":
+			# story-цель NG-лупа: флаг смерти пишет mob_boss2.gd, вайп ashen.*
+			# в start_ng_plus пере-взводит цель каждый круг
+			return STATUS_DONE if String(gs.flags.get("ashen.boss", "")) == "dead" else STATUS_ACTIVE
 	return int(gs.get_flag(FLAG_PREFIX + id, 0))
 
 ## Показывать ли квест в журнале: побочки — только начатые; «Гром» и «Травы»
@@ -122,6 +166,11 @@ static func visible_in_journal(gs, id: String) -> bool:
 			return int(gs.slime_quest) >= 1
 		"cave":
 			return true
+		"witch":
+			# не спойлерим зону до первого взгляда на Пепелище (world.gd::enter_ashen
+			# ставит флаг вместе с FirstHint); смерть ведьмы тоже делает цель видимой
+			return String(gs.flags.get("ashen.intro_seen", "")) != "" \
+				or String(gs.flags.get("ashen.boss", "")) == "dead"
 	return int(gs.get_flag(FLAG_PREFIX + id, 0)) != STATUS_NONE
 
 ## Прогресс одной цели (0..+; витрина клампит к need). param — mat для collect_mat.
@@ -134,7 +183,9 @@ static func progress(gs, type: String, param: String = "") -> int:
 		"deliver_elder":
 			return 1 if int(gs.elder_quest) >= 2 else 0
 		"kill_slime":
-			return int(gs.slime_kills)
+			# цель квеста — работа ТЕКУЩЕГО круга: total-счётчик переживает NG+
+			# (на его охотничьи ачивки), сюжет же нельзя сдать «вчерашними» трупами
+			return int(gs.slime_kills_circle)
 		"deliver_slime":
 			return 1 if int(gs.slime_quest) >= 2 else 0
 		"visit_cave":
@@ -148,9 +199,24 @@ static func progress(gs, type: String, param: String = "") -> int:
 		"open_door":
 			return 1 if bool(gs.door_opened) else 0
 		"take_amulet":
-			return 1 if (bool(gs.has_amulet) or int(gs.cave_state) >= 4) else 0
+			# амулет переносится между кругами; в новом круге этап честен только
+			# у алтаря (cave_state>=3: дверь открыта, сундук в этой истории пройден);
+			# на wave 0 (первый круг, включая сейвы до правки) амулет = взят из сундука
+			return 1 if bool(gs.has_amulet) \
+				and (int(gs.ng_wave()) == 0 or int(gs.cave_state) >= 3) else 0
 		"return_amulet":
 			return 1 if int(gs.cave_state) >= 4 else 0
+		"kill_witch":
+			return 1 if String(gs.flags.get("ashen.boss", "")) == "dead" else 0
+		"brew_total":
+			# вечный счётчик варок (achv.gd::count("brews")); badge-квест закрыт
+			# навсегда meta-меткой — вайп q.* в NG+ его не ре-взводит
+			return int(gs.get_flag("ach.n.brews", 0))
+		"hold_gold":
+			return int(gs.gold)
+		"visit_ashen":
+			# тот же флаг/событие, что у FirstHint "ashen" (world.gd::enter_ashen)
+			return 1 if String(gs.flags.get("ashen.intro_seen", "")) != "" else 0
 		"collect_mat":
 			return int(gs.get_flag(GOT_PREFIX + param, 0))
 		"rest_campfire":
@@ -201,8 +267,10 @@ static func entries(gs) -> Array:
 	return out
 
 ## Тик системы (вызывает journal.gd): счётчики материалов + автостарты +
-## автозавершение побочных квестов. Пишет ТОЛЬКО флаги "q.*"; уведомления —
-## toast; автосейв — quest_changed. Сюжетные квесты не трогает никогда.
+## автозавершение побочных квестов (+ их награды из реестра и permanent_done).
+## Пишет флаги "q.*" и объявленные в реестре permanent-метки; выдаёт add_xp
+## наград; уведомления — toast; автосейв — quest_changed. Сюжетные квесты
+## не трогает никогда.
 static func refresh(gs) -> void:
 	_track_material(gs, "suhotsvet")
 	for raw_id in QUESTS:
@@ -219,8 +287,20 @@ static func refresh(gs) -> void:
 			STATUS_ACTIVE:
 				if is_complete(gs, id):
 					gs.set_flag(FLAG_PREFIX + id, STATUS_DONE)
+					# badge-квесты: метка, переживающая вайп "q.*" (иначе в NG+
+					# старт+финиш за тик на вечном счётчике — тот же H2)
+					var perm := String(def.get("permanent_done", ""))
+					if perm != "":
+						gs.set_flag(perm, 1)
+					# награды реестра — однократно: флаг DONE уже выше, повтор
+					# в этот круг недостижим (идемпотентность статуса)
+					var rew: Dictionary = def.get("reward", {})
+					var xp := int(rew.get("xp", 0))
+					if xp > 0:
+						gs.add_xp(xp)
 					GameAudio.sfx("book")  # закрытие side-квеста: шелест журнала (аудио-аудит)
-					gs.toast.emit("Квест выполнен: %s!" % String(def.get("title", id)))
+					gs.toast.emit("Квест выполнен: %s!%s"
+						% [String(def.get("title", id)), " (+%d опыта)" % xp if xp > 0 else ""])
 					gs.quest_changed.emit()
 			_:
 				pass
@@ -245,4 +325,17 @@ static func _cond_met(gs, when: String) -> bool:
 			return typeof(cf) == TYPE_DICTIONARY and cf.size() > 0
 		"slime_quest_done":
 			return int(gs.slime_quest) >= 2
+		"brewer_watch":
+			# badge: вечный счётчик ach.n.brews + meta-метка «не ре-фаршить в NG+»
+			return int(gs.get_flag("ach.n.brews", 0)) >= 1 \
+				and int(gs.get_flag("meta.q_brewer_done", 0)) == 0
+		"wealth_watch":
+			# badge-квест: meta-метка переживает вайп q.* — после NG+ не ре-фаршится
+			return int(gs.gold) >= 150 and int(gs.get_flag("meta.q_wealth_done", 0)) == 0
+		"amulet_returned":
+			# путь на Пепелище открывается историей амулета (конец «Грома»);
+			# цель-вход живёт на вечном флаге ashen.intro_seen (вайп ashen.* в
+			# start_ng_plus пере-взводит указатель каждый круг — и это честно:
+			# в новом круге игрок обязан вернуться на Пепелище за Ведьмой)
+			return int(gs.cave_state) >= 4
 	return false

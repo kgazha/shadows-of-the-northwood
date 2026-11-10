@@ -106,7 +106,7 @@ static func on_mob_death(_kind: String) -> void:
 static func on_slime_kill() -> void:
 	if GameState.slime_kills >= 25:
 		unlock("hunter_25", 30, 0)
-	if GameState.slime_kills >= 100:
+	if GameState.slime_kills >= 40:
 		unlock("hunter_100", 0, 2)
 
 ## #4/#12 boss_slayer / hardcore — brute.gd, ветка босса после boss_defeated.
@@ -115,6 +115,12 @@ static func on_boss_death() -> void:
 	unlock("boss_slayer", 0, 3)
 	if GameState.hp <= 1 and unlock("hardcore", 0, 3):
 		GameState.set_flag("ach_brand", true)  # титул (§2 #12)
+
+## #18 witch_slayer — mob_boss2.gd, ветка смерти Ведьмы (сразу после флага
+## ashen.boss). Однократна на сейв (идемпотентность unlock по ach.-флагу):
+## пер-круговую мотивацию держит квест «Ведьма Пепелища» (quests_data.gd).
+static func on_witch_death() -> void:
+	unlock("witch_slayer", 0, 1)
 
 ## #5/#6 alchemist / brewer_10 — alchemy.gd::brew() на успехе.
 static func on_brew() -> void:
@@ -127,9 +133,10 @@ static func on_campfire_used() -> void:
 	if GameState.campfires_used.size() >= 3:
 		unlock("campfires", 0, 1)
 
-## #8 treasure — interactable.gd, ветка chest после Loot.chest_reward.
+## #8 treasure — interactable.gd, ветка chest после Loot.chest_reward;
+## тот же хук зовут CaveChest (dungeon_zone.gd) и AshenChest (ashen_zone.gd).
 static func on_chest_opened() -> void:
-	if GameState.chests_used.size() >= 2:
+	if GameState.chests_used.size() >= 3:
 		unlock("treasure", 40, 0)
 
 ## #9 collector — shop.gd::_on_buy() на успехе.

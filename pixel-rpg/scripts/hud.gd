@@ -285,10 +285,10 @@ func refresh() -> void:
 		else:
 			q.append("• Травы старейшине: %d/3" % GameState.herbs)
 	if GameState.slime_quest == 1:
-		if GameState.slime_kills >= 3:
+		if GameState.slime_kills_circle >= 3:  # работа текущего круга (не total)
 			q.append("• Награда ждёт у торговца!")
 		else:
-			q.append("• Слаймы для торговца: %d/3" % GameState.slime_kills)
+			q.append("• Слаймы для торговца: %d/3" % GameState.slime_kills_circle)
 	match GameState.cave_state:
 		0:
 			q.append("• Осквернённый гром: найди отшельника в пещере")

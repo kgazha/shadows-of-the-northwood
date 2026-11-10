@@ -303,10 +303,16 @@ func _rebuild_achv() -> void:
 		_ach_list.add_child(d)
 		var spec := String(c.get("counter", ""))
 		if spec != "":
-			var cur := _ach_cur(spec)
-			var goal := int(c.get("goal", 0))
-			_ach_list.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
-				7, Color(0.55, 0.85, 0.5) if cur >= goal else Color(1, 1, 1, 0.6)))
+			if unlocked:
+				# live-счётчики (campfires/chests/...) обнуляются сменой круга,
+				# а анлок вечен: «0/3» рядом с «✓ закрыто» врал бы игроку (Q5)
+				_ach_list.add_child(_mk_label("    %s: ✓" % String(c.get("hint", "Прогресс")),
+					7, Color(0.55, 0.85, 0.5)))
+			else:
+				var cur := _ach_cur(spec)
+				var goal := int(c.get("goal", 0))
+				_ach_list.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
+					7, Color(0.55, 0.85, 0.5) if cur >= goal else Color(1, 1, 1, 0.6)))
 
 # --- построение вкладки талантов (CONTRACT_TALENTS §4) ---
 

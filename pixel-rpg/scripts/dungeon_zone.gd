@@ -356,8 +356,10 @@ class CaveChest:
 	## Алтарный сундук: внутри Амулет Леса (нужен ключ).
 	var zone
 	var used := false
+	var uid := ""  # канон-схема GameState "chest@x,y" (interactable._uid)
 	func setup(p_zone, tile: Vector2i) -> void:
 		zone = p_zone
+		uid = "chest@%d,%d" % [tile.x, tile.y]
 		position = zone.tile_to_world(tile)
 		var cs := CollisionShape2D.new()
 		var sh := CircleShape2D.new()
@@ -369,15 +371,24 @@ class CaveChest:
 		body_entered.connect(_on_enter)
 		body_exited.connect(_on_exit)
 	func get_hint() -> String:
+		if used or GameState.has_amulet:
+			return "Пустой сундук"
 		return "Открыть сундук"
 	func try_interact() -> void:
-		if used or GameState.has_amulet:
-			return  # амулет уже взят (сейв/F9 до синхронизации узла): без повторного heal
+		if used:
+			return
+		if GameState.has_amulet:
+			# амулет уже у героя (сейв/F9 до синхронизации узла): без повторного
+			# heal — и без молчаливого «ничего» на видимую подсказку
+			GameState.toast.emit("Сундук пуст — амулет уже у тебя.")
+			return
 		if not GameState.has_key:
 			GameState.toast.emit("Нужен ключ Геральда")
 			return
 		used = true
 		GameState.has_amulet = true
+		GameState.chest_mark_used(uid)  # «Клад» + восстановление состояния (схема T2)
+		Achv.on_chest_opened()
 		GameState.recalc_max_hp()  # +4 к макс. HP входит в формулу класса
 		GameState.heal(4)          # урон +1 — через производный damage (has_amulet)
 		GameState.stats_changed.emit()

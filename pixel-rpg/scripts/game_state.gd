@@ -401,7 +401,7 @@ func from_dict(d: Dictionary) -> void:
 	has_sword = _flag(d.get("has_sword", false), false)
 	herbs = maxi(0, _num(d.get("herbs", 0), 0))
 	slime_kills = maxi(0, _num(d.get("slime_kills", 0), 0))
-	slime_kills_circle = maxi(0, _num(d.get("slime_kills_circle", 0), 0))
+	slime_kills_circle = maxi(0, _num(d.get("slime_kills_circle", d.get("slime_kills", 0)), 0))  # легаси-сейв без поля — seed тоталом: активный квест круга не обнуляется (Q5-C5)
 	elder_quest = clampi(_num(d.get("elder_quest", 0), 0), 0, 2)
 	slime_quest = clampi(_num(d.get("slime_quest", 0), 0), 0, 2)
 	seen_intro = _flag(d.get("seen_intro", false), false)

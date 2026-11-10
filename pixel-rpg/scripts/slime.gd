@@ -119,7 +119,8 @@ func _die() -> void:
 	respawn_t = RESPAWN
 	GameAudio.sfx("drop")  # шлепок тела (кожа)
 	GameState.slime_kills += 1
-	GameState.slime_kills_circle += 1  # боковой квест круга (game_state.gd)
+	GameState.slime_kills_circle += 1  # убийства ТЕКУЩЕГО круга: квесты-обёртки и
+									   # сдача торговцу считаются по нему (game_state)
 	Achv.on_slime_kill()  # ачивки «Охотник 25/100» (achv.gd)
 	if FirstHint.I != null: FirstHint.I.show_hint("slime", "Первая победа! С тварей падает добыча, а торговцу нужны слаймы.")
 	GameState.add_xp(7)
@@ -128,7 +129,7 @@ func _die() -> void:
 	_roll_mat_drop()
 	Loot.on_mob_death("slime", global_position)
 	GameState.quest_changed.emit()
-	if GameState.slime_quest == 1 and GameState.slime_kills == 3:
+	if GameState.slime_quest == 1 and GameState.slime_kills_circle == 3:
 		GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")
 	remove_from_group("enemy")
 	visible = false
