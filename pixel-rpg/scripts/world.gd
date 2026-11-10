@@ -111,6 +111,7 @@ func _ready() -> void:
 	hud = load("res://scripts/hud.gd").new()
 	add_child(hud)
 	hud.setup(self)
+	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
 	if GameState.load_game():
 		apply_zone(GameState.in_cave, false)
 		if GameState.pos_valid:
