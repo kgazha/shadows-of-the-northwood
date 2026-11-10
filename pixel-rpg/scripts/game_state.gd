@@ -49,6 +49,10 @@ var damage: int:
 		pass
 var herbs := 0
 var slime_kills := 0
+## Убийства слаймов ЗА ТЕКУЩИЙ круг (обнуляется в start_ng_plus): боковой квест
+## «Зачистка леса» должен перепроходить каждый круг, а не «уже сделан навсегда».
+## slime_kills остаётся lifetime-счётчиком ачивок (Охотник 25/100).
+var slime_kills_circle := 0
 ## Алхимия: материалы с врагов (id -> кол-во, см. MAT_NAMES) и заряды варёных зелий.
 var materials := {"suhotsvet": 0, "zhim": 0}
 var brewed_potions := 0
@@ -372,6 +376,7 @@ func to_dict() -> Dictionary:
 		"max_hp": max_hp, "hp": hp, "mana": mana, "level": level, "xp": xp, "xp_next": xp_next,
 		"damage": damage, "has_sword": has_sword, "class_id": class_id,
 		"herbs": herbs, "slime_kills": slime_kills,
+		"slime_kills_circle": slime_kills_circle,
 		"elder_quest": elder_quest, "slime_quest": slime_quest,
 		"seen_intro": seen_intro,
 		"cave_state": cave_state, "has_key": has_key, "has_amulet": has_amulet,
@@ -396,6 +401,7 @@ func from_dict(d: Dictionary) -> void:
 	has_sword = _flag(d.get("has_sword", false), false)
 	herbs = maxi(0, _num(d.get("herbs", 0), 0))
 	slime_kills = maxi(0, _num(d.get("slime_kills", 0), 0))
+	slime_kills_circle = maxi(0, _num(d.get("slime_kills_circle", 0), 0))
 	elder_quest = clampi(_num(d.get("elder_quest", 0), 0), 0, 2)
 	slime_quest = clampi(_num(d.get("slime_quest", 0), 0), 0, 2)
 	seen_intro = _flag(d.get("seen_intro", false), false)
@@ -550,6 +556,13 @@ func start_ng_plus() -> int:
 	campfires_used = {}
 	materials = {"suhotsvet": 0, "zhim": 0}  # структура сохраняем: add_material сверяет has()
 	brewed_potions = 0
+	# травы — подвальный инвентарь деревенского круга («Сухоцвет впрок»
+	# перепроходит каждый круг, carry-over тривиализировал бы квест);
+	# счётчик убийств круга — парный ему для «Зачистки леса».
+	herbs = 0
+	slime_kills_circle = 0
+	# алтарный «Кошелёк» (meta.purse, кап 2): +50 золота за ранг к старту круга.
+	gold += 50 * int(flags.get("meta.purse", 0))
 	# квестовые/диалоговые флаги (q.*, q.got.*, q.last.*) и Пепелище (ashen.*:
 	# ведьма/сундук/интро) — перепроходятся каждый круг (канон-решение оркестратора:
 	# Пепла с ведьмы не течёт, зона пересоздаётся живой);

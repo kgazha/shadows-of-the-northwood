@@ -119,6 +119,7 @@ func _die() -> void:
 	respawn_t = RESPAWN
 	GameAudio.sfx("drop")  # шлепок тела (кожа)
 	GameState.slime_kills += 1
+	GameState.slime_kills_circle += 1  # боковой квест круга (game_state.gd)
 	Achv.on_slime_kill()  # ачивки «Охотник 25/100» (achv.gd)
 	if FirstHint.I != null: FirstHint.I.show_hint("slime", "Первая победа! С тварей падает добыча, а торговцу нужны слаймы.")
 	GameState.add_xp(7)
