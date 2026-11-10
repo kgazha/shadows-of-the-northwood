@@ -51,7 +51,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 		remove_from_group("boss")
 		GameState.set_flag("ashen.boss", "dead")  # персист: cave_state не трогаем
 		GameState.add_xp(WITCH_XP)
-		GameState.toast.emit("Ведьма Пепелища осыпается пеплом! (+%d XP)" % WITCH_XP)
+		GameState.toast.emit("Ведьма Пепелища осыпается пеплом! (+%d опыта)" % WITCH_XP)
 		# tension смолкла: возвращаем тему Пепелища (трек "cave" — нет нового ассета)
 		var area: Variant = world.get("active_area")
 		if area == "ashen" or GameState.in_cave:

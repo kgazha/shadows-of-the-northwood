@@ -170,7 +170,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		GameState.add_xp(3)
 		Achv.count("kill_swarmling")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
-		GameState.toast.emit("Мглокрыс повержен! (+3 XP)")
+		GameState.toast.emit("Мглокрыс повержен! (+3 опыта)")
 		Loot.on_mob_death("swarmling", global_position)
 		GameState.quest_changed.emit()
 		_on_swarm_death()

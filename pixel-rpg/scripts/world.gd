@@ -162,6 +162,9 @@ func _ready() -> void:
 		hud.show_class_modal(_start_intro)
 	else:
 		_start_intro()
+	# Экспозиционный тост-завязка: мир и ставка в одну строку (TEXT-AUDIT В1).
+	# 77 зн < лимита тоста (~110), в HUD-баннер влезает без переноса.
+	GameState.toast.emit("Морхейм на краю леса. Дым, хворь, слаймы у опушки — и старейшина при смерти.")
 	if FirstHint.I != null: FirstHint.I.show_hint("controls_shown", "Все клавиши — в Меню (Esc), раздел «Управление».")
 
 func _start_intro() -> void:
@@ -492,6 +495,7 @@ func _process(_delta: float) -> void:
 		hint_label.text = ""
 	else:
 		hint_label.text = "E: " + near[0].get_hint()
+	_check_witch_done()
 	_update_cursor()
 
 # --- мышь: курсор и враги под курсором ---
@@ -622,7 +626,7 @@ func objective_pos() -> Vector2:
 			return dungeon_zone.stairs_node.global_position
 		if active_area == "ashen":
 			if ashen_grid != null and ashen_grid.portal_node != null:
-				return ashen_grid.portal_node.global_position  # наружу — через выжженную аршину
+				return ashen_grid.portal_node.global_position  # наружу — через выжженную прогалину
 			return target
 		if target_zone == "cave":
 			return tile_to_world(CAVE_ENTRANCE_TILE)
@@ -828,8 +832,8 @@ func exit_cave() -> void:
 		return
 	transition_to(false)
 
-## Восточные «выжженные полы»: вход по E у аршины "A", как пещера — по E у "T".
-## Первый заход — диалог ashen_intro (когда допишут ключ) или тост-заглушка;
+## Восточные «выжженные полы»: вход по E у прогалины "A", как пещера — по E у "T".
+## Первый заход — диалог ashen_intro (ключ дописан в dialogues_v2.json);
 ## флаг seen — в GameState.flags (сейв v2-совместимо, новых полей не заводим).
 func enter_ashen() -> void:
 	if active_area == "ashen":
@@ -838,14 +842,16 @@ func enter_ashen() -> void:
 	transition_to_area("ashen", func():
 		if first:
 			GameState.set_flag("ashen.intro_seen", "1")
-			if FirstHint.I != null: FirstHint.I.show_hint("ashen", "Пепелище опаснее пещеры: силы тут не жалеют. Отступай к аршине.")
+			# подсказка короче диалога ashen_intro и не повторяет его (TEXT-AUDIT Г3);
+			# «аршина» из игрового текста убрана — термин не вводился (TEXT-AUDIT A5)
+			if FirstHint.I != null: FirstHint.I.show_hint("ashen", "Пепелище опаснее пещеры: здесь не жалеют сил. Помни про выход — он рядом.")
 			if dialogues.has("ashen_intro"):
 				start_dialogue("ashen_intro")
 				if not hud.is_dialog_open():
 					GameState.input_locked = false
 			else:
 				GameState.input_locked = false
-				GameState.toast.emit("Пепелище: воздух стоит от золы. С дальней поляны на вас смотрит ведьма...")
+				GameState.toast.emit("Пепелище: воздух стоит от золы. С дальней поляны на тебя смотрит ведьма...")
 		else:
 			GameState.input_locked = false)
 
@@ -881,7 +887,11 @@ func talk(id: String) -> void:
 					else:
 						start_dialogue("elder_progress")
 				_:
-					start_dialogue("elder_after")
+					# NPC-амнезия по кругам (TEXT-AUDIT B7): на волне N — узел
+					# elder_after_<N> (один раз на волну), фолбэк — общий elder_after.
+					# Волна — int через GameState.ng_wave() (clampi флага ng.wave).
+					_dialog_once("elder_after", GameState.ng_wave(), func():
+						start_dialogue("elder_after"))
 		"merchant":
 			match GameState.slime_quest:
 				0:
@@ -897,7 +907,16 @@ func talk(id: String) -> void:
 					else:
 						start_dialogue("merchant_progress")
 				_:
-					start_dialogue("merchant_after")
+					# Дран — имя и реакция на смерть босса (TEXT-AUDIT Б): один раз за
+					# круг после закрытия квеста и победы над Громом (key q.merchant_boss
+					# с префиксом q. — гасится start_ng_plus, как и полагается пер-круговой
+					# вести); далее — обычный merchant_after.
+					if GameState.boss_defeated and GameState.cave_state >= 2 \
+							and str(GameState.flags.get("q.merchant_boss", "")) != "1":
+						GameState.set_flag("q.merchant_boss", "1")
+						start_dialogue("merchant_boss", func(): start_dialogue("merchant_after"))
+					else:
+						start_dialogue("merchant_after")
 		"hermit":
 			match GameState.cave_state:
 				0:
@@ -947,6 +966,44 @@ func _show_key_fx() -> void:
 	t.tween_property(spr, "position:y", spr.position.y - 14.0, 0.8)
 	t.parallel().tween_property(spr, "modulate:a", 0.0, 0.8)
 	t.tween_callback(spr.queue_free)
+
+## Диалог-вариант по волне: сначала "<base>_<wave>" — ровно ОДИН РАЗ НА ВОЛНУ,
+## иначе — fallback. Дедуп-флаг намеренно БЕЗ точек и чужих префиксов
+## ("dlg_<base>_<wave>"): QA-ассерт qa_q3 требует от флагов неймспейсы
+## q./ach./meta./ng./daily./hint./ashen., а start_ng_plus стирает только
+## q.*/ashen.*/ng.boss_*. Не стирается никогда — на повторных кругах кап-волны
+## (номер не растёт) «волна-осведомлённая» сцена не повторяется, игрок слышит
+## обычную elder_after. Волна 0 (обычная игра) — суффикса нет, сразу fallback.
+## wave — int: GameState.ng_wave() = clampi(int-флаг ng.wave, 0, кап).
+func _dialog_once(base: String, wave: int, fallback: Callable) -> void:
+	if wave > 0 and dialogues.has("%s_%d" % [base, wave]):
+		var key := "dlg_%s_%d" % [base, wave]
+		if str(GameState.flags.get(key, "")) != "1":
+			GameState.set_flag(key, "1")
+			start_dialogue("%s_%d" % [base, wave])
+			return
+	if fallback.is_valid():
+		fallback.call()
+
+## Ведьма Пепелища пала, а Пепелище молчало (TEXT-AUDIT B8): «что дальше» —
+## диалог witch_done прямо на арене, один раз за круг. Дедуп — флаг
+## "ashen.witch_done" (префикс ashen. стирает start_ng_plus — на новом круге
+## сцена законна заново) + гейт active_area=="ashen" (после выхода из зоны —
+## не показываем, продолжение берёт на себя реплика Старейшины в npc.gd).
+## Сигнал смерти от mob_boss2 не ловим — штатный персист ashen.boss=="dead";
+## не лезем в фейд перехода (fade_rect) и поверх открытого диалога
+## (смерть героя, интро зоны).
+func _check_witch_done() -> void:
+	if active_area != "ashen" or hud == null or fade_rect == null:
+		return
+	if GameState.input_locked or hud.is_dialog_open() or fade_rect.color.a > 0.01:
+		return
+	if str(GameState.flags.get("ashen.boss", "")) != "dead":
+		return
+	if str(GameState.flags.get("ashen.witch_done", "")) == "1" or not dialogues.has("witch_done"):
+		return
+	GameState.set_flag("ashen.witch_done", "1")
+	start_dialogue("witch_done")
 
 func on_player_death() -> void:
 	GameAudio.sfx("drop")  # смерть героя: тот же «шлепок кожи», что у мобов (аудио-аудит)
@@ -1009,7 +1066,7 @@ class CaveStairs:
 
 class AshenGate:
 	extends Area2D
-	## Выжженная аршина на восточной окраине (тайл "A"): вход в Пепелище по E,
+	## Выжженная прогалина на восточной окраине (тайл "A"): вход в Пепелище по E,
 	## симметрично лестнице пещеры. Тайл "A" проходим (CHAR_TO_TILE -> 3, грунт),
 	## визуальный портал — спрайт из ashen_tiles.png (тайл 7), новых ассетов нет.
 	var world

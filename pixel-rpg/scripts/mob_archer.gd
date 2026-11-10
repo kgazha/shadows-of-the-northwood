@@ -222,7 +222,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		GameState.add_xp(9)
 		Achv.count("kill_archer")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
-		GameState.toast.emit("Лесокров-лучник повержен! (+9 XP)")
+		GameState.toast.emit("Лесокров-лучник повержен! (+9 опыта)")
 		Loot.on_mob_death("archer", global_position)
 		GameState.quest_changed.emit()
 		queue_free()

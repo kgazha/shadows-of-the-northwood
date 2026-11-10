@@ -84,42 +84,9 @@ static func grant_ash(n: int) -> bool:
 	return true
 
 static func _title(id: String) -> String:
-	match id:
-		"first_blood":
-			return "Первая кровь"
-		"hunter_25":
-			return "Охотник: 25 слаймов"
-		"hunter_100":
-			return "Охотник: 100 слаймов"
-		"boss_slayer":
-			return "Убийца босса"
-		"alchemist":
-			return "Алхимик"
-		"brewer_10":
-			return "Знахарь: 10 варок"
-		"campfires":
-			return "Трёх костров"
-		"treasure":
-			return "Клад"
-		"collector":
-			return "Покупатель: 5 вещей"
-		"wealth":
-			return "Богатство"
-		"herbalist":
-			return "Травник"
-		"hardcore":
-			return "Не на жизнь, а на смерть"
-		"ng_second":
-			return "Второй заход"
-		"ng_vet":
-			return "Ветеран Пепелища"
-		"ng_finale":
-			return "Финальный круг"
-		"ng_magnat":
-			return "Аш-магнат"
-		"ng_crowns":
-			return "Все венцы"
-	return id
+	# Единый источник имён — achv_catalog.ITEMS (нарратив-аудит: тост и журнал
+	# больше не могут разойтись — 8 рассогласований устранено удалением копии).
+	return AchvCatalog.name_of(id)
 
 ## Суммарный счётчик вида "ach.n.<kind>" (инкремент + set_flag); возвращает новое
 ## значение. Хранение — по правилу родителя для суммарных целей.

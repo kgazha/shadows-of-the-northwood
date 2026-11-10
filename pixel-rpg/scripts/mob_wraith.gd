@@ -235,7 +235,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		GameState.add_xp(15)
 		Achv.count("kill_wraith")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
-		GameState.toast.emit("Тенеплёт рассеян! (+15 XP)")
+		GameState.toast.emit("Тенеплёт рассеян! (+15 опыта)")
 		Loot.on_mob_death("wraith", global_position)
 		GameState.quest_changed.emit()
 		queue_free()

@@ -249,7 +249,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 				GameAudio.music("cave")
 		else:
 			GameState.add_xp(kill_xp)
-			GameState.toast.emit("Отпрыск гнили повержен! (+%d XP)" % kill_xp)
+			GameState.toast.emit("Отпрыск гнили повержен! (+%d опыта)" % kill_xp)
 			_roll_mat_drop()
 		var loot_kind := "boss" if boss else ("brute" if tier == 1 else "brute_t%d" % tier)
 		Loot.on_mob_death(loot_kind, global_position)
