@@ -249,6 +249,9 @@ func _build_cave() -> void:
 	dungeon_zone = dz
 	_spawn_cave_embers()
 	_apply_cave_shapes(dz)
+	# сундук открывают и в этой сессии: try_interact эмитит stats_changed — снимаем
+	# коллайдер сразу, а не только после перезахода (пещера строится один раз)
+	GameState.stats_changed.connect(_sync_cave_chest)
 	_spawn_cave_mobs()
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
@@ -282,11 +285,32 @@ func _apply_cave_shapes(dz) -> void:
 		var idx := int(DZ.CHAR_TO_TILE[ch])
 		if not CAVE_BLOCK_SHAPES.has(idx):
 			continue
+		if idx == 11 and GameState.has_amulet:
+			cs.queue_free()  # сундук открыт (тайл уже 12) — коллайдер был бы невидимой стеной
+			continue
 		var spec: Array = CAVE_BLOCK_SHAPES[idx]
 		var sh := RectangleShape2D.new()
 		sh.size = Vector2(float(spec[0]), float(spec[1]))
 		cs.shape = sh
 		cs.position = Vector2(tx * TILE + 8 + float(spec[2]), ty * TILE + 8 + float(spec[3]))
+
+## Сундук открыт (амулет взят — тот же признак, по которому dungeon_zone красит
+## тайл 11 -> 12): коллайдер 13x12 в нише надо снять, иначе на месте тайла 12
+## остаётся невидимая стена. Идемпотентно — сборка пещеры, загрузка сейва, рантайм.
+func _sync_cave_chest() -> void:
+	if dungeon_zone == null or dungeon_zone.chest_tile.x < 0 or not GameState.has_amulet:
+		return
+	dungeon_zone.open_chest()  # тайл 12: пещера собрана до load_game() и успела получить 11
+	var walls: Node = dungeon_zone.get_node_or_null("Walls")
+	if walls == null:
+		return
+	for child in walls.get_children():
+		if not (child is CollisionShape2D) or child.is_queued_for_deletion():
+			continue
+		var cs: CollisionShape2D = child
+		var t := Vector2i(int((cs.position.x - 8.0) / float(TILE)), int((cs.position.y - 8.0) / float(TILE)))
+		if t == dungeon_zone.chest_tile:
+			cs.queue_free()
 
 ## Детерминированный спавн мобов по ярусам глубины (см. CAVE_MOB_BANDS/CAPS):
 ## тайлы проходимы, подальше от «точек интереса», не в узких коридорах, с
