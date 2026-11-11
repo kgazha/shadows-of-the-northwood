@@ -1,13 +1,19 @@
 extends Node2D
 ## Зона «Пепелище»: выжженная древним пожаром роща на востоке леса.
-## Карта data/map_ashen.json, тайлы assets/ashen_tiles.png (регион index*16,
+## Карта — ProcGen-словарь из world._build_ashen (T5b): setup(p_world, p_map)
+## принимает {grid, meta:{spawn, exit_portal, boss, chests, herbs, mobs{archers,
+## wraiths, swarm}}}; байты grid — канон тайлов data/map_ashen.json (тот же
+## алфавит ". , c a T K # P"). Пустой/битый dict -> fallback на JSON-эталон
+## data/map_ashen.json (файл остаётся на диске документацией/эталонной картой).
+## Тайлы assets/ashen_tiles.png (регион index*16,
 ## 0, 16, 16), стены, портал выхода, сундук награды, травы, моб-наполнение:
-## 2 лучника, стая мглокрысов из 4, 2 тенеплёта и мини-босс «Ведьма Пепелища»
-## (scripts/mob_boss2.gd). Персист — GameState.flags: "ashen.boss" = "dead",
+## 3 лучника, стая мглокрысов из 4, 4 тенеплёта и мини-босс «Ведьма Пепелища»
+## (scripts/mob_boss2.gd) — состав эммитит генератор (ASHEN_MOBS), реестры/волны
+## мобов — без изменений. Персист — GameState.flags: "ashen.boss" = "dead",
 ## "ashen.chest" = "taken" (cave_state/boss_defeated НЕ трогаем — у пещеры свой путь).
 ## Тинты мобов — через self_modulate: скрипты мобов перекрашивают modulate каждый
 ## кадр (вспышки урона), self_modulate перемножается с modulate и выживает.
-## Публичный API: setup(p_world) -> void; вход/выход: world.enter_ashen()/exit_ashen().
+## Публичный API: setup(p_world, p_map) -> void; вход/выход: world.enter_ashen()/exit_ashen().
 
 const TILE := 16
 const TEX_PATH := "res://assets/ashen_tiles.png"
@@ -42,17 +48,25 @@ var boss_node: Node2D
 var chest_node: Node2D
 var portal_node: Node2D
 
-func setup(p_world: Node2D) -> void:
+func setup(p_world: Node2D, p_map: Dictionary = {}) -> void:
 	world = p_world
-	if not FileAccess.file_exists("res://data/map_ashen.json"):
-		push_warning("Нет карты data/map_ashen.json — Пепелище не построено")
-		return
-	var f := FileAccess.open("res://data/map_ashen.json", FileAccess.READ)
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("Повреждена карта data/map_ashen.json — Пепелище не построено")
-		return
-	var m: Dictionary = parsed
+	var m: Dictionary = {}
+	# основной путь (T5b): генераторный словарь world._build_ashen — {grid, meta}
+	if typeof(p_map.get("grid", null)) == TYPE_ARRAY and not (p_map["grid"] as Array).is_empty() \
+			and typeof(p_map.get("meta", null)) == TYPE_DICTIONARY:
+		m = p_map
+	else:
+		# fallback: деревенский эталон data/map_ashen.json (файл намеренно на диске)
+		push_warning("ProcGen-словарь Пепелища пуст/бит — откат на эталон data/map_ashen.json")
+		if not FileAccess.file_exists("res://data/map_ashen.json"):
+			push_warning("Нет карты data/map_ashen.json — Пепелище не построено")
+			return
+		var f := FileAccess.open("res://data/map_ashen.json", FileAccess.READ)
+		var parsed: Variant = JSON.parse_string(f.get_as_text())
+		if typeof(parsed) != TYPE_DICTIONARY:
+			push_warning("Повреждена карта data/map_ashen.json — Пепелище не построено")
+			return
+		m = parsed
 	map_rows = m["grid"]
 	map_h = map_rows.size()
 	map_w = String(map_rows[0]).length()

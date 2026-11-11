@@ -470,10 +470,13 @@ func _build_cave_entrance() -> void:
 ## строится после load_game() — персист ведьмы/сундука читается из флагов.
 func _build_ashen() -> void:
 	# Шов PROCGEN §2: как у пещеры — ProcGen-словарь на сиде забега × «ashen» × волна.
+	# T5b: зона строится ИЗ ЭТОГО СЛОВАРЯ (setup принимает dict: grid+meta, байты
+	# grid — канон тайлов map_ashen.json). data/map_ashen.json остаётся на диске
+	# деревенским эталоном — ashen_zone читает его только как fallback пустого dict.
 	ashen_map = ProcGen.ashen_map(ProcGen.seed_zone(GameState.run_seed, ASHEN_ZONE_ID, GameState.ng_wave()))
 	var az = load("res://scripts/ashen_zone.gd").new()
 	ashen_zone.add_child(az)
-	az.setup(self)
+	az.setup(self, ashen_map)
 	ashen_grid = az
 	ashen_zone.visible = false
 	ashen_zone.process_mode = Node.PROCESS_MODE_DISABLED

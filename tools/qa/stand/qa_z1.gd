@@ -5,14 +5,22 @@ extends Node2D
 ## деревня->Пепелище->деревня, objective-роутинг, respawn, ведьма (50% -> ровно
 ## 2 стража ровно раз, смерть -> флаг -> лут boss2), сундук, персист-round-trip
 ## флагов через save/load, пересборка мира без ведьмы/сундука.
+## T5b: зона строится из ProcGen-словаря (world._build_ashen); стенд пинит
+## run_seed=42 ПЕРЕД каждой сборкой мира (прямое присваивание — start_new_run/
+## _wipe_circle стенд не зовёт, сейв удалён), координатные ассерты — фактическая
+## карта ashen_map(seed_zone(42,"ashen",0)) с ядра b862110 (числа, не самогенерат).
+## Волновой/составной блок (3/4/4, стража) — инвариантен к координатам.
 
 const Main := "res://scenes/main.tscn"
 const SW := preload("res://scripts/mob_swarmling.gd")
 const SAVE_PATH := "user://save_morkheim.json"
+const PIN_SEED := 42  # пин-сид T5b (seed_zone(42,"ashen",0) -> zone_seed 1620409472)
 
 var pass_n := 0
 var fail_n := 0
 var world: Node2D
+var _pin_meta := ""  # JSON-снимки meta/grid первого мира — детерминизм пересборки
+var _pin_grid := ""
 
 func chk(cond: bool, name: String) -> void:
 	if cond:
@@ -47,6 +55,12 @@ func _ready() -> void:
 	get_tree().quit(0 if fail_n == 0 else 1)
 
 func _spawn_world() -> Node2D:
+	# T5b пин-сид: прямое присваивание ПЕРЕД инстанцированием мира; сейв гарантированно
+	# удалён (world.load_game не успевает сдвинуть сид, а start_new_run/_wipe_circle
+	# стенд не вызывает). При появлении вайпов — пинить после них.
+	GameState.run_seed = PIN_SEED
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	var w: Node2D = load(Main).instantiate()
 	add_child(w)
 	await _frames(3)
@@ -76,10 +90,22 @@ func _phase_build() -> void:
 			if n.self_modulate == Color.WHITE:
 				tinted = false
 	chk(tinted, "лучники перекрашены self_modulate")
-	# валидатор: все POI на проходимых клетках
-	var f := FileAccess.open("res://data/map_ashen.json", FileAccess.READ)
-	var m: Dictionary = JSON.parse_string(f.get_as_text())
-	var meta: Dictionary = m["meta"]
+	# T5b: валидатор работает на генераторном словаре мира (world.ashen_map), не на
+	# JSON-этлоне; все POI на проходимых клетках
+	chk(int(GameState.run_seed) == PIN_SEED, "пин run_seed = 42")
+	var m: Dictionary = world.ashen_map
+	chk(m.has("meta") and m.has("grid"), "world.ashen_map — генераторный dict")
+	var meta: Dictionary = m.get("meta", {})
+	# координатный пин seed 42: фактический дамп ashen_map(seed_zone(42,"ashen",0)),
+	# zone_seed=1620409472, ядро ProcGen b862110 (checkpoints: scratch_cm/dump_ashen42.*)
+	chk(meta["spawn"] == [23, 5], "seed42: spawn (23,5)")
+	chk(meta["exit_portal"] == [21, 5], "seed42: exit_portal (21,5)")
+	chk(meta["boss"] == [7, 7], "seed42: ведьма (7,7)")
+	chk((meta["chests"] as Array)[0] == [36, 7], "seed42: сундук (36,7)")
+	chk(az.chest_node != null and String(az.chest_node.get("uid")) == "chest@ashen:36,7",
+		"seed42: uid сундука по схеме D4")
+	_pin_meta = JSON.stringify(meta)
+	_pin_grid = JSON.stringify(m.get("grid", []))
 	var all_poi: Array = [meta["spawn"], meta["exit_portal"], meta["boss"]]
 	all_poi.append_array(meta["chests"])
 	all_poi.append_array(meta["herbs"])
@@ -293,6 +319,11 @@ func _phase_rebuild() -> void:
 	chk(int(c["archer"]) == 3 and int(c["wraith"]) == 4, "пересборка: аркадные спавны на месте")
 	chk(int(c["swarmling"]) == 4 and int(c["guard"]) == 0, "пересборка: стая 4, стражи 0")
 	chk(az.portal_node != null, "пересборка: портал на месте")
+	# T5b: детерминизм пин-сида — вторая сборка мира даёт ту же карту (meta + grid)
+	chk(JSON.stringify(world.ashen_map.get("meta", {})) == _pin_meta,
+		"пересборка: meta Пепелища идентична (пин-сид)")
+	chk(JSON.stringify(world.ashen_map.get("grid", [])) == _pin_grid,
+		"пересборка: grid Пепелища идентичен (пин-сид)")
 	# музыка/атмосфера не падали: зона активируется штатно
 	world.apply_area("ashen", true)
 	await _frames(2)
