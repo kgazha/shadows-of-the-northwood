@@ -28,6 +28,15 @@ const CAVE_BLOCK_SHAPES := {
 	11: [13, 12, 0, 1],   # алтарный сундук: корпус без углов
 }
 const DZ := preload("res://scripts/dungeon_zone.gd")
+## Рощи «t»: визуал кластеров деревьев — ОДИН спрайт кроны на кластер вместо
+## сетки тайлов 16px. Меняется только картинка: геометрия карты, блокируемость
+## клеток и коллайдеры-стволы (BLOCK_SHAPES[5]) остаются ровно как были, а под
+## клетками рощи рисуется подстилка ('T'), чтобы от дерева не осталось дыры.
+const GROVE_ART := "res://assets/art/tree_grove_%d.png"
+const GROVE_VARIANTS := 6
+## Кластер крупнее — это «стена» деревьев по рамке карты, а не роща: один спрайт
+## на несколько сотен клеток был бы абсурден, такие кластеры остаются тайлами.
+const GROVE_MAX_TREES := 8
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
@@ -57,6 +66,9 @@ var hud: CanvasLayer
 var near: Array = []
 var hint_label: Label
 var village_zone: Node2D
+var grove_art: Array = []   # спрайты крон рощ (assets/art/tree_grove_*.png)
+var _groves: Array = []     # рощи: Array[Array[Vector2i]] — 8-связные кластеры «t»
+var _grove_cells := {}      # клетки «t» под кронами: на базовом слое там подстилка
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -134,6 +146,7 @@ func _ready() -> void:
 	add_child(ashen_zone)
 	_build_tiles()
 	_build_walls()
+	_build_grove_canopy()
 	_spawn_player()
 	_spawn_entities()
 	_build_campfires()
@@ -195,6 +208,7 @@ func tile_to_world(t: Vector2i) -> Vector2:
 	return Vector2((t.x + 0.5) * TILE, (t.y + 0.5) * TILE + 2.0)
 
 func _build_tiles() -> void:
+	_grove_init()
 	var ts := TileSet.new()
 	var src := TileSetAtlasSource.new()
 	src.texture = load("res://assets/tiles.png")
@@ -211,7 +225,120 @@ func _build_tiles() -> void:
 		for x in map_w:
 			var ch := row[x]
 			if CHAR_TO_TILE.has(ch):
-				layer.set_cell(Vector2i(x, y), 0, Vector2i(int(CHAR_TO_TILE[ch]), 0))
+				var idx := int(CHAR_TO_TILE[ch])
+				if ch == "t" and _grove_cells.has(Vector2i(x, y)):
+					idx = int(CHAR_TO_TILE["T"])  # под кроной — земля, дерево рисует спрайт
+				layer.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
+
+## ---- Рощи («t»): визуал кластера деревьев одним спрайтом кроны ----------
+
+## 8-связные группы «t» размером 2..GROVE_MAX_TREES клеток — это рощи.
+## Порядок обхода детерминирован (строка за строкой), как и во всём мире D3.
+func _grove_clusters() -> Array:
+	var seen := {}
+	var out: Array = []
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in map_w:
+			if row[x] != "t" or seen.has(Vector2i(x, y)):
+				continue
+			seen[Vector2i(x, y)] = true
+			var stack: Array = [Vector2i(x, y)]
+			var comp: Array = []
+			while not stack.is_empty():
+				var c: Vector2i = stack.pop_back()
+				comp.append(c)
+				for dy in range(-1, 2):
+					for dx in range(-1, 2):
+						if dx == 0 and dy == 0:
+							continue
+						var n := c + Vector2i(dx, dy)
+						if n.x < 0 or n.y < 0 or n.x >= map_w or n.y >= map_h:
+							continue
+						if seen.has(n) or String(map_rows[n.y])[n.x] != "t":
+							continue
+						seen[n] = true
+						stack.append(n)
+			if comp.size() >= 2 and comp.size() <= GROVE_MAX_TREES:
+				out.append(comp)
+	return out
+
+
+func _grove_load_art() -> void:
+	if not grove_art.is_empty():
+		return
+	for i in GROVE_VARIANTS:
+		var p := GROVE_ART % i
+		if ResourceLoader.exists(p):
+			grove_art.append(load(p))
+
+
+## Готовит рощи до сборки тайлов: без ассетов крон ничего не трогаем (иначе
+## вместо леса осталась бы голая подстилка).
+func _grove_init() -> void:
+	_groves.clear()
+	_grove_cells.clear()
+	_grove_load_art()
+	if grove_art.is_empty():
+		push_warning("world: нет assets/art/tree_grove_*.png — рощи остаются тайловыми")
+		return
+	_groves = _grove_clusters()
+	for comp in _groves:
+		for c in comp:
+			_grove_cells[c] = true
+
+
+## Один спрайт на рощу: центр — центр bbox кластера (та же сетка, что и
+## tile_to_world), z_index 5 (герой 0, метки NPC 8, цифры урона 90), линейная
+## фильтрация — новые ассеты не должны выглядеть «пиксельно»; старые тайлы при
+## этом остаются nearest. Вариант и отражение — хеш от якоря кластера, без randi.
+func _build_grove_canopy() -> void:
+	if _groves.is_empty():
+		return
+	var root := Node2D.new()
+	root.name = "GroveCanopy"
+	root.z_index = 5
+	village_zone.add_child(root)
+	for comp in _groves:
+		var x0: int = comp[0].x
+		var x1: int = comp[0].x
+		var y0: int = comp[0].y
+		var y1: int = comp[0].y
+		for c in comp:
+			x0 = mini(x0, c.x)
+			x1 = maxi(x1, c.x)
+			y0 = mini(y0, c.y)
+			y1 = maxi(y1, c.y)
+		var bw := float(x1 - x0 + 1) * TILE
+		var bh := float(y1 - y0 + 1) * TILE
+		# берём варианты, у которых форма кроны близка к форме кластера: иначе
+		# широкая крона нависает над узкой рощей на пару клеток вбок
+		var pool: Array = []
+		var best := 0
+		var bestd := INF
+		for i in grove_art.size():
+			var t: Texture2D = grove_art[i]
+			var d := absf(log((float(t.get_width()) / float(t.get_height())) / (bw / bh)))
+			if d < bestd:
+				bestd = d
+				best = i
+			if d <= 0.28:
+				pool.append(i)
+		if pool.is_empty():
+			pool.append(best)
+		var h := posmod(x0 * 7349 + y0 * 9151, 1000)
+		var tex: Texture2D = grove_art[int(pool[h % pool.size()])]
+		var k: float = maxf(bw * 1.12 / float(tex.get_width()), bh * 1.12 / float(tex.get_height()))
+		k = clampf(k, 0.5, 1.45)
+		var spr := Sprite2D.new()
+		spr.texture = tex
+		spr.centered = true
+		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		spr.flip_h = posmod(x1 * 3571 + y1 * 7919, 2) == 0
+		spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE, (y0 + y1 + 1) * 0.5 * TILE + 2.0)
+		spr.scale = Vector2(k, k)
+		root.add_child(spr)
+
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
