@@ -379,7 +379,12 @@ func _rebuild_talents() -> void:
 			var btn_col := Color(0.7, 0.88, 1.0) if avail else Color(0.6, 0.58, 0.54)
 			var b := Button.new()
 			b.flat = true
-			b.text = "[%s (%d/%d)]" % [String(nd.get("name", id)), r, mx]
+			# Фидбек: «у талантов нет иконок» — строка узла = procedural-иконка
+			# 8x8 (рисуется 16x16, nearest — как skill_icons в хотбаре) + имя +
+			# ранг; палитра/стиль — как вкладка достижений (золото/приглушённый).
+			b.icon = Talents.icon_texture(id)
+			b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			b.text = "%s %d/%d" % [String(nd.get("name", id)), r, mx]
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			b.focus_mode = Control.FOCUS_NONE  # клавиатурный фокус не воруем
 			b.add_theme_font_size_override("font_size", 8)

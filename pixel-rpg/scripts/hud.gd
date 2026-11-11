@@ -86,6 +86,11 @@ func setup(p_world: Node2D) -> void:
 	hp_bg.color = Color(0.08, 0.08, 0.1, 0.9)
 	hp_bg.size = Vector2(130, 9)
 	hp_bg.custom_minimum_size = Vector2(130, 9)
+	# Фидбек «полное HP, но полоса выглядит неполной»: в VBoxContainer дети по
+	# умолчанию SIZE_FILL — фон полосы растягивался до ширины самого широкого
+	# соседа (список заданий), а заполнение оставалось 128 px и на hp==max
+	# выглядело на треть. Шина полосы = ровно 130 px, бордюры 1+1 симметричны.
+	hp_bg.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	hp_fill = ColorRect.new()
 	hp_fill.color = Color(0.72, 0.15, 0.18)
 	hp_fill.position = Vector2(1, 1)
@@ -103,6 +108,7 @@ func setup(p_world: Node2D) -> void:
 	mana_bg.color = Color(0.08, 0.08, 0.12, 0.9)
 	mana_bg.size = Vector2(130, 9)
 	mana_bg.custom_minimum_size = Vector2(130, 9)
+	mana_bg.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	mana_bg.visible = false
 	mana_fill = ColorRect.new()
 	mana_fill.color = Color(0.2, 0.4, 0.85)
@@ -120,6 +126,7 @@ func setup(p_world: Node2D) -> void:
 	xp_bg.color = Color(0.08, 0.08, 0.1, 0.85)
 	xp_bg.size = Vector2(130, 8)
 	xp_bg.custom_minimum_size = Vector2(130, 8)
+	xp_bg.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	xp_fill = ColorRect.new()
 	xp_fill.color = Color(0.35, 0.85, 0.4)
 	xp_fill.position = Vector2(1, 1)
@@ -226,6 +233,7 @@ func _process(delta: float) -> void:
 			chars_shown = 1e9
 			typing = false
 		dtext.visible_characters = int(chars_shown)
+	_refresh_hotbar_gate()
 	_update_skill_states()
 	_update_camp_ui()
 	_update_marker(delta)
@@ -653,7 +661,7 @@ func _update_camp_ui() -> void:
 func refresh_skills() -> void:
 	var has := GameState.class_id != ""
 	if skill_panel != null:
-		skill_panel.visible = has
+		skill_panel.visible = has and _hotbar_allowed()
 	if not has:
 		return
 	var sids: Array = Classes.skills_for(GameState.class_id)
@@ -669,6 +677,25 @@ func refresh_skills() -> void:
 		var mc := int(sd.get("mana", 0))
 		icon.tooltip_text = "%s — ур. %d, КД %.0f с%s\n%s" % [sd.name, sd.level, sd.cd, (", энергия %d" % mc) if mc > 0 else "", sd.desc]
 		slot["hot"].text = str(i + 1)
+
+## Виден ли нижний хотбар сейчас. То же условие, что гасит маркер цели и
+## панель костра (_update_marker/_update_camp_ui): диалог и модалка создания
+## героя ставят GameState.input_locked. Фидбек «текст скиллов налезает на окно
+## диалога»: окно панели — низ экрана (offset_top = -66), хотбар висит на
+## -40..-4 с хоткеями/КД/уровнями — при открытом окне слой просто гаснет
+## (только visibility, якоря и layout не двигаем).
+func _hotbar_allowed() -> bool:
+	return not (GameState.input_locked or is_dialog_open() or is_modal_open())
+
+## Кадровый надзор за хотбаром: панель гаснет в тот же кадр, что открылось
+## окно диалога, и возвращается сразу после закрытия (иначе висела бы скрытой
+## до ближайшего refresh_skills — на них никто не подписан при advance()).
+func _refresh_hotbar_gate() -> void:
+	if skill_panel == null or GameState.class_id == "":
+		return
+	var vis := _hotbar_allowed()
+	if skill_panel.visible != vis:
+		skill_panel.visible = vis
 
 func _update_skill_states() -> void:
 	if skill_panel == null or not skill_panel.visible or GameState.class_id == "":
