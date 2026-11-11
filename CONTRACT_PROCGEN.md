@@ -50,5 +50,7 @@ T1: game_state.gd, world.gd, save_vault.gd. T2-код: scripts/procregion.gd (+.
 - **Известный дефект (в работе, фикс = pg_t2_fix.diff):** PG8a — 12-клеточное кольцо воздушного зазора вокруг комнаты-сундука на части сидов не сообщается с главным полом (OPEN-state, пещера). Критерий стенда: карманы ≥2 запрещены, одноклеточные терпимы (§3.2.5).
 - **Стенд qa_pg:** 25 строк вердикта (24 проверки + RALL), 50 сидов `97531+i*7919`; в манифесте пока НЕ зарегистрирован — регистрация вместе с golden-пинами после PG8a-фикса.
 
-## 9. Статус волн (актуально на 2c8a70e+)
-Волна A: ✅ (T1 af4be11, шаблоны fcf76ea, T2 2c8a70e, qa_pg b551bca, qa_s1/qa_sv v3-ребейсы 285973f/728dc9d). В работе: PG8a-фикс (procregion.gd), T5a uid-сундуков (interactable/ashen_zone/dungeon_zone/+2 строки world.gd). Удержание: golden-пины PG2 (после фикса), T3 place_units (после PG8a-фикса), T4/T5b (после T5a-мержа).
+## 9. Статус волн (актуально на 868f97c)
+Волна A: ✅. T5a c697c16, T5b df44741 (qa_z1 пин-сид 42, 67 проверок), T3 5adb01c (place_units+proc_profiles.json), T4 868f97c (пещера из cave_map, мобы из place_units, стенды на пин-сиде 42: qa_q5/qa_s5/qa_rf/qa_r1/qa_r2/mb_base+mb_1). Батарея 33/33 GO (663 проверки). В работе: T6-остаток (qa_pg PG10 place_units-блок). Остаток волн D: финальная батарея на последнем HEAD.
+- **ФАКТ-КАРТА seed 42 (стендовая реальность, ng_wave()=0, zone_seed=1323545855):** spawn(4,3) stairs(4,2) hermit(18,17) boss(16,8) trigger(16,10) chest(9,12) door(10,12) approach(11,12) ниша(9,13) wraiths(15,7),(16,7) place_units=10. Контрактная цепь wave 1 (zone_seed=454322940): spawn(14,5) stairs(14,4) hermit(13,17) boss(24,13) trigger(24,14) chest(5,15) door(5,17), units=12.
+- **Найденное вне рамок (бэклог):** qa_rf s5 (вне battery-покрытия, предсуществующий баг): achv._ready→_daily() на legacy-сейве без daily.stamp выдаёт +15 зол. и set_flag(daily.*). mb_3 — soak-флейк (краснеет ~1/6 в плотном каскаде, изолированно стабилен).
