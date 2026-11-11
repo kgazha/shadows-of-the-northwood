@@ -19,7 +19,7 @@
     { "name": "qa_rf", "desc": "Порядок загрузки персистентного состояния в world._ready()", "run": ["qa_rf.tscn"], "parse": { "mode": "multi", "re": "qa_rf s=\\d+ [^0-9]*(\\d+)/(\\d+)" } },
     { "name": "qa_r1", "desc": "Esc-матрица vs Shop/Journal + ClickMove-контракт", "run": ["qa_r1.tscn"], "parse": { "mode": "fails", "re": "R1 DONE fails=(\\d+)" } },
     { "name": "qa_r1r2", "desc": "Цепочка r1->r2 (рестарт процесса): босс не возрождён, нет повторного лута", "run": ["qa_r1.tscn", "qa_r2.tscn"], "parse": { "mode": "fails", "re": "R2 DONE fails=(\\d+)" } },
-    { "name": "qa_s1", "desc": "Shop/GearData/save v2 roundtrip/legacy v1", "run": ["qa_s1.tscn"], "parse": { "mode": "fails", "re": "SUMMARY fails=(\\d+)" } },
+    { "name": "qa_s1", "desc": "Shop/GearData/save v3 roundtrip/legacy v1", "run": ["qa_s1.tscn"], "parse": { "mode": "fails", "re": "SUMMARY fails=(\\d+)" } },
     { "name": "qa_s2", "desc": "SettingsMenu: Esc-матрица/слайдеры/ClickMove-запись", "run": ["qa_s2.tscn"], "parse": { "mode": "fails", "re": "S2 DONE fails=(\\d+)" } },
     { "name": "qa_s4", "desc": "Экономика фарм-цикла mob->loot->sell (20 циклов)", "run": ["qa_s4.tscn"], "parse": { "mode": "fails", "re": "S4 DONE fails=(\\d+)" } },
     { "name": "qa_s5", "desc": "Спавн пещеры до load_game: мёртвый босс не воскресает", "run": ["qa_s5.tscn"], "parse": { "mode": "fails", "re": "S5 DONE fails=(\\d+)" } },

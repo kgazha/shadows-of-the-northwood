@@ -1,6 +1,6 @@
 extends Node
 ## QA-харнесс s1: Shop (покупка/отказ/идемпотентность/sell), GearData (damage/absorb),
-## save v2 roundtrip, legacy v1 миграция, битые поля сейва.
+## save v3 roundtrip (run_seed), legacy v1 миграция, битые поля сейва.
 
 var fails := {"n": 0}
 var toasts: Array = []
@@ -175,8 +175,9 @@ func _run() -> void:
 			print("  item %s price=%d sell=%d" % [id, p, s])
 	ck(ok14, "T14 sell==floor(price/2) all stock")
 
-	# --- T15 save v2 roundtrip (gold/gear/flags + автосейв по gold_changed) ---
+	# --- T15 save v3 roundtrip (gold/gear/flags/run_seed + автосейв по gold_changed) ---
 	reset_state(1)
+	GameState.run_seed = 123456789
 	GameState.gold = 0
 	GameState.add_gold(777)  # через add_gold -> gold_changed -> автосейв
 	shop.buy_btns["sword"].pressed.emit()
@@ -188,6 +189,7 @@ func _run() -> void:
 	GameState.flags = {}
 	GameState.cave_state = 0
 	ck(GameState.load_game(), "T15 load_game ok")
+	ck(GameState.run_seed == 123456789, "T15 run_seed v3 roundtrip", str(GameState.run_seed))
 	# add_gold(777)+покупки: 777-80-180=517
 	ck(GameState.gold == 517, "T15 gold roundtrip", "got %d" % GameState.gold)
 	ck(String(GameState.gear["weapon"]) == "sword", "T15 weapon roundtrip", String(GameState.gear["weapon"]))
@@ -213,7 +215,8 @@ func _run() -> void:
 	ck(GameState.level == 3 and GameState.xp == 5, "T16 legacy level/xp")
 	ck(GameState.max_hp == 12 + 2 * 2, "T16 legacy max_hp=16", "got %d" % GameState.max_hp)
 	ck(GameState.hp == 9, "T16 legacy hp=9", "got %d" % GameState.hp)
-	ck(int(GameState.to_dict().get("v", 0)) == 2, "T16 re-save versioned v2")
+	ck(int(GameState.to_dict().get("v", 0)) == 3, "T16 re-save versioned v3")
+	ck(GameState.run_seed >= 0, "T16 legacy migration seeds run_seed", str(GameState.run_seed))
 
 	# --- T17 битые поля ---
 	var f2 := FileAccess.open("user://save_morkheim.json", FileAccess.WRITE)
