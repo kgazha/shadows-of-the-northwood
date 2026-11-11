@@ -16,6 +16,15 @@ const PORTRAITS := {"hero": 0, "elder": 40, "merchant": 80}
 const PORTRAIT_SIZE := 40
 # индекс портрета отшельника в portraits2.png (ассет рисует соседняя команда)
 const PORTRAITS2_INDEX := {"hermit": 0}
+# --- фичевые портреты «лица» (живописный арт, не атлас 40px) ---
+# world.gd передаёт в show_dialog() только реплики, dialog_id не приходит
+# (world.gd не правим) — ключом диалога служит поле who: в dialogues*.json все
+# реплики старейшины идут с who="elder" (ключи elder_quest/elder_progress/
+# elder_after_N и т.д.), поэтому маппинг — по префиксу ключа. Реплик
+# старейшины в intro нет (там только narr/hero) — слот скрыт. Остальные NPC в
+# словаре отсутствуют: слот просто скрыт (скелет под будущие портреты).
+const NPC_PORTRAITS := {"elder": "res://assets/portraits/elder.png"}
+const PORTRAIT_SLOT := 48  # фикс. ширина слота портрета в окне диалога, px
 
 const SLOT := 28.0  # размер слота иконки скилла
 
@@ -46,6 +55,11 @@ var on_end: Callable = Callable()
 var pending_ends: Array[Callable] = []
 var portraits_tex: Texture2D
 var portraits2_tex: Texture2D
+# --- фичевый портрет в окне диалога ---
+var dlg_slot: Control           # фикс. отступ текста: слот всегда в layout
+var dlg_frame: PanelContainer   # рамка в тон окна, видна только с портретом
+var dlg_tex: TextureRect        # LINEAR-холст под живой арт 96–128 px
+var npc_tex := {}               # кэш ключ -> Texture2D|null
 # --- спринт 2 ---
 var skill_icons_tex: Texture2D
 var skill_panel: PanelContainer
@@ -170,13 +184,48 @@ func setup(p_world: Node2D) -> void:
 	portrait.custom_minimum_size = Vector2(40, 40)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	# Слот портрета слева от текста — ФИКСИРОВАННЫЙ отступ: без портрета пуст,
+	# но свои PORTRAIT_SLOT px в layout съедает, поэтому вёрстка текста не
+	# «прыгает», когда реплика старейшины сменяет безликую. Внутри два слоя:
+	# фичевая рамка с живым артом (LINEAR) и легаси-атласный портрет 40 px.
+	dlg_slot = Control.new()
+	dlg_slot.custom_minimum_size = Vector2(PORTRAIT_SLOT, PORTRAIT_SLOT)
+	dlg_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dlg_frame = PanelContainer.new()
+	# квадратная рамка 48x48 по центру слота (строка hbox выше — 56 px, FULL_RECT
+	# растягивал бы портрет по вертикали)
+	dlg_frame.set_anchors_preset(Control.PRESET_CENTER)
+	dlg_frame.offset_left = -PORTRAIT_SLOT / 2.0
+	dlg_frame.offset_top = -PORTRAIT_SLOT / 2.0
+	dlg_frame.offset_right = PORTRAIT_SLOT / 2.0
+	dlg_frame.offset_bottom = PORTRAIT_SLOT / 2.0
+	dlg_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dlg_frame.visible = false
+	if ui_frame_tex != null:
+		dlg_frame.add_theme_stylebox_override("panel", _ui_frame_style(2.0))
+	dlg_tex = TextureRect.new()
+	dlg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	dlg_tex.stretch_mode = TextureRect.STRETCH_SCALE
+	# живой (не-пиксельный) арт: сглажение вместо nearest из настроек проекта
+	dlg_tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	dlg_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dlg_frame.add_child(dlg_tex)
+	dlg_slot.add_child(dlg_frame)
+	# легаси-портрет из атласа 40 px — так же центрируется в слоте анкорами
+	# (dlg_slot — обычный Control, контейнером не растягивает)
+	portrait.set_anchors_preset(Control.PRESET_CENTER)
+	portrait.offset_left = -20.0
+	portrait.offset_top = -20.0
+	portrait.offset_right = 20.0
+	portrait.offset_bottom = 20.0
+	dlg_slot.add_child(portrait)
 	var hbox := HBoxContainer.new()
 	hbox.add_theme_constant_override("separation", 8)
 	var vb := VBoxContainer.new()
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vb.add_child(dname)
 	vb.add_child(dtext)
-	hbox.add_child(portrait)
+	hbox.add_child(dlg_slot)
 	hbox.add_child(vb)
 	panel.add_child(hbox)
 	var dhint := Label.new()
@@ -360,6 +409,14 @@ func _show_line() -> void:
 	var who := String(ln.get("who", "narr"))
 	dname.text = String(NAMES.get(who, who))
 	dtext.text = String(ln.get("text", ""))
+	# фичевый портрет по ключу диалога (префиксу who) — поверх легаси-атласа
+	var tex := _npc_portrait(who)
+	dlg_frame.visible = tex != null
+	if tex != null:
+		dlg_tex.texture = tex
+		portrait.visible = false
+		_typing_reset()
+		return
 	var atlas: Texture2D = null
 	var px := -1
 	if PORTRAITS.has(who):
@@ -376,9 +433,28 @@ func _show_line() -> void:
 		portrait.visible = true
 	else:
 		portrait.visible = false
+	_typing_reset()
+
+func _typing_reset() -> void:
 	chars_shown = 0.0
 	dtext.visible_characters = 0
 	typing = true
+
+## Кэш-загрузка фичевого портрета: who начинается с ключа словаря -> Texture2D.
+## Нет ассета/ключа — null, слот скрыт (отступ фиксирован, вёрстка не прыгает).
+func _npc_portrait(who: String) -> Texture2D:
+	for key in NPC_PORTRAITS:
+		if not who.begins_with(String(key)):
+			continue
+		if not npc_tex.has(key):
+			var path := String(NPC_PORTRAITS[key])
+			if ResourceLoader.exists(path):
+				npc_tex[key] = load(path)
+			else:
+				push_warning("Нет ассета: %s — диалог без фичевого портрета" % path)
+				npc_tex[key] = null
+		return npc_tex[key]
+	return null
 
 func is_dialog_open() -> bool:
 	return panel.visible
@@ -432,7 +508,9 @@ func _build_skill_panel(th: Theme) -> void:
 		icon.position = Vector2(2, 2)
 		icon.size = Vector2(SLOT - 4.0, SLOT - 4.0)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_SCALE  # 16 px -> 24 px, nearest из настроек проекта
+		icon.stretch_mode = TextureRect.STRETCH_SCALE  # 16 px -> 24 px
+		# живой арт вместо пиксель-перфект: сглажение поверх nearest проекта
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		icon.mouse_filter = Control.MOUSE_FILTER_STOP
 		icon.gui_input.connect(_on_skill_slot_input.bind(i))
 		sc.add_child(icon)
