@@ -39,6 +39,7 @@ extends Node
 
 const CFG_PATH := "user://minimap_cfg.json"
 const FRAME_PATH := "res://assets/ui/panel_frame.png"
+const BRONZE_PATH := "res://assets/ui/decor_minimap_bronze.png"
 const SIZE := 64.0          # весь радар с рамкой, px (внутреннее поле 64 - 2*FRAME)
 const FRAME := 4.0          # толщина 9-slice рамки (Kenney: регион 32, поля 4)
 const PAD := 6.0            # отступ от правого верхнего угла экрана (как HUD-полосы)
@@ -401,6 +402,20 @@ class _Radar extends Control:
 			sb = flat
 		_frame.add_theme_stylebox_override("panel", sb)
 		add_child(_frame)
+		# волна 3: бронзовое кольцо поверх деревянной рамы. Ребёнок радара с
+		# mouse_filter IGNORE — paint(), позиция и размеры радара не трогает;
+		# прозрачная дырка в текстуре равна внутреннему полю (tex r~56/128)
+		if ResourceLoader.exists(Minimap.BRONZE_PATH):
+			var ring := TextureRect.new()
+			ring.texture = load(Minimap.BRONZE_PATH)
+			ring.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ring.stretch_mode = TextureRect.STRETCH_SCALE
+			ring.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+			ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			ring.set_anchors_preset(Control.PRESET_FULL_RECT)
+			add_child(ring)
+		else:
+			push_warning("Нет ассета: %s — миникарта без бронзового кольца" % Minimap.BRONZE_PATH)
 
 	func _draw() -> void:
 		if mm != null:

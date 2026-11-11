@@ -21,9 +21,19 @@ const PORTRAITS2_INDEX := {"hermit": 0}
 # (world.gd не правим) — ключом диалога служит поле who: в dialogues*.json все
 # реплики старейшины идут с who="elder" (ключи elder_quest/elder_progress/
 # elder_after_N и т.д.), поэтому маппинг — по префиксу ключа. Реплик
-# старейшины в intro нет (там только narr/hero) — слот скрыт. Остальные NPC в
-# словаре отсутствуют: слот просто скрыт (скелет под будущие портреты).
-const NPC_PORTRAITS := {"elder": "res://assets/portraits/elder.png"}
+# старейшины в intro нет (там только narr/hero) — слот скрыт.
+# Волна 3 «Живая стилистика»: портреты всех 7 говорящих NPC (112 px, полная
+# глубина цвета, без квантизации) — сгенерированный арт из D:\images\roguelike,
+# кроп по лицу, LANCZOS. narr остаётся безликим (маппинг по begins_with).
+const NPC_PORTRAITS := {
+	"elder": "res://assets/portraits/elder.png",
+	"merchant": "res://assets/portraits/merchant.png",
+	"smith": "res://assets/portraits/smith.png",
+	"farmer": "res://assets/portraits/farmer.png",
+	"hermit": "res://assets/portraits/hermit.png",
+	"witch": "res://assets/portraits/witch.png",
+	"hero": "res://assets/portraits/hero.png",
+}
 const PORTRAIT_SLOT := 48  # фикс. ширина слота портрета в окне диалога, px
 
 const SLOT := 28.0  # размер слота иконки скилла

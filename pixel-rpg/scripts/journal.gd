@@ -67,6 +67,22 @@ func _ready() -> void:
 	_panel.offset_bottom = 110
 	if _frame_tex != null:
 		_panel.add_theme_stylebox_override("panel", _ui_frame_style(6.0))
+	# волна 3 «Живая стилистика»: бумажная кромка пергамента по краю окна —
+	# наложенный 9-patch ПЕРВЫМ ребёнком PanelContainer: рисуется под контентом,
+	# все дети панели и так получают один и тот же full-rect, min_size = 0,
+	# поэтому позиции текста/списков не сдвигаются ни на пиксель
+	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
+		var paper := NinePatchRect.new()
+		paper.name = "PaperEdge"
+		paper.texture = load("res://assets/ui/decor_paper_edge.png")
+		paper.patch_margin_left = 24.0
+		paper.patch_margin_top = 24.0
+		paper.patch_margin_right = 24.0
+		paper.patch_margin_bottom = 24.0
+		paper.set_anchors_preset(Control.PRESET_FULL_RECT)
+		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		_panel.add_child(paper)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 3)
 	_panel.add_child(vb)
