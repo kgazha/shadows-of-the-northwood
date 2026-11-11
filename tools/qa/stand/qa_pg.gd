@@ -23,9 +23,20 @@ extends "res://mb_base.gd"
 ## Golden-хеши: каноническая сериализация ВСЕГО словаря карты (ключи словарей
 ## упорядочены рекурсивно) + FNV-1a 64. Значения — ЗАГЛУШКИ: orchestrator запинит
 ## реальные хеши после мержа T2; до этого эти две проверки честно красные.
+##
+## PG10 (T6-остаток): place_units(zone_seed, map, zone, wave=1) — канон T3.
+## Чистота API (двойной вызов на одной карте, 3-arg == 4-arg wave=1),
+## инварианты расстановки на 50 сидах × волны 1..5 × обе зоны (юниты на
+## проходимых, ни одного точно на якоре POI, попарно chebyshev >= 2, капсы по
+## видам — капсы ЧИТАЮТСЯ из data/proc_profiles.json, не хардкод), золотой
+## эталон 11 брутов на ручной data/map_cave.json @ zone_seed=0 (позиции
+## запинены числами), chest_bonus = 1 при wave >= 3.
 
 const GOLDEN_CAVE_PIN := 8065050884287841817  # GOLDEN-CAVE-PIN: FNV-1a 64, cave_map(seed_zone(42,"cave",1)) @ b862110 (после PG8a-фикса)
 const GOLDEN_ASHEN_PIN := 8636615847371749653  # GOLDEN-ASHEN-PIN: FNV-1a 64, ashen_map(seed_zone(42,"ashen",1)) @ b862110
+const GOLDEN_CAVE_UNITS := [[24, 6], [27, 6], [13, 7], [16, 7], [11, 8], [27, 9], [10, 10], [24, 12], [27, 12], [8, 14], [17, 14]]  # GOLDEN-PLACE-PIN: эталон world._spawn_cave_mobs (11 брутов), место действия — PG10c
+const PROFILES_PATH := "res://data/proc_profiles.json"
+const MAP_CAVE_PATH := "res://data/map_cave.json"
 
 const RUN_SEED := 97531          # фиксированный мета-сид: seed_i = RUN_SEED + i*7919
 const SEEDS := 50                # §3: 50 сидов на инвариант
@@ -45,10 +56,14 @@ func _ready() -> void:
 	pg7_anchors_walkable()
 	pg8_connectivity()
 	pg9_uid()
+	pg10_api()
+	pg10_invariants()
+	pg10_golden()
+	pg10_chest()
 	# Целостность сюиты (паттерн qa_run): рантайм-ошибка «Invalid call ... on Nil»
 	# обрывает лишь текущую функцию — RALL по СОБСТВЕННОМУ счётчику ловит оборванные
 	# блоки. До генератора вердикт стенда — плановый красный.
-	check("RALL: исполнены все 24 проверок PG1–PG9 (нет оборванных блоков)", _pass + _fail == 24)
+	check("RALL: исполнены все 32 проверок PG1–PG10 (нет оборванных блоков)", _pass + _fail == 32)
 	done()
 
 # --- обвязка сидов ---
@@ -455,3 +470,237 @@ static func _uid_ok(uid: String, x: int, y: int) -> bool:
 		if c < "0" or c > "9":
 			return false
 	return int(xs) == x and int(ys) == y
+
+# --- PG10: place_units (T6-остаток; сигнатура/возврат — канон T3) ---
+
+func pg10_api() -> void:
+	# Чистота API: двойной вызов place_units на ОДНОЙ и той же карте-словаре
+	# (ловит и скрытую мутацию карты, и нечистый детерминизм) + канон 3-arg
+	# вызова (wave по умолчанию == 1). Обе зоны, та же каскадная выборка сидов.
+	var badd: Array = []
+	var bad3: Array = []
+	for rs in _seeds():
+		for zone in ["cave", "ashen"]:
+			var z: int = _zone_seed(rs, zone)
+			var m: Dictionary = _pg.cave_map(z) if zone == "cave" else _pg.ashen_map(z)
+			var r1: Dictionary = _pg.place_units(z, m, zone, 1)
+			var r2: Dictionary = _pg.place_units(z, m, zone, 1)
+			if _canon(r1) != _canon(r2):
+				badd.append("%s seed=%d: двойной вызов place_units разошёлся" % [zone, rs])
+			var r3: Dictionary = _pg.place_units(z, m, zone)
+			if _canon(r1) != _canon(r3):
+				bad3.append("%s seed=%d: 3-arg != 4-arg wave=1" % [zone, rs])
+	check("PG10a: place_units детерминирован (двойной вызов на одной карте, обе зоны, %d сидов)" % SEEDS, _report("PG10a", badd))
+	check("PG10a2: place_units(seed, map, zone) == place_units(seed, map, zone, 1) — канон 3-arg (обе зоны, %d)" % SEEDS, _report("PG10a2", bad3))
+
+func pg10_invariants() -> void:
+	# Инварианты расстановки: 50 сидов × волны 1..5 × обе зоны. Капсы по видам
+	# ЧИТАЮТСЯ из data/proc_profiles.json (родитель: не хардкод); набор якорей —
+	# ровно тот, что читает place_units: cave spawn/stairs_out/chest/door/hermit/
+	# boss, ashen spawn/exit_portal/boss + массивы chests/herbs (boss_trigger —
+	# НЕ POI, намеренно вне набора). Проверка «на якоре» — точное совпадение с
+	# координатой якоря (не радиус): радиусные запретники — внутренность движка.
+	var prof: Variant = _json_at(PROFILES_PATH)
+	var badw: Array = []
+	var bada: Array = []
+	var badch: Array = []
+	var badk: Array = []
+	if typeof(prof) != TYPE_DICTIONARY:
+		badk.append("%s нечитаем — капсы непроверяемы" % PROFILES_PATH)
+	for rs in _seeds():
+		for zone in ["cave", "ashen"]:
+			var z: int = _zone_seed(rs, zone)
+			var m: Dictionary = _pg.cave_map(z) if zone == "cave" else _pg.ashen_map(z)
+			var g := _grid_rows(m)
+			var anch := _anchor_points(m, zone)
+			for wave in range(1, 6):
+				var res: Dictionary = _pg.place_units(z, m, zone, wave)
+				var units: Array = res.get("units", [])
+				for u in units:
+					var p := _upos(u)
+					if p.size() != 2:
+						badw.append("%s seed=%d w%d: unit без pos" % [zone, rs, wave])
+						continue
+					if not _w_ok(zone, _ch(g, p[0], p[1]), false):
+						badw.append("%s seed=%d w%d: unit (%d,%d) на непроходимой клетке" % [zone, rs, wave, p[0], p[1]])
+					var pk := "%d,%d" % [p[0], p[1]]
+					if anch.has(pk):
+						bada.append("%s seed=%d w%d: unit точно на якоре %s (%s)" % [zone, rs, wave, String(anch[pk]), pk])
+				for i in units.size():
+					var pa := _upos(units[i])
+					if pa.size() != 2:
+						continue
+					for j in range(i + 1, units.size()):
+						var pb := _upos(units[j])
+						if pb.size() != 2:
+							continue
+						if maxi(absi(pa[0] - pb[0]), absi(pa[1] - pb[1])) < 2:
+							badch.append("%s seed=%d w%d: cheb(%d,%d;%d,%d) < 2" % [zone, rs, wave, pa[0], pa[1], pb[0], pb[1]])
+							break
+				if typeof(prof) == TYPE_DICTIONARY:
+					var row: Variant = _prof_row(prof, zone, wave)
+					if row == null:
+						badk.append("%s w%d: нет строки волны в профиле" % [zone, wave])
+					else:
+						var kinds: Array = _prof_kinds(prof, zone)
+						var caps: Array = (row as Dictionary).get("caps", [])
+						var counts := {}
+						for u2 in units:
+							var kd := String((u2 as Dictionary).get("kind", ""))
+							counts[kd] = int(counts.get(kd, 0)) + 1
+						for kk in counts:
+							var kkd := String(kk)
+							var ci: int = kinds.find(kkd)
+							if ci < 0:
+								badk.append("%s seed=%d w%d: вид \"%s\" вне kinds профиля" % [zone, rs, wave, kkd])
+							elif ci >= caps.size():
+								badk.append("%s w%d: капсов в строке меньше, чем kinds" % [zone, wave])
+							elif int(counts[kkd]) > int(caps[ci]):
+								badk.append("%s seed=%d w%d: %s=%d > капс %d" % [zone, rs, wave, kkd, int(counts[kkd]), int(caps[ci])])
+	check("PG10b: все юниты на проходимых клетках (волны 1..5, обе зоны, %d сидов)" % SEEDS, _report("PG10b", badw))
+	check("PG10b2: ни один юнит не стоит точно на координате якоря POI (волны 1..5, обе зоны, %d)" % SEEDS, _report("PG10b2", bada))
+	check("PG10b3: попарно chebyshev >= 2 между юнитами (волны 1..5, обе зоны, %d)" % SEEDS, _report("PG10b3", badch))
+	check("PG10b4: капсы по видам не превышены, капсы из data/proc_profiles.json (волны 1..5, обе зоны, %d)" % SEEDS, _report("PG10b4", badk))
+
+func pg10_golden() -> void:
+	# Ровно родительский канон: place_units(0, РУЧНАЯ data/map_cave.json с диска,
+	# "cave") == множество 11 брутов эталона world._spawn_cave_mobs (позиции
+	# запинены числами выше) + chest_bonus == 0. Вид/тир юнита при этом —
+	# каноническая глубинная полоса от spawn (bands/kinds читаются из
+	# proc_profiles.json, не хардкод): на волне 1 глубина 4..7 -> brute,
+	# 8..11 -> brute_t2, 12+ -> brute_t3 — «бруты» эталона в своих полосах.
+	var ok := false
+	var msg := ""
+	var parsed: Variant = _json_at(MAP_CAVE_PATH)
+	var prof: Variant = _json_at(PROFILES_PATH)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		msg = "%s не читается как Dictionary" % MAP_CAVE_PATH
+	elif typeof(prof) != TYPE_DICTIONARY or typeof((prof as Dictionary).get("cave", null)) != TYPE_DICTIONARY:
+		msg = "%s нечитаем — bands/kinds недоступны" % PROFILES_PATH
+	else:
+		var cave: Dictionary = (prof as Dictionary)["cave"] as Dictionary
+		var kinds: Array = cave.get("kinds", [])
+		var bands: Array = cave.get("bands", [])
+		var sp := _xy_of(parsed as Dictionary, "spawn")
+		if kinds.is_empty() or bands.is_empty() or sp.size() != 2:
+			msg = "профиль/спавн карты неполны"
+		else:
+			var res: Dictionary = _pg.place_units(0, parsed as Dictionary, "cave")
+			var units: Array = res.get("units", [])
+			var got := {}
+			var kindbad := 0
+			for u in units:
+				var p := _upos(u)
+				if p.size() != 2:
+					kindbad += 1
+					continue
+				var d := maxi(absi(p[0] - sp[0]), absi(p[1] - sp[1]))
+				var ki := bands.size() - 1
+				for b in bands.size():
+					if d <= int((bands[b] as Array)[1]):
+						ki = b
+						break
+				var ud := u as Dictionary
+				if d < int((bands[0] as Array)[0]) or String(ud.get("kind", "")) != String(kinds[ki]) or int(ud.get("tier", -1)) != ki + 1:
+					kindbad += 1
+				got["%d,%d" % [p[0], p[1]]] = true
+			var want := {}
+			for e in GOLDEN_CAVE_UNITS:
+				want["%d,%d" % [int((e as Array)[0]), int((e as Array)[1])]] = true
+			var cb := int(res.get("chest_bonus", -1))
+			ok = kindbad == 0 and cb == 0 and got == want
+			if not ok:
+				msg = "got=%d want=%d kindbad=%d chest_bonus=%d" % [got.size(), want.size(), kindbad, cb]
+				for k in want:
+					if not got.has(k):
+						msg += " нет(%s)" % String(k)
+				for k in got:
+					if not want.has(k):
+						msg += " лишн(%s)" % String(k)
+	check("PG10c GOLDEN-PLACE: place_units(0, data/map_cave.json, \"cave\") == 11 брутов эталона (позиции) + chest_bonus==0", ok)
+	if not msg.is_empty():
+		print("  [PG10c] %s" % msg)
+
+func pg10_chest() -> void:
+	# chest_bonus — флаг бонусного сундука волны: 1 при wave >= 3, 0 при wave 1..2
+	# (план §2.2). 5 сидов × волны 1..5 × обе зоны.
+	var bad: Array = []
+	for rs in _seeds().slice(0, 5):
+		for zone in ["cave", "ashen"]:
+			var z: int = _zone_seed(rs, zone)
+			var m: Dictionary = _pg.cave_map(z) if zone == "cave" else _pg.ashen_map(z)
+			for wave in range(1, 6):
+				var res: Dictionary = _pg.place_units(z, m, zone, wave)
+				var wantb: int = 1 if wave >= 3 else 0
+				var cb := int(res.get("chest_bonus", -1))
+				if cb != wantb:
+					bad.append("%s seed=%d w%d: chest_bonus=%d != %d" % [zone, rs, wave, cb, wantb])
+	check("PG10d: chest_bonus = 1 при wave>=3, 0 при wave 1..2 (волны 1..5, обе зоны, 5 сидов)", _report("PG10d", bad))
+
+# --- хелперы PG10 ---
+
+static func _json_at(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return null
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return null
+	return JSON.parse_string(f.get_as_text())
+
+static func _prof_row(prof: Variant, zone: String, wave: int) -> Variant:
+	var z: Variant = (prof as Dictionary).get(zone, null)
+	if typeof(z) != TYPE_DICTIONARY:
+		return null
+	var wv: Variant = (z as Dictionary).get("waves", null)
+	if typeof(wv) != TYPE_DICTIONARY:
+		return null
+	var row: Variant = (wv as Dictionary).get(str(wave), null)
+	return row if typeof(row) == TYPE_DICTIONARY else null
+
+static func _prof_kinds(prof: Variant, zone: String) -> Array:
+	var z: Variant = (prof as Dictionary).get(zone, null)
+	if typeof(z) == TYPE_DICTIONARY:
+		var kd: Variant = (z as Dictionary).get("kinds", null)
+		if typeof(kd) == TYPE_ARRAY:
+			return kd as Array
+	return []
+
+static func _upos(u: Variant) -> Array:
+	if typeof(u) != TYPE_DICTIONARY:
+		return []
+	var pv: Variant = (u as Dictionary).get("pos", null)
+	if typeof(pv) == TYPE_ARRAY and (pv as Array).size() >= 2:
+		return [int((pv as Array)[0]), int((pv as Array)[1])]
+	if typeof(pv) == TYPE_VECTOR2I:
+		return [(pv as Vector2i).x, (pv as Vector2i).y]
+	return []
+
+static func _pt(e: Variant) -> Array:
+	# Как _poi_add у движка: вложенная форма [[x, y]] сворачивается в первую пару.
+	if typeof(e) != TYPE_ARRAY:
+		return []
+	var a: Array = e
+	if a.size() >= 1 and typeof(a[0]) == TYPE_ARRAY:
+		a = a[0]
+	if a.size() >= 2:
+		return [int(a[0]), int(a[1])]
+	return []
+
+static func _anchor_points(m: Dictionary, zone: String) -> Dictionary:
+	var meta := _meta_of(m)
+	var out := {}
+	var keys: Array = ["spawn", "stairs_out", "chest", "door", "hermit", "boss"] if zone == "cave" else ["spawn", "exit_portal", "boss"]
+	for k in keys:
+		var p := _xy_of(meta, String(k))
+		if p.size() == 2:
+			out["%d,%d" % [p[0], p[1]]] = String(k)
+	if zone != "cave":
+		for lk in ["chests", "herbs"]:
+			var v: Variant = meta.get(String(lk), null)
+			if typeof(v) != TYPE_ARRAY:
+				continue
+			for e in (v as Array):
+				var pe := _pt(e)
+				if pe.size() == 2:
+					out["%d,%d" % [pe[0], pe[1]]] = String(lk)
+	return out
