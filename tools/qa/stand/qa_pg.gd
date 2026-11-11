@@ -31,6 +31,10 @@ extends "res://mb_base.gd"
 ## видам — капсы ЧИТАЮТСЯ из data/proc_profiles.json, не хардкод), золотой
 ## эталон 11 брутов на ручной data/map_cave.json @ zone_seed=0 (позиции
 ## запинены числами), chest_bonus = 1 при wave >= 3.
+## PG11 (баг владельца «сундук открылся, не открывая дверь»): зона взаимодействия
+## сундука (8-окрестность клетки «C»: CaveChest r=14 + бокс игрока достают уголком
+## через угол стены) целиком закрыта в CLOSED; дверь не сирота (к ней примыкает
+## достижимый closed-пол). 50 сидов каскада.
 
 const GOLDEN_CAVE_PIN := 8065050884287841817  # GOLDEN-CAVE-PIN: FNV-1a 64, cave_map(seed_zone(42,"cave",1)) @ b862110 (после PG8a-фикса)
 const GOLDEN_ASHEN_PIN := 8636615847371749653  # GOLDEN-ASHEN-PIN: FNV-1a 64, ashen_map(seed_zone(42,"ashen",1)) @ b862110
@@ -60,10 +64,11 @@ func _ready() -> void:
 	pg10_invariants()
 	pg10_golden()
 	pg10_chest()
+	pg11_chest_seal()
 	# Целостность сюиты (паттерн qa_run): рантайм-ошибка «Invalid call ... on Nil»
 	# обрывает лишь текущую функцию — RALL по СОБСТВЕННОМУ счётчику ловит оборванные
 	# блоки. До генератора вердикт стенда — плановый красный.
-	check("RALL: исполнены все 32 проверок PG1–PG10 (нет оборванных блоков)", _pass + _fail == 32)
+	check("RALL: исполнены все 34 проверок PG1–PG11 (нет оборванных блоков)", _pass + _fail == 34)
 	done()
 
 # --- обвязка сидов ---
@@ -636,6 +641,68 @@ func pg10_chest() -> void:
 				if cb != wantb:
 					bad.append("%s seed=%d w%d: chest_bonus=%d != %d" % [zone, rs, wave, cb, wantb])
 	check("PG10d: chest_bonus = 1 при wave>=3, 0 при wave 1..2 (волны 1..5, обе зоны, 5 сидов)", _report("PG10d", bad))
+
+# --- PG11: герметичность сундука (баг «сундук открылся, не открывая дверь») ---
+
+func pg11_chest_seal() -> void:
+	# Владелец жаловался: сундук открывался, не открывая двери, а «двери
+	# случайным образом разбросаны». Корень (проверено фактической диагностикой
+	# на каскаде): CaveChest — Area2D r=14 плюс бокс игрока 10x8, поэтому игрок,
+	# стоявший рядом или по диагонали за углом, доставал сундук УГОЛКОМ хитбокса
+	# через стену даже при запертой двери. Значит одного «клетка сундука
+	# недостижима в closed» (PG6a) мало: недостижимой должна быть ВСЯ зона
+	# взаимодействия — 8-клеточное кольцо вокруг сундука.
+	#
+	# PG11a: ни одна клетка 8-окрестности сундука не достижима из spawn в CLOSED
+	#       (иначе игрок тычется в сундук сквозь угол до открытия двери).
+	# PG11b: дверь не «валяется» сиротой — у неё есть хотя бы одна соседняя
+	#       достижимая в CLOSED клетка пола (подход снаружи), т.е. closed-пол
+	#       примыкает к двери.
+	var bad_a: Array = []
+	var bad_b: Array = []
+	var dx8 := [1, -1, 0, 0, 1, 1, -1, -1]
+	var dy8 := [0, 0, 1, -1, 1, -1, 1, -1]
+	var dx4 := [1, -1, 0, 0]
+	var dy4 := [0, 0, 1, -1]
+	for rs in _seeds():
+		var m: Dictionary = _gen_cave(rs)
+		var g := _grid_rows(m)
+		var wh := _wh(m)
+		var meta := _meta_of(m)
+		var sp := _xy_of(meta, "spawn")
+		var ch := _xy_of(meta, "chest")
+		var dr := _xy_of(meta, "door")
+		if sp.size() != 2 or ch.size() != 2:
+			bad_a.append("seed=%d: нет spawn/chest" % rs)
+			continue
+		var closed: Dictionary = _bfs(g, wh.x, wh.y, sp, "cave", false)
+		var cx: int = ch[0]
+		var cy: int = ch[1]
+		for d in 8:
+			var nx: int = cx + dx8[d]
+			var ny: int = cy + dy8[d]
+			if nx < 0 or ny < 0 or nx >= wh.x or ny >= wh.y:
+				continue
+			if closed.has(ny * wh.x + nx):
+				bad_a.append("seed=%d chest(%d,%d): зона взаимодействия (%d,%d) достижима в CLOSED" % [rs, cx, cy, nx, ny])
+		if dr.size() != 2:
+			bad_b.append("seed=%d: нет door" % rs)
+			continue
+		var rx: int = dr[0]
+		var ry: int = dr[1]
+		var approach := false
+		for d in 4:
+			var ax: int = rx + dx4[d]
+			var ay: int = ry + dy4[d]
+			if ax < 0 or ay < 0 or ax >= wh.x or ay >= wh.y:
+				continue
+			if closed.has(ay * wh.x + ax):
+				approach = true
+				break
+		if not approach:
+			bad_b.append("seed=%d door(%d,%d): сирота — нет достижимого в CLOSED подхода снаружи" % [rs, rx, ry])
+	check("PG11a: зона взаимодействия сундука (8-окрестность, CaveChest r=14+бокс) целиком закрыта в CLOSED (%d сидов)" % SEEDS, _report("PG11a", bad_a))
+	check("PG11b: дверь не сирота — у неё есть достижимый в CLOSED подход снаружи (%d сидов)" % SEEDS, _report("PG11b", bad_b))
 
 # --- хелперы PG10 ---
 

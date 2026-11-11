@@ -34,6 +34,10 @@ const ASHEN_MOBS := {"archers": 3, "wraiths": 4, "swarm": 4}
 const ASHEN_HERBS := 3
 
 const DIRS4 := [[1, 0], [-1, 0], [0, 1], [0, -1]]
+# Зона интеракта сундука: Area2D r=14 (dungeon_zone.CaveChest) + box героя 10x8
+# — игрок дотягивается и по диагонали через уголок стены. Инварианты chest
+# меряются восьмёркой, а не четвёркой (баг «сундук открылся, не открывая дверь»).
+const DIRS8 := [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
 const _ALPHABET_CAVE := ".,#LSPRBMACV"
 const _ALPHABET_ASHEN := ".,caTK#P"
 
@@ -188,6 +192,8 @@ static func _build_once(templates: Array, zone: String, rng: RandomNumberGenerat
 	if not _pocket_fix(grid, zone, w, h, rects):
 		return {"ok": false, "map": _finish_map(_blank(w, h), {}, zone, w, h)}
 	var m: Dictionary = _emit_meta(grid, picked, rects, zone, w, h, rng)
+	if zone == "cave":
+		_seal_chest(grid, m, zone, w, h)
 	var map: Dictionary = _finish_map(grid, m, zone, w, h)
 	return {"ok": _validate(map, zone, w, h), "map": map}
 
@@ -912,6 +918,31 @@ static func _set_cell(grid: Array, x: int, y: int, ch: String, w: int, h: int) -
 	grid[y] = row.substr(0, x) + ch + row.substr(x + 1)
 
 # ============================================================================
+# Фикс «сундук сквозь стену/уголок»: герметизация зоны интеракта chest
+# ============================================================================
+
+## Зона интеракта = 8 соседей клетки "C" (r=14 CaveChest + box героя 10x8 —
+## дотягивается и по диагонали через уголок). Все СТАТИЧЕСКИ проходимые
+## (L/C — блок) клетки кольца, достижимые из spawn в CLOSED-состоянии,
+## детерминированно герметизируются '#'. Если герметизация рассекла карман или
+## снесла якорь — _validate отбракует ветку, сработает солёная пересборка.
+## Никакого рандома: BFS и порядок DIRS8 фиксированы.
+static func _seal_chest(grid: Array, m: Dictionary, zone: String, w: int, h: int) -> void:
+	var chest := Vector2i(int(m.get("chest", [-1, -1])[0]), int(m.get("chest", [-1, -1])[1]))
+	if chest.x < 0 or String(_at(grid, chest.x, chest.y, w, h)) != "C":
+		return
+	var sp := Vector2i(int(m.get("spawn", [-1, -1])[0]), int(m.get("spawn", [-1, -1])[1]))
+	var reach := _bfs(grid, zone, sp, w, h, false)
+	for d in DIRS8:
+		var t := Vector2i(chest.x + int(d[0]), chest.y + int(d[1]))
+		var chn := String(_at(grid, t.x, t.y, w, h))
+		if not _walkable(zone, chn, false):
+			continue  # стена/дверь/сам сундук — герметизировать нечего
+		if not reach.has(_key(t)):
+			continue  # в closed недостижим — течи нет
+		_set_cell(grid, t.x, t.y, "#", w, h)
+
+# ============================================================================
 # Валидация до эмиссии (§4)
 # ============================================================================
 
@@ -935,8 +966,10 @@ static func _validate(map: Dictionary, zone: String, w: int, h: int) -> bool:
 			return false
 		if _count_char(grid, "L", w, h) != 1:
 			return false
-		# в закрытом состоянии к сундуку не пройти (дверь держит)
-		for d in DIRS4:
+		# в закрытом состоянии к сундуку нельзя Дотянуться: зона интеракта —
+		# 8-кольцо (r=14 Area2D через уголок), достижимые течи герметизировал
+		# _seal_chest; любая оставшаяся клетка кольца = отбраковка ветки
+		for d in DIRS8:
 			if reach.has(_key(Vector2i(chest.x + int(d[0]), chest.y + int(d[1])))):
 				return false
 		# в открытом (L проходим) — достижим сосед сундука

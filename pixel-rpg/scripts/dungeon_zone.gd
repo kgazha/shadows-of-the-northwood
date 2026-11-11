@@ -395,6 +395,13 @@ class CaveChest:
 	func try_interact() -> void:
 		if used:
 			return
+		if not GameState.door_opened:
+			# Канон-гейт (баг «сундук открылся, не открывая дверь»): зона интеракта
+			# Area2D r=14 бьёт и через стену/уголок — CLOSED-геометрия генератора
+			# не должна решать, что можно взять амулет минуя дверь. Сюжет: сундук
+			# за дверью алтарного зала, сначала «Открыть дверь».
+			GameState.toast.emit("Запертая дверь алтарного зала стоит на пути к сундуку.")
+			return
 		if GameState.has_amulet:
 			# амулет уже у героя (сейв/F9 до синхронизации узла): без повторного
 			# heal — и без молчаливого «ничего» на видимую подсказку
@@ -419,6 +426,10 @@ class CaveChest:
 			GameState.toast.emit("Отнеси амулет отшельнику Геральду")
 		queue_free()
 	func _on_enter(b: Node) -> void:
+		# Закрытая дверь — сундук не подсказка и не цель (зона Area2D ловит игрока
+		# и сквозь стену/угол). Открыли дверь — вход в радиус сработает заново.
+		if not GameState.door_opened:
+			return
 		if b.is_in_group("player"):
 			zone.world.near.append(self)
 	func _on_exit(b: Node) -> void:
