@@ -273,7 +273,7 @@ func _spawn_entities() -> void:
 	for e: Array in meta.get("chests", []):
 		var chest = it_script.new()
 		village_zone.add_child(chest)
-		chest.setup(self, "chest", Vector2i(int(e[0]), int(e[1])))
+		chest.setup(self, "chest", Vector2i(int(e[0]), int(e[1])), "village")  # D4: uid зоны
 	var slime_script := load("res://scripts/slime.gd")
 	for e: Array in meta.get("slimes", []):
 		var slime = slime_script.new()

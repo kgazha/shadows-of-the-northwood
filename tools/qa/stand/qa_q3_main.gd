@@ -311,9 +311,9 @@ func _storm() -> Dictionary:
 	Achv.on_campfire_used()
 	Achv.on_campfire_used()
 	Achv.on_campfire_used()
-	# Канон-схема uid (3ea93cb): "chest@x,y" — cave 18,18 / ashen 30,24 / village
-	# 37,21 (interactable._uid, dungeon_zone/ashen_zone). «Клад» требует size>=3 —
-	# ровно как в игре после трёх открытых сундуков.
+	# Uid-схема D4: в игре "chest@<area>:x,y"; фикстура намеренно на СТАРЫХ
+	# ключах (cave 18,18 / ashen 30,24 / village 37,21) — они валидны навсегда
+	# (сейвы до-D4), «Клад» = size chests_used и обязан считать обе формы равно.
 	GameState.chest_mark_used("chest@18,18")
 	GameState.chest_mark_used("chest@30,24")
 	GameState.chest_mark_used("chest@37,21")

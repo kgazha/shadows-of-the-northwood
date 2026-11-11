@@ -12,14 +12,16 @@ const COMBAT_HERB_MIN := 1
 
 var world: Node2D
 var kind := "herb"
+var area := ""  # D4: зона uid-префикса ("village"); "" — legacy-форма без префикса
 var used := false
 var tile_xy := Vector2i.ZERO
 var spr: Sprite2D
 var _respawn_t := 0.0
 
-func setup(p_world: Node2D, p_kind: String, tile: Vector2i) -> void:
+func setup(p_world: Node2D, p_kind: String, tile: Vector2i, p_area := "") -> void:
 	world = p_world
 	kind = p_kind
+	area = p_area
 	tile_xy = tile
 	position = world.tile_to_world(tile)
 	spr = Sprite2D.new()
@@ -39,12 +41,24 @@ func setup(p_world: Node2D, p_kind: String, tile: Vector2i) -> void:
 ## Сундук уже открыт в прошлой сессии — восстанавливаем состояние из сейва (фикс T2).
 ## Вызывается и после load_game(): сущности мира строятся до чтения сейва.
 func refresh_used() -> void:
-	if kind == "chest" and not used and GameState.chest_used(_uid()):
+	if kind != "chest" or used:
+		return
+	# D4: uid с зоной ("chest@village:37,21"), но старый координатный ключ
+	# ("chest@37,21") остаётся валидным навсегда — сейвы v1–v3 не мигрируем.
+	if GameState.chest_used(_uid()) or GameState.chest_used(_uid_legacy()):
 		used = true
 		spr.texture = _atlas(14)
 
-## Устойчивый id объекта: тип+тайл из map-меты, например "chest@37,21".
+## Устойчивый id объекта: тип+зона+тайл из map-меты, например
+## "chest@village:37,21". Без зоны (herbs, песочницы) — прежний вид "chest@37,21".
 func _uid() -> String:
+	if area == "":
+		return _uid_legacy()
+	return "%s@%s:%d,%d" % [kind, area, tile_xy.x, tile_xy.y]
+
+## Старый формат id: тип+тайл без зоны. Только для чтения персиста (сейвы до D4);
+## при открытии пишем строго _uid() — второй записи на один сундук не заводим.
+func _uid_legacy() -> String:
 	return "%s@%d,%d" % [kind, tile_xy.x, tile_xy.y]
 
 func _atlas(tile_index: int) -> AtlasTexture:

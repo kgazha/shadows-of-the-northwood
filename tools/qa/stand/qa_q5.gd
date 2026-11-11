@@ -133,10 +133,10 @@ func kill_boss() -> void:  # brute.gd босс-ветка
 	gs.quest_changed.emit()
 
 func open_village_chest() -> void:  # interactable.gd chest-ветка
-	if bool(gs.chest_used("chest@37,21")):
+	if bool(gs.chest_used("chest@village:37,21")):
 		return
 	gs.has_sword = true
-	gs.chest_mark_used("chest@37,21")
+	gs.chest_mark_used("chest@village:37,21")
 	Achv.on_chest_opened()
 	gs.quest_changed.emit()
 
@@ -147,7 +147,7 @@ func open_cave_chest() -> void:  # dungeon_zone.gd CaveChest fixed
 		gs.toast.emit("Сундук пуст — амулет уже у тебя.")  # fixed-ветка dungeon_zone.gd
 		return
 	gs.has_amulet = true
-	gs.chest_mark_used("chest@18,18")
+	gs.chest_mark_used("chest@cave:18,18")
 	Achv.on_chest_opened()
 	gs.recalc_max_hp()
 	gs.quest_changed.emit()
@@ -156,7 +156,7 @@ func open_ashen_chest() -> void:  # ashen_zone.gd AshenChest fixed
 	if String(gs.flags.get("ashen.chest", "")) == "taken":
 		return
 	gs.set_flag("ashen.chest", "taken")
-	gs.chest_mark_used("chest@30,24")
+	gs.chest_mark_used("chest@ashen:30,24")
 	Achv.on_chest_opened()
 	gs.quest_changed.emit()
 
@@ -254,7 +254,7 @@ func sim_circle1() -> void:
 	kill_witch()
 	ck("A3.идемпотентность: повторная смерть ведьмы не удваивает пепел",
 		Ash.balance() == ash0 + 1)
-	# сундуки: единая схема chest@x,y → treasure на 3-м открытии
+	# сундуки: единая схема chest@<area>:x,y (D4) → treasure на 3-м открытии
 	open_village_chest()
 	open_ashen_chest()
 	ck("A3.treasure: 3 метки (пещера+деревня+Пепелище) → анлок",
@@ -447,7 +447,7 @@ func sim_ng_plus() -> void:
 	var marks0: int = gs.chests_used.size()
 	open_cave_chest()
 	ck("C4.сундук круга 2 при амулете: ни метки, ни прогресса treasure",
-		gs.chests_used.size() == marks0 and not bool(gs.chest_used("chest@18,18")))
+		gs.chests_used.size() == marks0 and not bool(gs.chest_used("chest@cave:18,18")))
 	# честность вкладки «Достижения» на живом Journal (до легаси-сейва, что сотрёт ach.*)
 	sim_journal_honesty()
 	# легаси-сейв: seed кругового счётчика тоталом (активный квест не обнуляется)
@@ -575,7 +575,7 @@ func sim_old_holes() -> void:
 	hole("H5.алтарный сундук в круге 2 — «Открыть сундук» без ответа",
 		not any_toast("Сундук пуст"), "fixed: toast-ответ + ни метки, ни лута")
 	ck("H5.и по-прежнему ни метки, ни двойного амулета",
-		not bool(gs.chest_used("chest@18,18")) and bool(gs.has_amulet))
+		not bool(gs.chest_used("chest@cave:18,18")) and bool(gs.has_amulet))
 	# --- H6/D4/H7: статические пробы исходников (поставка, не реплика) ---
 	var src_cave := file_src("res://scripts/dungeon_zone.gd")
 	var src_ashen := file_src("res://scripts/ashen_zone.gd")

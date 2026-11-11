@@ -356,10 +356,10 @@ class CaveChest:
 	## Алтарный сундук: внутри Амулет Леса (нужен ключ).
 	var zone
 	var used := false
-	var uid := ""  # канон-схема GameState "chest@x,y" (interactable._uid)
+	var uid := ""  # канон-схема GameState D4 "chest@<area>:x,y" (interactable._uid)
 	func setup(p_zone, tile: Vector2i) -> void:
 		zone = p_zone
-		uid = "chest@%d,%d" % [tile.x, tile.y]
+		uid = "chest@cave:%d,%d" % [tile.x, tile.y]
 		position = zone.tile_to_world(tile)
 		var cs := CollisionShape2D.new()
 		var sh := CircleShape2D.new()
