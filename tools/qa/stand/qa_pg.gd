@@ -24,8 +24,8 @@ extends "res://mb_base.gd"
 ## упорядочены рекурсивно) + FNV-1a 64. Значения — ЗАГЛУШКИ: orchestrator запинит
 ## реальные хеши после мержа T2; до этого эти две проверки честно красные.
 
-const GOLDEN_CAVE_PIN := -3750763034362895579  # TODO GOLDEN-CAVE-PIN: заглушка (= FNV-1a offset basis), запинить после T2
-const GOLDEN_ASHEN_PIN := -3750763034362895578  # TODO GOLDEN-ASHEN-PIN: заглушка (offset basis + 1), запинить после T2
+const GOLDEN_CAVE_PIN := 8065050884287841817  # GOLDEN-CAVE-PIN: FNV-1a 64, cave_map(seed_zone(42,"cave",1)) @ b862110 (после PG8a-фикса)
+const GOLDEN_ASHEN_PIN := 8636615847371749653  # GOLDEN-ASHEN-PIN: FNV-1a 64, ashen_map(seed_zone(42,"ashen",1)) @ b862110
 
 const RUN_SEED := 97531          # фиксированный мета-сид: seed_i = RUN_SEED + i*7919
 const SEEDS := 50                # §3: 50 сидов на инвариант

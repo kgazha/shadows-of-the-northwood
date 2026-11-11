@@ -8,7 +8,7 @@
     { "name": "mb_6", "desc": "Стрела и input_locked: висит/оживает/попадание", "run": ["mb_6.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
     { "name": "qa_ng", "desc": "NG+ ядро: формулы/скейл/сброс-перенос/золото/кап", "run": ["qa_ng.tscn"], "parse": { "mode": "xy", "re": "QA_NG_RESULT (\\d+)/(\\d+)" } },
     { "name": "qa_ng2", "desc": "NG+ UX: пункт Старейшины + строка Круг N в meta_hud", "run": ["qa_ng2.tscn"], "parse": { "mode": "xy", "re": "QA_NG2_RESULT (\\d+)/(\\d+)" } },
-    { "name": "qa_sv", "desc": "SaveVault: roundtrip/битый сейв/отсутствие сейва", "run": ["qa_sv.tscn"], "parse": { "mode": "fails", "re": "QA SV: fails=(\\d+)" } },
+    { "name": "qa_sv", "desc": "SaveVault: roundtrip/битый сейв/нет сейва/сейв v3 run_seed+миграция v2", "run": ["qa_sv.tscn"], "parse": { "mode": "fails", "re": "QA SV: fails=(\\d+)" } },
     { "name": "qa_achv_tab", "desc": "SaveVault import-фаззинг + вкладка Достижения", "run": ["qa_q4_main.tscn"], "parse": { "mode": "pf", "re": "SUMMARY \\| PASS=(\\d+) FAIL=(\\d+)" } },
     { "name": "qa_q3_old", "desc": "Achv/daily/Ash/Altar: вчерашний daily.stamp (seed old)", "run": ["qa_q2_seed_old.tscn", "qa_q3_main.tscn"], "parse": { "mode": "pf", "re": "SUMMARY \\| mode=old \\| PASS=(\\d+) FAIL=(\\d+)" } },
     { "name": "qa_q3_today", "desc": "Achv/daily/Ash/Altar: сегодняшний daily.stamp (seed today)", "run": ["qa_q2_seed_today.tscn", "qa_q3_main.tscn"], "parse": { "mode": "pf", "re": "SUMMARY \\| mode=today \\| PASS=(\\d+) FAIL=(\\d+)" } },
@@ -31,6 +31,7 @@
     { "name": "qa_ui", "desc": "UI: скилл-панель вне диалога/модалок, иконки талантов 12, треки полос SHRINK_BEGIN", "run": ["qa_ui.tscn"], "parse": { "mode": "fails", "re": "QA_UI SUMMARY checks=\\d+ fails=(\\d+)" } },
     { "name": "qa_cf", "desc": "Костры: один на мир, отдых/целительный отдых, ачивка-счётчик, квест q_campfires за круг", "run": ["qa_cf.tscn"], "parse": { "mode": "pf", "re": "QA_CF SUMMARY \\| PASS=(\\d+) FAIL=(\\d+)" } },
     { "name": "qa_wr0", "desc": "Тенеплёт-блокиратор: вплотную >=3 материализаций,hurt по состояниям, проход сквозь эфир", "run": ["qa_wr0.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
-    { "name": "qa_run", "desc": "Смерть-петля: вайп/перенос неймспейсов, обнуление героя, счётчик смертей, вехи 5/15, R6-регрессия NG+", "run": ["qa_run.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } }
+    { "name": "qa_run", "desc": "Смерть-петля: вайп/перенос неймспейсов, обнуление героя, счётчик смертей, вехи 5/15, R6-регрессия NG+", "run": ["qa_run.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "qa_pg", "desc": "Процген: API/детерминизм/золотые сиды/BFS-достижимость/связность/uid — 50 сидов", "run": ["qa_pg.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } }
   ]
 }
