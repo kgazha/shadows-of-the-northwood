@@ -58,6 +58,8 @@ var speed := BOSS_SPEED
 var charge_cd := BOSS_CHARGE_CD
 var kill_xp := BOSS_XP
 var hit_dist := HIT_DIST_BOSS
+var boss_leash := 0.0      # >0 — радиус агрессии босса (Ведьма: сторожит арену);
+# 0 — историческое поведение Грома: преследовать героя с любой дистанции
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
@@ -183,8 +185,10 @@ func _physics_process(delta: float) -> void:
 		if ash_timer <= 0.0:
 			ash_timer = SWARM_CD
 			_spawn_ash()
-	if not boss and d > LEASH:
-		# героя далеко нет — не идём на весь cave, а сторожим свою часть пещеры
+	if d > (boss_leash if boss else LEASH) and (not boss or boss_leash > 0.0):
+		# героя далеко нет — не идём на весь cave, а сторожим свою часть карты
+		# (Гром: boss_leash=0 — тотальный преслед как раньше;
+		#  Ведьма: boss_leash>0 — дальше арены не уходит)
 		wander_t -= delta
 		if wander_t <= 0.0:
 			wander_t = randf_range(1.0, 2.4)

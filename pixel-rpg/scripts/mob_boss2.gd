@@ -29,6 +29,10 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	dmg = BOSS_DMG             # урон не повышаем: зона проходима на 4–6 уровне
 	speed = BOSS_SPEED * SPEED_SCALE
 	charge_cd = 0.0            # см. шапку: без унаследованного рывка и его тоста
+	boss_leash = 110.0         # сторожим арену: радиус = LEASH тенеплёта; прямолинейный
+	# преслед без pathfinding в генераторной геометрии упирался в стены комнат
+	hit_dist = 15.0            # бокс босса 18x16 + герой 10x8: пол контакта центр-в-центр
+	# 14 px, база HIT_DIST_BOSS=12 была геометрически недостижима — удар не срабатывал
 	base_tint = TINT_WITCH
 	home_tile = tile
 	super.setup(p_world, tile)
