@@ -21,8 +21,9 @@ const ASHEN_H := 30
 const ROOMS_CAVE_PATH := "res://data/proc_rooms_cave.json"
 const ROOMS_ASHEN_PATH := "res://data/proc_rooms_ashen.json"
 const MAX_ATTEMPTS := 64      # детерминированные salt-ветки при провале валидации
-const MARGIN := 1             # зазор между комнатами/краем, тайлов
-const EDGE_TRIES := 6         # попыток найти дверь сгодной по высоте
+const MARGIN := 0             # зазор между комнатами: 0 — разделяют их "#" -рамки
+# (суммарная площадь шести пещерных комнат с зазором > карты; непрокалываемость
+# чужих рамок гарантирует _banned_other, зазор от края карты — рамку карты)
 
 ## Состав зон: фиксированный порядок тегов (никаких Dictionary-итераций).
 const CAVE_TAGS := ["entry", "boss", "chest", "hermit", "altar", "any"]
@@ -116,18 +117,20 @@ static func _load_templates(path: String) -> Array:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("ProcGen: повреждён %s" % path)
 		return []
+	# "zone" в схеме §3 — на уровне ФАЙЛА; room-level "zone" — необязательное переопределение.
+	var file_zone := String((parsed as Dictionary).get("zone", "cave"))
 	var rooms: Variant = (parsed as Dictionary).get("rooms", [])
 	if typeof(rooms) != TYPE_ARRAY:
 		return []
 	var out: Array = []
 	for r in (rooms as Array):  # отбраковка — детерминированная, порядок файла
-		if _template_ok(r):
+		if _template_ok(r, file_zone):
 			out.append(r)
 	return out
 
 ## Валидность шаблона по §3: прямоугольник строк равной длины, рамка "#",
 ## символы из алфавита зоны, интерьер непустой (>=5x5).
-static func _template_ok(t: Variant) -> bool:
+static func _template_ok(t: Variant, file_zone: String) -> bool:
 	if typeof(t) != TYPE_DICTIONARY:
 		return false
 	var d: Dictionary = t
@@ -139,7 +142,7 @@ static func _template_ok(t: Variant) -> bool:
 	if w < 5 or rows.size() < 5:
 		return false
 	var alphabet: String = _ALPHABET_CAVE \
-		if String(d.get("zone", "cave")) == "cave" else _ALPHABET_ASHEN
+		if String(d.get("zone", file_zone)) == "cave" else _ALPHABET_ASHEN
 	var y := 0
 	for rowv in rows:
 		var row := String(rowv)
@@ -158,7 +161,9 @@ static func _walkable(zone: String, ch: String, open: bool) -> bool:
 	if zone == "cave":
 		if ch == "L" or ch == "C":
 			return open
-		return ch == "." or ch == "," or ch == "S"
+		# ".", "," — пол; "S" — выход; "B"/"M" — проходимый декор (в BLOCKING
+		# dungeon_zone 8 и 9 отсутствуют). "P", "R", "A", "V" — блокеры.
+		return ch == "." or ch == "," or ch == "S" or ch == "B" or ch == "M"
 	return ch == "." or ch == "," or ch == "c" or ch == "a" or ch == "P"
 
 static func _is_blocked(zone: String, ch: String) -> bool:
@@ -202,46 +207,83 @@ static func _pick_templates(templates: Array, tags: Array, rng: RandomNumberGene
 		out.append(candidates[rng.randi_range(0, candidates.size() - 1)])
 	return out
 
-## Упаковка: позиция из rng; при коллизии — детерминированный скан row-major.
-## Зазор между комнатами >= MARGIN (гарантия: дыбятся только planned-коридоры).
+## Упаковка: порядок — по убыванию площади (индекс как tie-брейк; детерминированно),
+## позиция из rng (несколько попыток); при коллизии — детерминированный скан
+## row-major. Зазор между комнатами — их собственные "#" -рамки (MARGIN=0);
+## chest-комната требует дополнительное кольцо воздуха: двери нужно место копания
+## за рамкой (нишевые шаблоны иначе геометрически недостижимы).
 static func _pack_rooms(picked: Array, w: int, h: int, rng: RandomNumberGenerator) -> Array:
+	var n := picked.size()
 	var rects: Array = []
+	rects.resize(n)
+	var sizes: Array = []
+	var gaps: Array = []
 	for t in picked:
-		var rows: Array = (t as Dictionary).get("grid", [])
-		var rw: int = String(rows[0]).length()
-		var rh: int = rows.size()
-		if rw + 2 * MARGIN + 2 > w or rh + 2 * MARGIN + 2 > h:
+		var rows0: Array = (t as Dictionary).get("grid", [])
+		sizes.append([String(rows0[0]).length(), rows0.size()])
+		var tgs: Variant = (t as Dictionary).get("tags", [])
+		var g: int = MARGIN
+		if typeof(tgs) == TYPE_ARRAY and (tgs as Array).has("chest"):
+			g = MARGIN + 1
+		gaps.append(g)
+	var order: Array = []
+	for i in n:
+		order.append(i)
+	order.sort_custom(func(a: int, b: int) -> bool:
+		var sa: Array = sizes[a]
+		var sb: Array = sizes[b]
+		var aa: int = int(sa[0]) * int(sa[1])
+		var ab: int = int(sb[0]) * int(sb[1])
+		if aa != ab:
+			return aa > ab
+		return a < b)
+	for idx in order:
+		var rw: int = int((sizes[idx] as Array)[0])
+		var rh: int = int((sizes[idx] as Array)[1])
+		var gi: int = int(gaps[idx])
+		if rw + 2 * gi + 2 > w or rh + 2 * gi + 2 > h:
 			return []
 		var rect := Rect2i(0, 0, rw, rh)
 		var placed := false
-		var lo_x := 1 + MARGIN
-		var hi_x := w - rw - 1 - MARGIN
-		var lo_y := 1 + MARGIN
-		var hi_y := h - rh - 1 - MARGIN
+		var lo_x := 1 + gi
+		var hi_x := w - rw - 1 - gi
+		var lo_y := 1 + gi
+		var hi_y := h - rh - 1 - gi
 		if hi_x < lo_x or hi_y < lo_y:
 			return []
-		rect.position = Vector2i(rng.randi_range(lo_x, hi_x), rng.randi_range(lo_y, hi_y))
-		if not _overlaps(rects, rect):
-			placed = true
-		else:
+		for _try in 4:
+			rect.position = Vector2i(rng.randi_range(lo_x, hi_x), rng.randi_range(lo_y, hi_y))
+			if not _overlaps(rects, gaps, idx, rect):
+				placed = true
+				break
+		if not placed:
 			for y in range(lo_y, hi_y + 1):
 				for x in range(lo_x, hi_x + 1):
 					rect.position = Vector2i(x, y)
-					if not _overlaps(rects, rect):
+					if not _overlaps(rects, gaps, idx, rect):
 						placed = true
 						break
 				if placed:
 					break
 		if not placed:
 			return []
-		rects.append(rect)
+		rects[idx] = rect
+	for i in n:
+		if rects[i] == null:
+			return []  # не должно случаться: порядок покрывает все индексы
 	return rects
 
-static func _overlaps(rects: Array, rect: Rect2i) -> bool:
-	var grown := Rect2i(rect.position.x - MARGIN, rect.position.y - MARGIN,
-		rect.size.x + 2 * MARGIN, rect.size.y + 2 * MARGIN)
-	for r in rects:
-		if grown.intersects(r as Rect2i):
+static func _overlaps(rects: Array, gaps: Array, idx: int, rect: Rect2i) -> bool:
+	var gi: int = int(gaps[idx])
+	for j in rects.size():
+		if j == idx or rects[j] == null:
+			continue
+		var need: int = gi + int(gaps[j])
+		var other: Rect2i = rects[j]
+		if rect.position.x - other.position.x < other.size.x + need \
+				and other.position.x - rect.position.x < rect.size.x + need \
+				and rect.position.y - other.position.y < other.size.y + need \
+				and other.position.y - rect.position.y < rect.size.y + need:
 			return true
 	return false
 
@@ -280,15 +322,15 @@ static func _carve_layout(picked: Array, rects: Array, zone: String, w: int, h: 
 		rng: RandomNumberGenerator) -> Array:
 	var grid: Array = _blank(w, h)
 	_stamp_rooms(grid, picked, rects)
-	var edges: Array = _mst(rects, rng)
 	var chest_idx := _tag_index(picked, "chest") if zone == "cave" else -1
+	var edges: Array = _mst(rects, rng, chest_idx)
 	for e in _rings(edges, rects, zone, chest_idx, rng):
 		edges.append(e)
 	for e in edges:
 		var a := int(e[0])
 		var b := int(e[1])
 		if b == chest_idx or a == chest_idx:
-			_carve_door(grid, rects, zone, w, h,
+			_carve_door(grid, picked, rects, zone, w, h,
 				a if a != chest_idx else b, chest_idx)
 			continue
 		_dig(grid, zone, w, h, rects, a, b, _rect_center(rects[a] as Rect2i),
@@ -296,7 +338,10 @@ static func _carve_layout(picked: Array, rects: Array, zone: String, w: int, h: 
 	return grid
 
 ## Prim-остов от entry (индекс 0): обход пар фиксированный, расстояние + rng-джиттер.
-static func _mst(rects: Array, rng: RandomNumberGenerator) -> Array:
+## leaf (chest в cave) — ЛИСТ остова: присоединяется один раз как best_j и НИКОГДА
+## не расширяется — иначе остальные комнаты связываются ЧЕРЕЗ сундук (под дверью),
+## и появляется второе отверстие в chest-комнате.
+static func _mst(rects: Array, rng: RandomNumberGenerator, leaf: int) -> Array:
 	var n := rects.size()
 	var in_tree: Array = []
 	in_tree.resize(n)
@@ -308,7 +353,7 @@ static func _mst(rects: Array, rng: RandomNumberGenerator) -> Array:
 		var best_i := -1
 		var best_j := -1
 		for i in n:
-			if not in_tree[i]:
+			if not in_tree[i] or i == leaf:
 				continue
 			for j in n:
 				if in_tree[j]:
@@ -382,14 +427,27 @@ static func _banned_has(banned: Array, t: Vector2i) -> bool:
 			return true
 	return false
 
-## BFS-прорыв: от from (проходимый внутри rect A) до первой проходимой клетки
-## внутри rect B. Проходимые — проходим; "#" — прокалываем ("." пол); прочие
-## блокеры и чужие рамки — стена. Путь w1 расширяем до w2 компаньоном по перпенди-
-## куляру (там, где "#" и не чужая рамка). Возвращает true при соединении.
+## BFS-прорыв: от from до цели. Цель: клетка `to` (explicit=true) либо первая
+## проходимая клетка внутри rect B. Проходимые — проходим; "#" — прокалываем ("." пол);
+## прочие блокеры и banned-клетки (рамки чужих комнат) — стена. Путь w1 расширяем до
+## w2 компаньоном по перпендикуляру (там, где "#" и не banned). Возвращает true при
+## соединении.
 static func _dig(grid: Array, zone: String, w: int, h: int, rects: Array,
-		own_a: int, own_b: int, from: Vector2i, to: Vector2i, banned: Array) -> bool:
+		_own_a: int, own_b: int, from: Vector2i, to: Vector2i, banned: Array,
+		explicit: bool = false) -> bool:
 	var rb: Rect2i = rects[own_b] as Rect2i
-	# BFS по клеткам: проходимо или "#" (или наша future-рамка вне banned)
+	if to.x < 1 or to.y < 1 or to.x > w - 2 or to.y > h - 2:
+		return false
+	if explicit and _banned_has(banned, to):
+		return false
+	if not explicit and rb.has_point(to):
+		# цель внутри чужого rect: копать разрешено только в собственную рамку
+		var ra: Rect2i = rects[_own_a] as Rect2i
+		for i in rects.size():
+			if i == _own_a or i == own_b:
+				continue
+			if (rects[i] as Rect2i).has_point(to):
+				return false
 	var seen := {}
 	var prev := {}
 	var q: Array = [from]
@@ -410,10 +468,10 @@ static func _dig(grid: Array, zone: String, w: int, h: int, rects: Array,
 			if not walk and ch != "#":
 				continue  # блокеры кроме "#" — непроходимы
 			if _banned_has(banned, n):
-				continue  # рамка чужой комнаты
+				continue  # рамка чужой комнаты / рамка chest-RECT (её вскрывает только дверь)
 			seen[_key(n)] = true
 			prev[_key(n)] = t
-			if rb.has_point(n) and walk:
+			if (explicit and n == to) or (not explicit and rb.has_point(n) and walk):
 				goal = n
 				break
 			q.append(n)
@@ -440,37 +498,82 @@ static func _dig(grid: Array, zone: String, w: int, h: int, rects: Array,
 				_set_cell(grid, c.x, c.y, ".", w, h)
 	return true
 
-## Ребро к chest-комнате (cave): коридор w2 упирается в рамку; дальше единственная
-## 1-тайловая дверь "L" и прокол клетки интерьера за ней. Единственность входа:
-## chest — лист остова (кольца его не касаются) + рамки чужих комнат непрокалываемы.
-static func _carve_door(grid: Array, rects: Array, zone: String, w: int, h: int,
-		other: int, chest_idx: int) -> bool:
-	var co := _rect_center(rects[other] as Rect2i)
+## Ребро к chest-комнате (cave): коридор w2 до клетки рамки; дальше единственная
+## 1-тайловая дверь "L" и прокол клетки за ней (если "#"). Кандидаты двери — 4
+## стороны, приоритет: «внутри» попадает на chest-якорь или соседку с ним — иначе
+## нишевые шаблоны (c_chest_a: сундук в кармане за "C") недостижимы в принципе.
+## Рамка chest-RECT забанена для копания: комнату вскрывает ТОЛЬКО дверь.
+## Единственность входа: chest — лист остова (кольца его не касаются) + бан копания.
+static func _carve_door(grid: Array, picked: Array, rects: Array, zone: String,
+		w: int, h: int, other: int, chest_idx: int) -> bool:
 	var rc: Rect2i = rects[chest_idx] as Rect2i
-	var from_left := absi(co.x - rc.position.x) <= absi(co.x - (rc.position.x + rc.size.x - 1))
-	var top := rc.position.y + 1
-	var bottom := rc.position.y + rc.size.y - 2
-	var y0 := clampi(co.y, top, bottom)
-	for dy in [0, -1, 1, -2, 2]:
-		var yd := clampi(y0 + dy, top, bottom)
-		var door := Vector2i(rc.position.x if from_left else rc.position.x + rc.size.x - 1, yd)
-		if String(_at(grid, door.x, door.y, w, h)) != "#":
-			continue
-		var inside := Vector2i(door.x + (-1 if from_left else 1), yd)
-		var outside := Vector2i(door.x + (1 if from_left else -1), yd)
-		if inside.x < 1 or inside.y < 1 or inside.x > w - 2 or inside.y > h - 2:
-			continue
-		var ch_in := String(_at(grid, inside.x, inside.y, w, h))
-		if ch_in != "#" and ch_in != "" and _is_blocked(zone, ch_in):
-			continue  # за дверью блокер — ищем другую высоту
-		if not _dig(grid, zone, w, h, rects, other, chest_idx, co, outside,
-				_banned_other(rects, other, chest_idx)):
-			continue
-		if ch_in == "#":
-			_set_cell(grid, inside.x, inside.y, ".", w, h)
-		_set_cell(grid, door.x, door.y, "L", w, h)
-		return true
+	var co := _rect_center(rects[other] as Rect2i)
+	var a := _anchor_grid(picked[chest_idx] as Dictionary, rc, "chest")
+	var banned: Array = _banned_other(rects, other, chest_idx)
+	banned.append_array(_frame_points(rc))
+	var pairs: Array = []  # фиксированный порядок: левая колонка, правая, верх, низ
+	var top := rc.position.y
+	var bot := rc.position.y + rc.size.y - 1
+	var left := rc.position.x
+	var right := rc.position.x + rc.size.x - 1
+	for y in range(top + 1, bot):
+		pairs.append([Vector2i(left, y), Vector2i(left + 1, y)])
+	for y in range(top + 1, bot):
+		pairs.append([Vector2i(right, y), Vector2i(right - 1, y)])
+	for x in range(left + 1, right):
+		pairs.append([Vector2i(x, top), Vector2i(x, top + 1)])
+	for x in range(left + 1, right):
+		pairs.append([Vector2i(x, bot), Vector2i(x, bot - 1)])
+	for score_want in 3:  # 0 — внутрь якоря, 1 — соседка якоря, 2 — любая
+		for p in pairs:
+			var door: Vector2i = p[0]
+			var ins: Vector2i = p[1]
+			var score := 2
+			if ins == a:
+				score = 0
+			elif absi(ins.x - a.x) + absi(ins.y - a.y) == 1:
+				score = 1
+			if score != score_want:
+				continue
+			if String(_at(grid, door.x, door.y, w, h)) != "#":
+				continue
+			var ch_in := String(_at(grid, ins.x, ins.y, w, h))
+			if ch_in != "#" and ch_in != "" and _is_blocked(zone, ch_in):
+				continue  # за дверью декор-блокнер — ищем другое место
+			var out := _door_outside(rc, door)
+			if out.x < 1 or out.y < 1 or out.x > w - 2 or out.y > h - 2:
+				continue
+			if not _dig(grid, zone, w, h, rects, other, chest_idx, co, out, banned, true):
+				continue
+			if ch_in == "#":
+				_set_cell(grid, ins.x, ins.y, ".", w, h)
+			_set_cell(grid, door.x, door.y, "L", w, h)
+			return true
 	return false
+
+static func _door_outside(rc: Rect2i, door: Vector2i) -> Vector2i:
+	if door.x == rc.position.x:
+		return Vector2i(door.x - 1, door.y)
+	if door.x == rc.position.x + rc.size.x - 1:
+		return Vector2i(door.x + 1, door.y)
+	if door.y == rc.position.y:
+		return Vector2i(door.x, door.y - 1)
+	return Vector2i(door.x, door.y + 1)
+
+## Точки рамки rect (полное кольцо) — для бана копания.
+static func _frame_points(rc: Rect2i) -> Array:
+	var out: Array = []
+	var x0 := rc.position.x
+	var y0 := rc.position.y
+	var x1 := rc.position.x + rc.size.x - 1
+	var y1 := rc.position.y + rc.size.y - 1
+	for x in range(x0, x1 + 1):
+		out.append(Vector2i(x, y0))
+		out.append(Vector2i(x, y1))
+	for y in range(y0 + 1, y1):
+		out.append(Vector2i(x0, y))
+		out.append(Vector2i(x1, y))
+	return out
 
 # ============================================================================
 # Эмиссия meta
@@ -515,7 +618,13 @@ static func _emit_meta(grid: Array, picked: Array, rects: Array, zone: String,
 		var ct := _anchor_grid(picked[chest_i] as Dictionary,
 			rects[chest_i] as Rect2i, "chest")
 		if zone == "cave":
-			m["chest"] = [ct.x, ct.y]
+			# Сундук = клетка "C": единственный в rect шаблона (c_chest_a — ниша),
+			# иначе штампуем "C" (тайл 11) на якоре (c_chest_b нарисован без C).
+			var cp := _find_char_rect(grid, "C", rects[chest_i] as Rect2i, w, h)
+			if cp.x < 0:
+				cp = ct
+				_set_cell(grid, cp.x, cp.y, "C", w, h)
+			m["chest"] = [cp.x, cp.y]
 			m["door"] = [_xy(_find_door(grid, w, h))]
 		else:
 			m["chests"] = [[ct.x, ct.y]]
@@ -585,6 +694,16 @@ static func _find_door(grid: Array, w: int, h: int) -> Vector2i:
 		var x := String(grid[y]).find("L")
 		if x >= 0:
 			return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+## Первый символ ch в rect — скан row-major (поиск штатного "C" шаблона).
+static func _find_char_rect(grid: Array, ch: String, rc: Rect2i,
+		w: int, h: int) -> Vector2i:
+	for y in range(rc.position.y, mini(rc.position.y + rc.size.y, h)):
+		var row := String(grid[y])
+		for x in range(rc.position.x, mini(rc.position.x + rc.size.x, w)):
+			if x < row.length() and row[x] == ch:
+				return Vector2i(x, y)
 	return Vector2i(-1, -1)
 
 ## Разброска мобов/трав Пепелища: кандидаты row-major -> Fisher–Yates (rng) ->
