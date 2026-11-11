@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bqaqrstand2"]
+
+[ext_resource type="Script" path="res://qa_wr.gd" id="1_qa"]
+
+[node name="QaWr" type="Node"]
+script = ExtResource("1_qa")

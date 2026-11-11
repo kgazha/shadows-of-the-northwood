@@ -9,6 +9,12 @@ const ROLL_TIME := 0.22     # длительность кувырка
 const ROLL_SPEED := 170.0   # скорость рывка (базовая скорость героя ~55)
 const ROLL_CD := 0.9        # кулдаун после окончания кувырка
 const ROLL_CD_FEET := 0.75  # алтарь «Лёгкие ноги»: КД при meta.feet>=1
+# --- воин: «Рывок вепря» (rework second_wind) и награда «Казни» ---
+const BOAR_DASH_RANGE := 72.0  # радиус поиска цели рывка, px (быьше радиуса атаки)
+const BOAR_DASH_STOP := 12.0   # встать от цели на дистанцию мили-удара, px
+const BOAR_STUN := 0.7         # оглушение цели, с
+const BOAR_STUN_BOSS := 0.35   # босс держит оглушение вдвое короче (канон brute)
+const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP воину (кламп по max_hp)
 
 var anim: AnimatedSprite2D
 var facing := "down"
@@ -364,10 +370,24 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 	var sd := Classes.skill(sid)
 	if GameState.level < int(sd.level) or skill_cd[i] > 0.0:
 		return false
+	# Проверка цели ДО кулдауна и маны: без цели скилл не активируется и
+	# не тратится (power_strike/«Рывок вепря» — с отказом-подсказкой, п.6).
+	var tgt: Node2D = null
 	match sid:
 		"execute", "mark":
-			if _skill_target() == null:
+			tgt = _skill_target()
+			if tgt == null:
 				return false  # без цели кулдаун не тратим
+		"power_strike":
+			tgt = _skill_target()  # радиус досягаемости = радиус обычной атаки
+			if tgt == null:
+				_no_target_reject()
+				return false
+		"second_wind":
+			tgt = _dash_target()  # свой радиус шире атаки — рывок «догоняет»
+			if tgt == null:
+				_no_target_reject()
+				return false
 	# мана тратится после проверки цели — неудачный каст не «съедает» энергию
 	if not GameState.try_spend_mana(int(sd.get("mana", 0))):
 		return false
@@ -375,35 +395,37 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 	GameAudio.sfx("spell")  # файла spell.wav пока нет — тихий пропуск (guarded)
 	match sid:
 		"power_strike":
-			var t := _skill_target()
-			if t != null and global_position.distance_to(t.global_position) <= float(class_data().radius):
-				face_to(t.global_position)
-				_lunge_fx(facing_dir(), 7.0)
-				_slash_fx(Color(1.0, 0.85, 0.4, 0.95))
-				melee_hit(2.0, Vector2.INF, 13.0, t)
-			else:
-				pending_mult = 2.0  # догнёт — следующий удар x2
+			# «Догнать-режим» убран: без цели в радиусе скилл не активируется
+			# вовсе (guard выше), здесь цель всегда есть и она досягаема.
+			face_to(tgt.global_position)
+			_lunge_fx(facing_dir(), 7.0)
+			_slash_fx(Color(1.0, 0.85, 0.4, 0.95))
+			melee_hit(2.0, Vector2.INF, 13.0, tgt)
 		"whirlwind":
 			_spin_fx()
 			_ring_fx(28.0, Color(0.95, 0.92, 0.7, 0.4))
 			melee_hit(1.5, global_position, 28.0)
 		"second_wind":
-			GameState.heal(4)
-			GameState.toast.emit("Второй ветер: +4 HP")
+			_boar_dash(tgt)
 		"execute":
-			var t := _skill_target()
-			face_to(t.global_position)
+			face_to(tgt.global_position)
 			_lunge_fx(facing_dir(), 8.0)
 			_slash_fx(Color(1.0, 0.45, 0.35, 0.95))
 			# Честный порог (фикс T10): <=25% макс. HP цели, минимум 1 HP.
 			# max_hp читаем у врага, если он его задаёт; иначе константы slime/brute.
-			var mhp := 12.0 if t.is_in_group("boss") else 3.0
-			if t.get("max_hp") != null:
-				mhp = float(t.get("max_hp"))
-			if int(t.hp) <= maxi(1, int(mhp * 0.25)):
-				t.hurt(999, global_position)  # казнён
+			var mhp := 12.0 if tgt.is_in_group("boss") else 3.0
+			if tgt.get("max_hp") != null:
+				mhp = float(tgt.get("max_hp"))
+			if int(tgt.hp) <= maxi(1, int(mhp * 0.25)):
+				tgt.hurt(999, global_position)  # казнён
+				# Награда палача (п.7): цель УМЕРЛА от казни — воин восстанавливает
+				# EXEC_HEAL HP (heal клампит по max_hp). Промах/не-добивание — без хила.
+				if tgt.get("hp") != null and int(tgt.get("hp")) <= 0:
+					GameState.heal(EXEC_HEAL)
+					Fx.heal(global_position + Vector2(0, -10), world)
+					GameState.toast.emit("+%d HP" % EXEC_HEAL)
 			else:
-				melee_hit(1.5, Vector2.INF, 13.0, t)
+				melee_hit(1.5, Vector2.INF, 13.0, tgt)
 		"pierce":
 			fire_projectile(_shoot_dir(), 1.5, true, 0.0, 3)  # стрела-призрак
 		"volley":
@@ -412,8 +434,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			fire_projectile(b)
 			fire_projectile(b.rotated(deg_to_rad(20.0)))
 		"mark":
-			var t := _skill_target()
-			mark_target = t
+			mark_target = tgt
 			mark_t = 6.0
 			GameState.toast.emit("Метка на цели!")
 		"rain":
@@ -456,6 +477,55 @@ func _skill_target() -> Node2D:
 			bd = d
 			best = e
 	return best
+
+## Отказ каста без цели («Нет цели рядом»): звук + вспышка + тост.
+## Кулдаун и мана НЕ тратятся — скилл просто не активировался (п.6).
+func _no_target_reject() -> void:
+	GameAudio.sfx("ui_deny")
+	_spark(global_position + Vector2(0, -10), Color(1.0, 0.55, 0.45, 0.9), 5.0)
+	GameState.toast.emit("Нет цели рядом")
+
+## Цель «Рывка вепря»: ближайший враг в собственном радиусе (шире радиуса атаки).
+func _dash_target() -> Node2D:
+	var best: Node2D = null
+	var bd := BOAR_DASH_RANGE
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if not is_instance_valid(e):
+			continue
+		var d := global_position.distance_to(e.global_position)
+		if d <= bd:
+			bd = d
+			best = e
+	return best
+
+## «Рывок вепря» (rework «Второго ветра»): мгновенно догнать цель сквозь врагов,
+## но не сквозь стены (ray по слою стен 2, маржа 5 px), встать на дистанцию
+## мили-удара, оглушить целью freeze_t — существующей mob-механикой «замри»
+## (frost_nova: моб не двигается и не атакует), и ударить 1x. Босс оглушается
+## вдвое короче (BOAR_STUN_BOSS) — канон brute: Гром держит удар, но не резистен
+## полностью. Если стена встала ближе дистанции удара — рывок короткая: ни
+## оглушения, ни удара (кулдаун при этом потрачен, цель была в радиусе).
+func _boar_dash(t: Node2D) -> void:
+	var from := global_position
+	var dir := (t.global_position - from).normalized()
+	var dest := t.global_position - dir * BOAR_DASH_STOP
+	var q := PhysicsRayQueryParameters2D.create(from, dest, 2, [get_rid()])
+	var hit := get_world_2d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		# встать до стены с маржой 5 px (у ray-результата нет distance — мерим до point)
+		dest = from + dir * maxf(0.0, from.distance_to(hit["position"]) - 5.0)
+	global_position = dest
+	Fx.dust(from, world)
+	Fx.dust(dest, world)
+	face_to(t.global_position)
+	if global_position.distance_to(t.global_position) > 13.0 + _enemy_size(t) * 0.5:
+		GameState.toast.emit("Стена помешала рывку")
+		return
+	_lunge_fx(facing_dir(), 7.0)
+	_slash_fx(Color(0.9, 0.7, 0.4, 0.95))
+	if t.get("freeze_t") != null:
+		t.freeze_t = BOAR_STUN_BOSS if t.is_in_group("boss") else BOAR_STUN
+	melee_hit(1.0, Vector2.INF, 13.0, t)
 
 func _shoot_dir() -> Vector2:
 	return _aim_dir()

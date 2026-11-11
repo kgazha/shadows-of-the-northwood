@@ -26,6 +26,7 @@
     { "name": "qa_s6", "desc": "EV лута архетипов: сим 500 убийств по GearData.LOOT", "run": ["qa_s6.tscn"], "parse": { "mode": "fails", "re": "S6 DONE fails=(\\d+)" } },
     { "name": "qa_s7", "desc": "Влияние Achv/DmgNumbers на IO автосейвов", "run": ["qa_s7.tscn"], "parse": { "mode": "fails", "re": "S7 DONE fails=(\\d+)" } },
     { "name": "qa_tal", "desc": "Древо талантов: реестр/очки/спенд/хуки числами/сейв/NG+-вайп", "run": ["qa_tal.tscn"], "parse": { "mode": "fails", "re": "QA_TAL SUMMARY checks=\\d+ fails=(\\d+)" } },
-    { "name": "qa_q5", "desc": "Квестовое ядро: дыры H1..H7/D4 (пробы-дыры) + witch/q_ashen/permanent_done", "run": ["qa_q5.tscn"], "parse": { "mode": "fails", "re": "QA Q5 DONE: fails=(\\d+)" } }
+    { "name": "qa_q5", "desc": "Квестовое ядро: дыры H1..H7/D4 (пробы-дыры) + witch/q_ashen/permanent_done", "run": ["qa_q5.tscn"], "parse": { "mode": "fails", "re": "QA Q5 DONE: fails=(\\d+)" } },
+    { "name": "qa_wr", "desc": "Воин: скиллы по цели, «Рывок вепря» (рывок+стан 0.7/0.35), казнь +3 HP", "run": ["qa_wr.tscn"], "parse": { "mode": "fails", "re": "QA WR DONE: checks=\\d+ fails=(\\d+)" } }
   ]
 }
