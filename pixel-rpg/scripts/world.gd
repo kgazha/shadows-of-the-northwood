@@ -144,6 +144,7 @@ func _ready() -> void:
 	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
+	add_child(RunSummary.new())  # «Забег окончен» (смерть-петля §1.8): скрыта; последняя из модалок — её Esc приоритетнее
 	add_child(Achv.new())  # достижения+daily (achv.gd); после load_game() — daily видит stamp
 	GameState.ng_plus_started.connect(func() -> void: get_tree().reload_current_scene.call_deferred())
 	if loaded:
@@ -1005,8 +1006,10 @@ func _check_witch_done() -> void:
 
 func on_player_death() -> void:
 	GameAudio.sfx("drop")  # смерть героя: тот же «шлепок кожи», что у мобов (аудио-аудит)
-	if FirstHint.I != null: FirstHint.I.show_hint("death", "Смерть — не конец: воскреснешь обновлённым, всё собранное остаётся.")
-	start_dialogue("death", func(): respawn_player())
+	# Смерть гасит забег (CONTRACT_RUNLOOP §1.1): респавна больше нет — после
+	# диалога открывается модалка RunSummary, «Вспыхнуть заново» = start_new_run().
+	if FirstHint.I != null: FirstHint.I.show_hint("death", "Смерть гасит забег: опыт и добыча сгорят. Но пепел, достижения и благословения алтаря — навсегда с тобой.")
+	start_dialogue("death", func() -> void: RunSummary.open())
 
 func respawn_player() -> void:
 	player.cancel_orders()

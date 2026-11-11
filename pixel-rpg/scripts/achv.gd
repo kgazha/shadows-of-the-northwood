@@ -153,6 +153,19 @@ static func on_herb_drunk() -> void:
 	if count("herbs") >= 5:
 		unlock("herbalist", 15, 0)
 
+## #19/#20 rekindled / undying — смерть-петля (CONTRACT_RUNLOOP §1.5 +
+## ADDENDUM 1.0 п.1–2): зовёт GameState.start_new_run() ДО вайпа. Счётчик —
+## вечный канал "ach.n.deaths" (переживает вайп и круги, §0). Награды — штатным
+## механизмом каталога (золото 0, Пепел 3/5 — как у соседних записей), НЕ
+## отдельная выдача. unlock идемпотентен по ach.-флагам: на 6-й/16-й смерти
+## награда не повторяется (R4).
+static func on_death() -> void:
+	var d := count("deaths")
+	if d >= 5:
+		unlock("rekindled", 0, 3)
+	if d >= 15:
+		unlock("undying", 0, 5)
+
 func _check_wealth() -> void:
 	# #10 wealth: gold >= 300 на руках.
 	if GameState.gold >= 300:
@@ -224,7 +237,9 @@ func _grant_daily(day: int) -> void:
 		4:
 			if GameState.brewed_potions < GameState.BREWED_CAP:
 				GameState.brewed_potions += 1
-			text = "+1 крепкое зелье"
+			# ADDENDUM 1.0 п.3: +1 Пепла механизмом дня 7 (тост честно
+			# подстраивается, если Пепел выдать нечем).
+			text = "+1 крепкое зелье, +1 пепла" if grant_ash(1) else "+1 крепкое зелье"
 		5:
 			gold = 40
 			text = "+40 зол."
