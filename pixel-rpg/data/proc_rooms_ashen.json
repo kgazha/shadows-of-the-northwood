@@ -1,0 +1,125 @@
+{
+ "zone": "ashen",
+ "rooms": [
+  {
+   "id": "a_entry_a",
+   "tags": ["entry"],
+   "grid": [
+    "#########",
+    "#.T...T.#",
+    "#.......#",
+    "#,P.....#",
+    "#.......#",
+    "#..K,...#",
+    "#########"
+   ],
+   "anchors": { "spawn": [4, 3], "exit_portal": [2, 3] }
+  },
+  {
+   "id": "a_entry_b",
+   "tags": ["entry"],
+   "grid": [
+    "#######",
+    "#..T..#",
+    "#.....#",
+    "#.P...#",
+    "#.....#",
+    "#..K..#",
+    "#.,,..#",
+    "#.....#",
+    "#######"
+   ],
+   "anchors": { "spawn": [3, 4], "exit_portal": [2, 3] }
+  },
+  {
+   "id": "a_arena_a",
+   "tags": ["boss"],
+   "grid": [
+    "#############",
+    "#.aaaaaaaaa.#",
+    "#aaaaaaaaaaa#",
+    "#aaaKaaaaaaa#",
+    "#aaaaaaaaaaa#",
+    "#aaaaaaKaaaa#",
+    "#aaaaaaaaaaa#",
+    "#.aaaaaaaaa.#",
+    "#############"
+   ],
+   "anchors": { "boss": [6, 4], "boss_trigger": [6, 1] }
+  },
+  {
+   "id": "a_arena_b",
+   "tags": ["boss"],
+   "grid": [
+    "###########",
+    "#aaaaaaaaa#",
+    "#aaaaaaaaa#",
+    "#aaaaaaaaa#",
+    "#aaaaaaaaa#",
+    "#aaKaaaaaa#",
+    "#aaaaaaaaa#",
+    "#aaaaaaaaa#",
+    "###########"
+   ],
+   "anchors": { "boss": [5, 4], "boss_trigger": [5, 1] }
+  },
+  {
+   "id": "a_chest_a",
+   "tags": ["chest"],
+   "grid": [
+    "#########",
+    "#.......#",
+    "#.T...T.#",
+    "#...,...#",
+    "#..K.T..#",
+    "#....,.,#",
+    "#########"
+   ],
+   "anchors": { "chest": [7, 5] }
+  },
+  {
+   "id": "a_chest_b",
+   "tags": ["chest"],
+   "grid": [
+    "###########",
+    "#T...K...T#",
+    "#,,.....,,#",
+    "#....K....#",
+    "###########"
+   ],
+   "anchors": { "chest": [5, 2] }
+  },
+  {
+   "id": "a_any_a",
+   "tags": ["any"],
+   "grid": [
+    "#########",
+    "#T..,..T#",
+    "#..ccc..#",
+    "#.ccccK.#",
+    "#..ccc..#",
+    "#,.....,#",
+    "#T.K...T#",
+    "#.......#",
+    "#########"
+   ],
+   "anchors": {}
+  },
+  {
+   "id": "a_any_b",
+   "tags": ["any"],
+   "grid": [
+    "#######",
+    "#..c..#",
+    "#.cc,.#",
+    "#.cc..#",
+    "#K.cc.#",
+    "#...c,#",
+    "#..c..#",
+    "#.T...#",
+    "#######"
+   ],
+   "anchors": {}
+  }
+ ]
+}
