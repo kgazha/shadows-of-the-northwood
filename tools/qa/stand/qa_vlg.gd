@@ -18,8 +18,11 @@ extends Node2D
 ##  4. BFS из spawn (блоки = w,t,W,R,D,#,r,s — зеркало world.gd BLOCKING):
 ##     достижимы все herbs, chests, стартовые slimes, A(45,20), пещера(40,17);
 ##     у каждой 's' есть достижимый проходимый сосед; карманов в лесу нет.
-##  5. Объём блоков леса: пин t=59 r=26 (всего 85) и коридор ±20% от базы 71
-##     (диапазон 57..85).
+##  5. Объём блоков леса: пин t=59 r=26 (всего 85) и коридор ±20% от базы 85
+##     (диапазон 68..102; база — принятая перепланировка d07c86a).
+##  7. Стартовые тайлы мобов деревни проходимы и достижимы из spawn:
+##     slimes[] (JSON, пин) + лучники world.gd [4,26],[44,26] + мглокрысы
+##     glade_west world.gd [6,16],[9,16],[6,18],[10,18] — пин-факты из кода.
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -51,9 +54,18 @@ const PIN_FIXED_CELLS := [
 	[22, 20, "d"], [45, 20, "A"],
 ]
 const PIN_ROW20_D_RUN := [22, 44]        # row20: d на x=22..44 включительно
-const PIN_BASE_BLOCK := 71               # t+r в лесу (interior) до перепланировки
+const PIN_BASE_BLOCK := 85               # t+r в лесу (interior) — база d07c86a (принятая перепланировка)
 const PIN_T := 59
 const PIN_R := 26
+# Стартовые тайлы мобов деревни (пин-факты): slimes — JSON; archers —
+# world.gd:284; rat(мглокрысы glade_west) — world.gd:290. Тенеплёт (15,7)/
+# (16,7) — карта пещеры, не сетка деревни (mb_1.gd: cave_tile_walkable).
+const PIN_MOB_SPAWNS := [
+	["slime1", 16, 21], ["slime2", 24, 22], ["slime3", 30, 19],
+	["slime4", 20, 25], ["slime5", 33, 22], ["slime6", 27, 24],
+	["archer1", 4, 26], ["archer2", 44, 26],
+	["rat1", 6, 16], ["rat2", 9, 16], ["rat3", 6, 18], ["rat4", 10, 18],
+]
 const FOREST_ROWS := [15, 26]
 const FOREST_COLS := [2, 45]
 const BLOCK_CHARS := "tWrWDR#s"
@@ -68,6 +80,7 @@ var spawn := []
 var herbs := []
 var chests := []
 var slimes := []
+var reach_map: Array = []
 
 func chk(cond: bool, name: String) -> void:
 	if cond:
@@ -115,6 +128,7 @@ func _ready() -> void:
 	_inv3()
 	_inv4()
 	_inv5()
+	_inv7()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -293,6 +307,7 @@ func _inv4() -> void:
 					continue
 				reach[ny][nx] = true
 				q.append([nx, ny])
+		reach_map = reach
 		for p in herbs:
 			if not reach[p[1]][p[0]]:
 				miss.append("herb(%d,%d)" % [p[0], p[1]])
@@ -352,3 +367,16 @@ func _inv5() -> void:
 	chk(t == PIN_T, "inv5: деревьев в лесу %d = пин %d" % [t, PIN_T])
 	chk(r == PIN_R, "inv5: валунов в лесу %d = пин %d" % [r, PIN_R])
 	chk(all >= lo and all <= hi, "inv5: блоков %d в ±20%% от базы %d (%d..%d)" % [all, PIN_BASE_BLOCK, lo, hi])
+
+# ---------------------------------------------------------------- инв. 7
+func _inv7() -> void:
+	for m in PIN_MOB_SPAWNS:
+		var nm: String = String(m[0])
+		var x: int = int(m[1])
+		var y: int = int(m[2])
+		if _blocked(x, y):
+			chk(false, "inv7: моб %s (%d,%d) рождается на непроходимой '%s'" % [nm, x, y, _ch(x, y)])
+		elif reach_map.is_empty() or not bool(reach_map[y][x]):
+			chk(false, "inv7: моб %s (%d,%d) недостижим из spawn" % [nm, x, y])
+		else:
+			chk(true, "inv7: старт моба %s (%d,%d) проходим и достижим" % [nm, x, y])
