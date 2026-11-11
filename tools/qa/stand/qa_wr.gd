@@ -1,12 +1,13 @@
 extends Node
-## QA-WR: стенд воинских правок п.6–7 (база HEAD f3aa4c9, песочница sand_wr).
-## Проверяет ПОВЕДЕНИЕ player.gd после sand_wr.diff:
+## QA-WR: стенд воинских правок п.6–7 + юзабилити-пачки «Рывок вепря»
+## (база HEAD + sand_wr + boar_dash: cd 7 с, анимация 0.14 с, иконка слота 2).
+## Проверяет ПОВЕДЕНИЕ player.gd:
 ##   п.6 power_strike — без цели в радиусе атаки НЕ активируется (cd не тронут,
 ##       тост «Нет цели рядом», ui_deny+вспышка в коде), догнать-режима нет;
-##   п.7 second_wind -> «Рывок вепря» — мгновенный рывок к ближайшему врагу
-##       (радиус 72 px, сквозь врагов, НЕ сквозь стены), оглушение freeze_t
-##       (mob-механика frost_nova: не двигается и не атакует) 0.7 с / босс 0.35,
-##       1x удар в конце; без цели — не тратится (правило п.6);
+##   «Рывок вепря» — АНИМИРОВАННЫЙ полёт 0.14 с (cd 7.0, списан на старте; в полёте
+##       ввод залочен, стан/удар НЕ наносятся — только после приземления; цель
+##       умерла в полёте — приземление без удара), радиус 72 px, сквозь врагов,
+##       НЕ сквозь стены, freeze_t 0.7 с / босс 0.35, 1x удар; без цели — не тратится;
 ##   execute — цель умерла от казни => +3 HP (heal, кламп по max_hp) + тост
 ##       «+3 HP»; не-добивание — 1.5x без хила;
 ##   регресс: вихрь 1.5x по площади и pierce-выстрел лучника не тронуты.
@@ -36,7 +37,7 @@ class WrWorld extends Node2D:
 
 func _ready() -> void:
 	GameState.toast.connect(func(t: String) -> void: toasts.append(t))
-	print("=== QA WR START (HEAD f3aa4c9 + sand_wr) ===")
+	print("=== QA WR START (HEAD + sand_wr + boar_dash) ===")
 	await _frame()
 	sect_a()
 	await sect_b()
@@ -163,10 +164,10 @@ func sect_a() -> void:
 	ck("A4 на кулдауне: false, урон не повторён", not ok and int(t.hp) == hp0 - int(round(dmg * 2.0)))
 	free_world()
 
-# --- B: «Рывок вепря» (second_wind rework) ---
+# --- B: «Рывок вепря» (second_wind rework, анимированный: 0.14 с полёта) ---
 
 func sect_b() -> void:
-	print("--- B: рывок вепря — цель 70px, оглушение, 1x удар; стены/боссы/без цели ---")
+	print("--- B: рывок вепря — полёт 0.14 c, финиш после приземления; стены/боссы/без цели ---")
 	# B1: враг в 90 px (> радиуса рывка 72) — не активируется, не тратится
 	reset_warrior()
 	new_world()
@@ -179,51 +180,82 @@ func sect_b() -> void:
 	ck("B1 урона нет", int(far.hp) == hp0)
 	ck("B1 тост «Нет цели рядом»", any_toast("Нет цели рядом"))
 	free_world()
-	# B2: цель в 70 px — рывок: финал в радиусе удара, stun 0.7, 1x урон, хила нет
+	# B2: цель в 70 px — анимированный рывок: cd списан на старте, стан/удар ТОЛЬКО
+	# после приземления (в полёте цель цела), финал в радиусе удара, 1x, хила нет.
+	# Цель ПРЕДзаморожена (freeze_t=5.0): не кусает героя в полёте (чистый тест дэша)
+	# и «не обнуляется» — значение (0.6..0.7] на финише ДОКАЗЫВАЕТ перезапись
+	# BOAR_STUN'ом именно на приземлении (без риверка заморозка просто тикала бы ~5).
 	reset_warrior()
 	new_world()
 	hero.global_position = Vector2.ZERO
 	far = spawn_slime(Vector2(70, 0))
+	far.freeze_t = 5.0
 	hp0 = int(far.hp)
 	var dmg := int(GameState.damage)
 	var gh0 := int(GameState.hp)
 	ok = hero.cast_skill(2)
-	var dfin: float = hero.global_position.distance_to(far.global_position)
 	ck("B2 cast=true, цель в 70 px найдена", ok)
+	ck("B2 cd=7.0 списан на СТАРТЕ каста", absf(float(hero.skill_cd[2]) - 7.0) < 0.001,
+		"cd=%f" % hero.skill_cd[2])
+	ck("B2 старт: герой ещё на месте (полёт, не телепорт)",
+		hero.global_position.distance_to(Vector2.ZERO) < 0.01,
+		"pos=%s" % str(hero.global_position))
+	ck("B2 в полёте удар НЕ нанесён, стан не перезаписан (предfreeze ещё ~5)",
+		float(far.freeze_t) > 4.0 and int(far.hp) == hp0,
+		"freeze=%f hp=%d" % [far.freeze_t, far.hp])
+	await _frame(3)
+	var x3: float = hero.global_position.x
+	ck("B2 полёт (кадр 3): продвинулся, но ещё в пути (0<x<57)",
+		x3 > 1.0 and x3 < 57.0, "x=%.1f" % x3)
+	ck("B2 на кадре 3 цель цела, BOAR_STUN ещё не лёг (>4)",
+		float(far.freeze_t) > 4.0 and int(far.hp) == hp0)
+	await _frame(2)
+	var x5: float = hero.global_position.x
+	ck("B2 полёт монотонен (кадр 5 дальше кадра 3)", x5 > x3 + 1.0, "x3=%.1f x5=%.1f" % [x3, x5])
+	await _frame(6)  # 0.14 c = 8.4 кадра; всего 11 — приземление гарантировано
+	var dfin: float = hero.global_position.distance_to(far.global_position)
 	ck("B2 финальная дистанция в радиусе удара (≤18)", dfin <= 18.0 and dfin >= 11.0,
 		"dist=%.2f" % dfin)
 	ck("B2 герой реально переместился (x≥40)", hero.global_position.x >= 40.0,
 		"x=%.1f" % hero.global_position.x)
-	ck("B2 цель оглушена freeze_t≈0.7", float(far.freeze_t) > 0.65 and float(far.freeze_t) <= 0.7,
+	ck("B2 после приземления: freeze_t перезаписан на BOAR_STUN (0.6..0.7]",
+		float(far.freeze_t) > 0.6 and float(far.freeze_t) <= 0.7,
 		"freeze_t=%f" % far.freeze_t)
-	ck("B2 урон 1x (списано round(dmg)=%d)" % dmg, int(far.hp) == hp0 - dmg,
+	ck("B2 урон 1x нанесён на финише (списано round(dmg)=%d)" % dmg, int(far.hp) == hp0 - dmg,
 		"hp=%d (было %d)" % [far.hp, hp0])
-	ck("B2 рывок НЕ лечит (hp героя не вырос)", int(GameState.hp) == gh0)
-	ck("B2 кулдаун 20 потрачен", absf(float(hero.skill_cd[2]) - 20.0) < 0.001)
+	ck("B2 рывок НЕ лечит (hp героя не вырос)", int(GameState.hp) <= gh0)
+	ck("B2 кулдаун 7 тикает после полёта (6.5<cd≤7)",
+		float(hero.skill_cd[2]) > 6.5 and float(hero.skill_cd[2]) <= 7.0,
+		"cd=%f" % hero.skill_cd[2])
 	# B3: оглушённая цель не двигается и не атакует (mob-механика freeze_t)
 	var spos: Vector2 = far.global_position
 	gh0 = int(GameState.hp)
-	await _frame(20)  # 20 кадров: freeze 0.7 с = 42 кадра — запас
+	await _frame(20)  # 20 кадров: freeze 0.7 с ≈ 41 кадр после стана — запас
 	ck("B3 в оглушении моб НЕ сдвинулся (20 кадров)",
 		far.global_position.distance_to(spos) < 0.01, "сдвиг=%.3f" % far.global_position.distance_to(spos))
 	ck("B3 в оглушении моб НЕ атаковал (hp героя не тронут)", int(GameState.hp) == gh0)
-	ck("B3 stun ещё жив на 20-м кадре (0.7>20/60)", float(far.freeze_t) > 0.3)
-	# B4: босс — оглушение вдвое короче (канон brute: держит удар, но не резист)
-	# (68 px: строго ближе «far»-слайма B2 на 70 px — без тай-ничейности цели)
+	ck("B3 stun ещё жив на 20-м кадре после финиша", float(far.freeze_t) > 0.3)
+	# B4: босс — оглушение вдвое короче (канон brute: держит удар, но не резист).
+	# Убираем слайма B2 (он догнал бы героя и стал ближайшей целью — с анимацией
+	# рывка это гонка, без неё — латентный тай-ничейный баг стенда): босс — единственная цель.
+	far.free()
 	var boss = spawn_boss(Vector2(0, -68))
 	var bhp0 := int(boss.hp)
 	var bdmg := int(GameState.damage)
 	hero.global_position = Vector2.ZERO
 	hero.skill_cd[2] = 0.0
 	ok = hero.cast_skill(2)
+	ck("B4 босс: cast=true, cd=7.0", ok and absf(float(hero.skill_cd[2]) - 7.0) < 0.001)
+	await _frame(12)  # полёт 9 кадров + запас: босс за это время слегка сближается
 	var bdfin: float = hero.global_position.distance_to(boss.global_position)
-	ck("B4 босс: cast=true, рывок выполнен (дистанция ≤22)", ok and bdfin <= 22.0,
-		"dist=%.2f" % bdfin)
-	ck("B4 босс: stun короче — freeze_t≈0.35", float(boss.freeze_t) > 0.3 and float(boss.freeze_t) <= 0.35,
+	ck("B4 босс: рывок выполнен (дистанция ≤22)", bdfin <= 22.0, "dist=%.2f" % bdfin)
+	ck("B4 босс: stun короче — freeze_t∈(0.25;0.35] (0.35 минус тик за полёт)",
+		float(boss.freeze_t) > 0.25 and float(boss.freeze_t) <= 0.35,
 		"freeze_t=%f" % boss.freeze_t)
 	ck("B4 босс получил 1x (%d)" % bdmg, int(boss.hp) == bhp0 - bdmg, "hp=%d (было %d)" % [boss.hp, bhp0])
 	boss.free()
-	# B5: стена между — рывок упирается, ни stun, ни удара; кулдаун потрачен
+	# B5: стена между — рывок упирается, ни stun, ни удара, тост тоже ПОСЛЕ полёта;
+	# кулдаун потрачен (канон: списан на старте)
 	var wslime = spawn_slime(Vector2(60, 0))
 	add_wall(Vector2(35, 0), Vector2(8, 80))  # стена x∈[31..39]
 	hero.global_position = Vector2.ZERO
@@ -232,13 +264,33 @@ func sect_b() -> void:
 	var whp0 := int(wslime.hp)
 	ok = hero.cast_skill(2)
 	ck("B5 стена: cast=true (цель была в радиусе — семантика: каст состоялся)", ok)
+	ck("B5 в полёте: тоста про стену ещё нет (финиш не случился)", not any_toast("Стена помешала"))
+	await _frame(4)
+	ck("B5 на кадре 4 цель ещё без стана и цела", absf(float(wslime.freeze_t)) < 0.001 \
+		and int(wslime.hp) == whp0)
+	await _frame(8)
 	ck("B5 герой НЕ прошёл сквозь стену (x<31)", hero.global_position.x < 31.0,
 		"x=%.1f" % hero.global_position.x)
 	ck("B5 цель вне досягаемости: НЕ оглушена", absf(float(wslime.freeze_t)) < 0.001,
 		"freeze_t=%f" % wslime.freeze_t)
 	ck("B5 удара не было", int(wslime.hp) == whp0)
-	ck("B5 тост про стену", any_toast("Стена помешала"))
+	ck("B5 тост про стену — после приземления", any_toast("Стена помешала"))
 	ck("B5 кулдаун при этом потрачен", float(hero.skill_cd[2]) > 0.0)
+	free_world()
+	# B6: цель убита В ПОЛЁТЕ — приземление без удара и без креша, cd остаётся потраченным
+	reset_warrior()
+	new_world()
+	hero.global_position = Vector2.ZERO
+	var dying = spawn_slime(Vector2(70, 0))
+	ok = hero.cast_skill(2)
+	ck("B6 каст по цели 70 px", ok)
+	dying.hurt(999, Vector2.ZERO)  # цель умирает между стартом полёта и приземлением
+	await _frame(12)
+	ck("B6 без креша: мир жив, герой приземлился на заранее посчитанный dest (x≈58)",
+		is_instance_valid(world) and absf(hero.global_position.x - 58.0) < 1.0,
+		"x=%.1f" % hero.global_position.x)
+	ck("B6 cd по-прежнему потрачен (полёт не откатывается)", float(hero.skill_cd[2]) > 6.5,
+		"cd=%f" % hero.skill_cd[2])
 	free_world()
 
 # --- C: execute-хил ---
@@ -332,3 +384,11 @@ func sect_e_text_wiring() -> void:
 	ck("E2 хил-скилл выведен из warrior-хуков (heal(4) удалён)", not pl.contains("GameState.heal(4)"))
 	ck("E3 hud не правился: тултип читает sd.name/sd.desc из classes_data", hd.contains("sd.name") and hd.contains("sd.desc"))
 	ck("E4 execute-награда клампится через GameState.heal", pl.contains("GameState.heal(EXEC_HEAL)"))
+	# --- boar_dash usability pack ---
+	ck("E5 classes_data: кулдаун рывка 7.0 (текст синхронен, тултип КД динамический)",
+		cd.contains('"second_wind": {"name": "Рывок вепря", "level": 3, "cd": 7.0'))
+	ck("E5 в текстах не осталось кулдауна 20 у second_wind", not cd.contains('"cd": 20.0, "icon": 2'))
+	ck("E6 player.gd: полёт BOAR_DASH_TIME и финиш-хэндлер _boar_land",
+		pl.contains("BOAR_DASH_TIME") and pl.contains("_boar_land"))
+	ck("E6 player.gd: фаза полёта залочает обычный ход (блок до WASD)",
+		pl.contains("if boar_t > 0.0:") and pl.find("if boar_t > 0.0:") < pl.find("WASD-ход"))

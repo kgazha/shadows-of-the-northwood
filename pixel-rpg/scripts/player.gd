@@ -10,8 +10,9 @@ const ROLL_SPEED := 170.0   # скорость рывка (базовая ско
 const ROLL_CD := 0.9        # кулдаун после окончания кувырка
 const ROLL_CD_FEET := 0.75  # алтарь «Лёгкие ноги»: КД при meta.feet>=1
 # --- воин: «Рывок вепря» (rework second_wind) и награда «Казни» ---
-const BOAR_DASH_RANGE := 72.0  # радиус поиска цели рывка, px (быьше радиуса атаки)
+const BOAR_DASH_RANGE := 72.0  # радиус поиска цели рывка, px (больше радиуса атаки)
 const BOAR_DASH_STOP := 12.0   # встать от цели на дистанцию мили-удара, px
+const BOAR_DASH_TIME := 0.14   # длительность полёта рывка, с (readable-dash: 8–9 кадров на 60 fps)
 const BOAR_STUN := 0.7         # оглушение цели, с
 const BOAR_STUN_BOSS := 0.35   # босс держит оглушение вдвое короче (канон brute)
 const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP воину (кламп по max_hp)
@@ -25,6 +26,12 @@ var _flash_t := 0.0
 var roll_t := 0.0
 var roll_cd := 0.0
 var roll_dir := Vector2.RIGHT
+# --- «Рывок вепря»: фаза полёта (ввод залочен, удар/стан — на финише) ---
+var boar_t := 0.0                   # >0 — летим; тикает в _physics_process
+var boar_from := Vector2.ZERO
+var boar_dest := Vector2.ZERO
+var boar_target: Node2D = null      # цель на старте; валидность проверяем на приземлении
+var boar_dust := 0                  # сколько промежуточных пылей шлейфа выпущено
 # --- скиллы ---
 var skill_cd := [0.0, 0.0, 0.0, 0.0]  # НЕ сериализуются
 var pending_mult := 1.0               # «Мощный удар»: множитель следующего мили-удара
@@ -96,6 +103,9 @@ func _build_frames(tex: Texture2D) -> void:
 ## Сброс «заряженных» состояний (смерть и пр.).
 func cancel_orders() -> void:
 	pending_mult = 1.0
+	boar_t = 0.0
+	boar_target = null
+	anim.modulate.a = 1.0
 
 func _physics_process(delta: float) -> void:
 	attack_cd = maxf(0.0, attack_cd - delta)
@@ -117,6 +127,8 @@ func _physics_process(delta: float) -> void:
 	if GameState.input_locked:
 		velocity = Vector2.ZERO
 		roll_t = 0.0
+		boar_t = 0.0
+		boar_target = null  # диалог на середине рывка: отменяем полёт (как прерванный кувырок)
 		anim.modulate.a = 1.0  # прерванный диалогом кувырок: не залипаем полупрозрачным (фикс T5)
 		move_and_slide()
 		return
@@ -130,6 +142,12 @@ func _physics_process(delta: float) -> void:
 		if roll_t == 0.0:
 			anim.modulate.a = 1.0
 		move_and_slide()
+		return
+
+	# --- «Рывок вепря» (активная фаза): тот же механизм лока ввода, что кувырок —
+	# движение считаем сами, WASD/атаку/пробел в эти кадры не читаем ---
+	if boar_t > 0.0:
+		_boar_step(delta)
 		return
 
 	# --- WASD-ход ---
@@ -498,13 +516,15 @@ func _dash_target() -> Node2D:
 			best = e
 	return best
 
-## «Рывок вепря» (rework «Второго ветра»): мгновенно догнать цель сквозь врагов,
-## но не сквозь стены (ray по слою стен 2, маржа 5 px), встать на дистанцию
-## мили-удара, оглушить целью freeze_t — существующей mob-механикой «замри»
-## (frost_nova: моб не двигается и не атакует), и ударить 1x. Босс оглушается
-## вдвое короче (BOAR_STUN_BOSS) — канон brute: Гром держит удар, но не резистен
-## полностью. Если стена встала ближе дистанции удара — рывок короткая: ни
-## оглушения, ни удара (кулдаун при этом потрачен, цель была в радиусе).
+## «Рывок вепря» (rework «Второго ветра»): догнать цель (BOAR_DASH_TIME = 0.14 с,
+## ease-out — быстрый старт, readable) сквозь врагов, но не сквозь стены (ray по
+## слою стен 2, маржа 5 px), встать на дистанцию мили-удара; удар 1x и оглушение
+## freeze_t — существующей mob-механикой «замри» (frost_nova: моб не двигается и не
+## атакует) — НАНОСЯТСЯ ПОСЛЕ ПРИЗЕМЛЕНИЯ (_boar_land), чтобы не бить сквозь стену
+## раньше доезда. Босс оглушается вдвое короче (BOAR_STUN_BOSS) — канон brute: Гром
+## держит удар, но не резистен полностью. Если стена встала ближе дистанции удара —
+## рывок короткая: ни оглушения, ни удара (кулдаун при этом потрачен на старте,
+## цель была в радиусе). Цель погибла в полёте — приземляемся без удара.
 func _boar_dash(t: Node2D) -> void:
 	var from := global_position
 	var dir := (t.global_position - from).normalized()
@@ -514,9 +534,44 @@ func _boar_dash(t: Node2D) -> void:
 	if not hit.is_empty():
 		# встать до стены с маржой 5 px (у ray-результата нет distance — мерим до point)
 		dest = from + dir * maxf(0.0, from.distance_to(hit["position"]) - 5.0)
-	global_position = dest
+	boar_from = from
+	boar_dest = dest
+	boar_target = t
+	boar_dust = 0
+	boar_t = BOAR_DASH_TIME
+	_set_facing_from(dir)
+	anim.play(facing)
+	anim.modulate.a = 0.75  # как кувырок: полупрозрачность скорости на время полёта
 	Fx.dust(from, world)
-	Fx.dust(dest, world)
+
+## Кадры полёта: позиция по заранее посчитанному ray-маршруту (ease-out),
+## шлейф из 2 промежуточных пылей; по окончании — финиш-хэндлер.
+func _boar_step(delta: float) -> void:
+	boar_t = maxf(0.0, boar_t - delta)
+	var p := clampf(1.0 - boar_t / BOAR_DASH_TIME, 0.0, 1.0)
+	var e := 1.0 - (1.0 - p) * (1.0 - p)  # квадратичный ease-out: резкий старт, посадка
+	global_position = boar_from.lerp(boar_dest, e)
+	velocity = Vector2.ZERO
+	if boar_dust < 2 and p >= 0.34 * float(boar_dust + 1):
+		boar_dust += 1
+		Fx.dust(global_position, world)
+	if boar_t <= 0.0:
+		global_position = boar_dest
+		_boar_land()
+
+## Приземление: только здесь стан/удар/тосты — семантика прежняя, но «не бьём
+## в полёте». Кулдаун потрачен на старте каста (канон) и в полёте не возвращается.
+func _boar_land() -> void:
+	boar_t = 0.0
+	anim.modulate.a = 1.0
+	var t := boar_target
+	boar_target = null
+	Fx.dust(global_position, world)
+	if GameState.hp <= 0:
+		return  # герой погиб в полёте — приземление без удара
+	if t == null or not is_instance_valid(t) \
+			or (t.get("hp") != null and int(t.get("hp")) <= 0):
+		return  # цель погибла/умирает в полёте: приземляемся без удара
 	face_to(t.global_position)
 	if global_position.distance_to(t.global_position) > 13.0 + _enemy_size(t) * 0.5:
 		GameState.toast.emit("Стена помешала рывку")
