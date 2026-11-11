@@ -129,8 +129,12 @@ static func on_brew() -> void:
 		unlock("brewer_10", 0, 1)
 
 ## #7 campfires — campfire.gd::_finish() после пометки костра использованным.
+## Счёт ВЕЧНЫЙ через суммарный канал "ach.n.campfires" (как brews/buys):
+## костёр в мире один, campfires_used обнуляется start_ng_plus() каждый круг —
+## на size:campfires_used ачивка была бы недостижима. Гейт и витрина (counter
+## "n.campfires" в achv_catalog.gd) читают один и тот же флаг.
 static func on_campfire_used() -> void:
-	if GameState.campfires_used.size() >= 3:
+	if count("campfires") >= 3:
 		unlock("campfires", 0, 1)
 
 ## #8 treasure — interactable.gd, ветка chest после Loot.chest_reward;

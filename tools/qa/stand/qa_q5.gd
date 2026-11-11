@@ -278,14 +278,38 @@ func sim_side_badges() -> void:
 			Achv.on_brew()
 			tick()
 	ck("B1.q_suhotsvet закрыт сквозь варки (regression)", qstatus("q_suhotsvet") == 2)
-	# q_campfires
+	# q_campfires: «один костёр в мире» (world.CAMPFIRE_SPOTS) — цель круга = 1
+	# отдых; ачивка «Три костра» переехала на вечный счётчик ach.n.campfires
+	# (как brews/buys): campfires_used обнуляется кругом, 3 разных костра за
+	# круг честной игрой недостижимы. Смена круга здесь — очистка campfires_used
+	# (ровно то, что делает start_ng_plus; полный NG+ — секция C).
 	rest_campfire("cf_village")
 	tick()
-	rest_campfire("cf_forest")
-	rest_campfire("cf_cave")
+	ck("B1.q_campfires активен после 1-го отдыха (when=first_campfire)",
+		qstatus("q_campfires") == 1)
+	var ecf: Variant = qentry("q_campfires")
+	ck("B1.витрина q_campfires: label «Отдохнуть у костра», need=1", ecf != null \
+		and String(ecf.targets[0].label) == "Отдохнуть у костра" \
+		and int(ecf.targets[0].need) == 1 and int(ecf.targets[0].cur) == 1,
+		"e=%s" % (str(ecf) if ecf != null else "null"))
 	tick()
-	ck("B1.q_campfires закрыт; ачивка campfires снята",
-		qstatus("q_campfires") == 2 and bool(gs.get_flag("ach.campfires", false)))
+	ck("B1.q_campfires закрыт за 1 отдых (need=1)", qstatus("q_campfires") == 2)
+	ck("B1.ачивка campfires НЕ на 1-м отдыхе (n.campfires=1 < 3)",
+		int(gs.get_flag("ach.n.campfires", 0)) == 1
+		and not bool(gs.get_flag("ach.campfires", false)))
+	gs.campfires_used.clear()  # смена круга: костёр снова жив, счётчик вечен
+	rest_campfire("cf_village")
+	tick()
+	ck("B1.campfires НЕ на 2-м отдыхе (n.campfires=2)",
+		int(gs.get_flag("ach.n.campfires", 0)) == 2
+		and not bool(gs.get_flag("ach.campfires", false)))
+	gs.campfires_used.clear()
+	rest_campfire("cf_village")
+	tick()
+	ck("B1.campfires ровно на 3-м отдыхе между кругами; счёт=3",
+		bool(gs.get_flag("ach.campfires", false))
+		and int(gs.get_flag("ach.n.campfires", 0)) == 3)
+	ntok()
 	# q_brewer: счётчик вечный ach.n.brews (BREWED_CAP=2 — поясом мерить нельзя)
 	ck("B2.q_brewer активен (brews>0 уже из B1)", qstatus("q_brewer") == 1)
 	var e: Variant = qentry("q_brewer")
@@ -344,9 +368,14 @@ func sim_ng_plus() -> void:
 	enter_ashen()
 	open_ashen_chest()
 	kill_witch()
+	# «Один костёр в мире»: 1 отдых за круг (q_campfires need=1); вечный
+	# ach.n.campfires копит 3 отдыха между кругами — здесь смена круга
+	# эмулируется очисткой campfires_used (полный start_ng_plus — ниже).
 	rest_campfire("cf_village")
-	rest_campfire("cf_forest")
-	rest_campfire("cf_cave")
+	gs.campfires_used.clear()
+	rest_campfire("cf_village")
+	gs.campfires_used.clear()
+	rest_campfire("cf_village")
 	for _i in 6:
 		Achv.on_brew()
 		tick()

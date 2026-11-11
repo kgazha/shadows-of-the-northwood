@@ -114,7 +114,10 @@ func _case_campfire() -> void:
 		else:
 			live_cf.append(cf.camp_id)
 	_chk("s3: погашен ровно cf_village", used_cf == ["cf_village"])
-	_chk("s3: целы cf_forest+cf_cave", live_cf.has("cf_forest") and live_cf.has("cf_cave"))
+	# Ребейз на «один костёр в мире» (CAMPFIRE_SPOTS): cf_forest/cf_cave удалены —
+	# канон фиксируем строго: костёр в мире ровно один и он погашен (живых нет).
+	_chk("s3: костёр в мире ровно один (cf_forest/cf_cave удалены)", main.campfires.size() == 1)
+	_chk("s3: живых костров не осталось", live_cf.is_empty())
 	var cf = _campfire("cf_village")
 	_chk("s3: подсказка погасшего костра", cf != null and cf.get_hint() == "Костёр погас")
 	_chk("s3: зона E погасшего костра выключена", cf != null and cf._shape.disabled)

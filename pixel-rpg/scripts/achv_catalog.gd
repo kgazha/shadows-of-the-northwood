@@ -20,8 +20,9 @@ class_name AchvCatalog
 ##              "n.<kind>"  — суммарный счётчик GameState.flags["ach.n.<kind>"]
 ##                            (brews/buys/herbs и будущие kill_*),
 ##              "field:<p>" — int-поле GameState (slime_kills, gold),
-##              "size:<p>"  — размер поля-контейнера GameState (campfires_used,
-##                            chests_used);
+##              "size:<p>"  — размер поля-контейнера GameState (chests_used;
+##                            live-счётчики обнуляются кругом — для вечных
+##                            целей используйте "n.<kind>");
 ##   goal     — цель счётчика для отображения «cur/goal»;
 ##   hint     — подпись счётчика в UI.
 const ITEMS: Array = [
@@ -79,9 +80,9 @@ const ITEMS: Array = [
 	{
 		"id": "campfires",
 		"name": "Три костра",
-		"desc": "Отдохнуть у трёх разных костров леса.",
+		"desc": "Отдохнуть у костра три раза (считается между кругами).",
 		"reward": "+1 Пепел",
-		"counter": "size:campfires_used",
+		"counter": "n.campfires",
 		"goal": 3,
 		"hint": "Костров",
 	},

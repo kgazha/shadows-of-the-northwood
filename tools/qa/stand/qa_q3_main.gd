@@ -277,11 +277,15 @@ func _group_D() -> void:
 
 func _probe_autosave() -> void:
 	# ash-only-grant (campfires: gold 0, ash +1) -> file MUST change via grant_ash save_game()
+	# Канон после «одного костра в мире»: гейт — вечный счётчик n.campfires (>=3),
+	# три вызова = три отдыха на кругах (campfires_used на гейт больше не смотрит).
 	GameState.flags.clear()
 	GameState.save_game()
 	GameState.flags.clear()
 	var before := save_text()
-	GameState.campfires_used = {"a": true, "b": true, "c": true}
+	GameState.campfires_used = {"cf_village": true}
+	Achv.on_campfire_used()
+	Achv.on_campfire_used()
 	Achv.on_campfire_used()
 	var after := save_text()
 	chk("AS", "ash-only unlock autosaves (file changed, meta.ash inside)", after != before and after.contains("meta.ash"), "before_len=%d after_len=%d" % [before.length(), after.length()])
@@ -301,7 +305,11 @@ func _storm() -> Dictionary:
 		Achv.on_slime_kill()
 	for i in 400:
 		Achv.on_herb_drunk()
-	GameState.campfires_used = {"a": true, "b": true, "c": true}
+	# «Один костёр в мире»: ачивка на вечном n.campfires — три отдыха на кругах
+	# = три вызова хука (эмуляция: костёр в мире один, счётчик круг переживает).
+	GameState.campfires_used = {"cf_village": true}
+	Achv.on_campfire_used()
+	Achv.on_campfire_used()
 	Achv.on_campfire_used()
 	# Канон-схема uid (3ea93cb): "chest@x,y" — cave 18,18 / ashen 30,24 / village
 	# 37,21 (interactable._uid, dungeon_zone/ashen_zone). «Клад» требует size>=3 —
@@ -334,6 +342,7 @@ func _group_E() -> void:
 	chk(g, "all 12 unlocked", missing.is_empty(), str(missing))
 	chk(g, "ach_brand set (hp<=1)", bool(GameState.flags.get("ach_brand", false)))
 	chk(g, "counters 400/400/400", int(GameState.flags.get("ach.n.buys", 0)) == 400 and int(GameState.flags.get("ach.n.brews", 0)) == 400 and int(GameState.flags.get("ach.n.herbs", 0)) == 400)
+	chk(g, "counter n.campfires == 3 (вечный канал, гейт ачивки)", int(GameState.flags.get("ach.n.campfires", 0)) == 3)
 	var r2: Dictionary = _storm()
 	chk(g, "storm2 gold delta == 185 (inject only, zero leak)", r2.dg == 185, "dg=%d" % r2.dg)
 	chk(g, "storm2 ASH delta == 0 (idempotence)", r2.da == 0, "da=%d" % r2.da)
