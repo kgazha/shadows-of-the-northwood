@@ -185,6 +185,8 @@ static func _build_once(templates: Array, zone: String, rng: RandomNumberGenerat
 	if rects.is_empty():
 		return {"ok": false, "map": _finish_map(_blank(w, h), {}, zone, w, h)}
 	var grid: Array = _carve_layout(picked, rects, zone, w, h, rng)
+	if not _pocket_fix(grid, zone, w, h, rects):
+		return {"ok": false, "map": _finish_map(_blank(w, h), {}, zone, w, h)}
 	var m: Dictionary = _emit_meta(grid, picked, rects, zone, w, h, rng)
 	var map: Dictionary = _finish_map(grid, m, zone, w, h)
 	return {"ok": _validate(map, zone, w, h), "map": map}
@@ -576,6 +578,134 @@ static func _frame_points(rc: Rect2i) -> Array:
 	return out
 
 # ============================================================================
+# PG8a: карманы открытого состояния (>=2 клетки) — добивка к главному полу
+# ============================================================================
+
+## Компоненты 4-связности проходимого (open=true) пола. Скан row-major,
+## обход DIRS4-порядком — детерминировано, без итераций по Dictionary.
+static func _walkable_components(grid: Array, zone: String, w: int, h: int) -> Array:
+	var seen := {}
+	var out: Array = []
+	for y in h:
+		var row := String(grid[y])
+		for x in w:
+			var k := _key(Vector2i(x, y))
+			if seen.has(k) or not _walkable(zone, row[x], true):
+				continue
+			var comp: Array = []
+			var q: Array = [Vector2i(x, y)]
+			seen[k] = true
+			var head := 0
+			while head < q.size():
+				var t: Vector2i = q[head]
+				head += 1
+				comp.append(t)
+				for d in DIRS4:
+					var n := Vector2i(t.x + int(d[0]), t.y + int(d[1]))
+					if n.x < 0 or n.y < 0 or n.x >= w or n.y >= h:
+						continue
+					var nk := _key(n)
+					if seen.has(nk) or not _walkable(zone, String(grid[n.y])[n.x], true):
+						continue
+					seen[nk] = true
+					q.append(n)
+			out.append(comp)
+	return out
+
+## Есть ли карман >=2, не сообщённый с главным (наибольшим) компонентом —
+## критерий стенда §3.2.5 (одноклеточные терпимы).
+static func _has_pocket(grid: Array, zone: String, w: int, h: int) -> bool:
+	var comps: Array = _walkable_components(grid, zone, w, h)
+	if comps.size() < 2:
+		return false
+	var main_i := 0
+	var best := -1
+	for i in comps.size():
+		if (comps[i] as Array).size() > best:
+			best = (comps[i] as Array).size()
+			main_i = i
+	for i in comps.size():
+		if i != main_i and (comps[i] as Array).size() >= 2:
+			return true
+	return false
+
+## PG8a-добивка: карманы >=2 (напр. верхняя палата c_chest_a, отрезанная рядом
+## "###C###" с блокером "P" над сундуком — дефект геометрии шаблона, а не
+## упаковки) детерминированно прокалываются к главному компоненту ('#' -> '.'),
+## в пределах добиваемого rect рамки прочих комнат забанены. Нечем добить —
+## false -> солёная пересборка. Никакого рандома: BFS фиксированным порядком.
+static func _pocket_fix(grid: Array, zone: String, w: int, h: int, rects: Array) -> bool:
+	var comps: Array = _walkable_components(grid, zone, w, h)
+	if comps.size() < 2:
+		return true
+	var main_i := 0
+	var best := -1
+	for i in comps.size():
+		if (comps[i] as Array).size() > best:
+			best = (comps[i] as Array).size()
+			main_i = i
+	var main_set := {}
+	for t in (comps[main_i] as Array):
+		main_set[_key(t)] = true
+	for i in comps.size():
+		if i == main_i:
+			continue
+		var comp: Array = comps[i]
+		if comp.size() < 2:
+			continue
+		if not _punch_to(grid, zone, w, h, rects, comp, main_set):
+			return false
+	return true
+
+static func _punch_to(grid: Array, zone: String, w: int, h: int, rects: Array,
+		comp: Array, main_set: Dictionary) -> bool:
+	var owner := -1
+	for i in rects.size():
+		if (rects[i] as Rect2i).has_point(comp[0] as Vector2i):
+			owner = i
+			break
+	var banned: Array = []
+	for i in rects.size():
+		if i != owner:
+			banned.append_array(_frame_points(rects[i] as Rect2i))
+	var seen := {}
+	var prev := {}
+	var q: Array = []
+	for t in comp:
+		seen[_key(t)] = true
+		q.append(t)
+	var head := 0
+	var goal := Vector2i(-1, -1)
+	while head < q.size() and goal.x < 0:
+		var t: Vector2i = q[head]
+		head += 1
+		for d in DIRS4:
+			var n := Vector2i(t.x + int(d[0]), t.y + int(d[1]))
+			if n.x < 1 or n.y < 1 or n.x > w - 2 or n.y > h - 2:
+				continue
+			var nk := _key(n)
+			if seen.has(nk) or _banned_has(banned, n):
+				continue
+			var ch := String(grid[n.y])[n.x]
+			var walk := not _is_blocked(zone, ch)
+			if not walk and ch != "#":
+				continue
+			seen[nk] = true
+			prev[nk] = t
+			if main_set.has(nk):
+				goal = n
+				break
+			q.append(n)
+	if goal.x < 0:
+		return false
+	var cur := goal
+	while prev.has(_key(cur)):
+		if String(grid[cur.y])[cur.x] == "#":
+			_set_cell(grid, cur.x, cur.y, ".", w, h)
+		cur = prev[_key(cur)]
+	return true
+
+# ============================================================================
 # Эмиссия meta
 # ============================================================================
 
@@ -815,7 +945,8 @@ static func _validate(map: Dictionary, zone: String, w: int, h: int) -> bool:
 		for d in DIRS4:
 			if ro.has(_key(Vector2i(chest.x + int(d[0]), chest.y + int(d[1])))):
 				nb = true
-		return nb
+		# финальный фильтр PG8a: после штампов meta карманов >=2 быть не должно
+		return nb and not _has_pocket(grid, zone, w, h)
 	# --- ashen: всё в одном состоянии (L/C нет) ---
 	var r2 := _bfs(grid, zone, sp, w, h, true)
 	var pts: Array = [
@@ -840,7 +971,7 @@ static func _validate(map: Dictionary, zone: String, w: int, h: int) -> bool:
 	for p in pts:
 		if not _reachable(r2, p):
 			return false
-	return true
+	return not _has_pocket(grid, zone, w, h)
 
 static func _count_char(grid: Array, ch: String, w: int, h: int) -> int:
 	var n := 0
