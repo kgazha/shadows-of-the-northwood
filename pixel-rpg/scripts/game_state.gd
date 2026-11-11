@@ -386,8 +386,9 @@ func to_dict() -> Dictionary:
 		"materials": materials.duplicate(), "brewed": brewed_potions,
 		"campfires_used": campfires_used.duplicate(),
 		"chests_used": chests_used.duplicate(),
-		"v": 2, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
+		"v": 3, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
+		"run_seed": run_seed,
 	}
 
 func from_dict(d: Dictionary) -> void:
@@ -485,6 +486,9 @@ func from_dict(d: Dictionary) -> void:
 			push_warning("flags: больше 128 ключей — остаток отброшен при загрузке")
 	player_pos = Vector2(_numf(d.get("px", 0.0), 0.0), _numf(d.get("py", 0.0), 0.0))
 	pos_valid = _flag(d.get("pos_valid", false), false)
+	# --- v3: сид забега (PROCGEN §2); сейвы v2 без поля => страж −1, живой
+	# сид родит миграция в load_game() (не здесь: from_dict чист) ---
+	run_seed = _num(d.get("run_seed", -1), -1)
 	recalc_max_hp()  # класс + уровни + амулет — канон поверх сохранённого max_hp
 	recalc_max_mana()
 	# hp: из сейва (клампы под потолок класса); нет/битое — ПОЛНЫЙ максимум класса,
@@ -514,12 +518,26 @@ func load_game() -> bool:
 	if typeof(data) != TYPE_DICTIONARY:
 		return false
 	from_dict(data)
+	# PROCGEN §2 миграция: сейв без run_seed (v2) или с стражом −1 — сид забега
+	# рождается РОВНО ОДИН РАЗ и сразу фиксируется на диске, чтобы рестарты его
+	# не перегенерили. Глобальный RNG здесь допустим: это рождение сида, а не
+	# генерация (D3 запрещает randi() только внутри генератора).
+	if run_seed < 0:
+		run_seed = randi()
+		save_game()
 	return true
 
 # --- NG+ «Круги Пепла» (RETENTION_NG_PLUS §1): ОДНА точка истины формул ---
 ## Кап волны: дальше цифры не растут — круги на кап-значениях играются сколько
 ## угодно (удержание, а не бесконечная спираль).
 const NG_WAVE_CAP := 5
+
+## Сид текущего забега (CONTRACT_PROCGEN §2): детерминированный корень
+## генератора карт — ProcGen.seed_zone(run_seed, зона, волна). −1 — страж
+## legacy: свежая игра до первого вайпа либо сейв без поля; при лоаде −1
+## рождается randi() РОВНО ОДИН РАЗ и сразу пишется на диск (миграция в
+## load_game), а вайп круга/смерти перевыбрасывает его в _wipe_circle().
+var run_seed := -1
 
 ## Текущий круг (обычная игра — 0). Сейвы без ng.* читаются как 0 (§5 риск-правило:
 ## только flags.get с дефолтом, никаких прямых обращений к ключу).
@@ -564,6 +582,11 @@ func start_ng_plus() -> int:
 ## Здесь НЕ трогаются: ng.wave, герой (уровень/опыт/шмот/золото сверх «Кошелька»),
 ## вечный слой ach.*/meta.*/daily.*/hint.* (смерть переживает всё — §0).
 func _wipe_circle() -> void:
+	# Новый забег — новый сид карт (PROCGEN §2; закреплённое решение: randi()
+	# СРАЗУ здесь, а не «world родит сид при первом обращении к seam при −1»).
+	# Глобальный RNG вне генератора — D3 не нарушается: seed_zone получит
+	# уже готовый явный сид.
+	run_seed = randi()
 	# --- что сбрасывается (инверсия таблицы переноса §1.2) ---
 	elder_quest = 0
 	slime_quest = 0

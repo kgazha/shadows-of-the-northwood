@@ -31,6 +31,9 @@ const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в об
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
 const ASHEN_ENTRANCE_TILE := Vector2i(45, 20) # «A» — выжженная аршина на восточной окраине
+## Ключи зоны для сида забега (CONTRACT_PROCGEN §2) — аргументы ProcGen.seed_zone.
+const CAVE_ZONE_ID := "cave"
+const ASHEN_ZONE_ID := "ashen"
 ## Костры-привалы (id -> тайл). Ровно один на мир — фидбек игрока: «не более
 ## одного, и то реже» (варка/отдых = осознанная редкость). Одноразовый.
 const CAMPFIRE_SPOTS := {
@@ -57,6 +60,11 @@ var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
 var ashen_grid    # scripts/ashen_zone.gd (слабо: setup/spawn_world_pos/map_w/map_h/portal_node)
+## Шов PROCGEN §2: словари карт из ProcGen (T1 — прокси, читающий data/map_*.json
+## как есть). Зоны пока грузят JSON сами в setup(); передача словаря генератору —
+## задача T4/T5, здесь поле-приёмник фиксирует сам шов.
+var cave_map: Dictionary = {}
+var ashen_map: Dictionary = {}
 var active_area := "village"  # "village" | "cave" | "ashen" — где сейчас герой
 var cam: Camera2D
 var fade_rect: ColorRect
@@ -308,6 +316,9 @@ func campfire_near() -> Node2D:
 	return best
 
 func _build_cave() -> void:
+	# Шов PROCGEN §2: словарь карты — из ProcGen, сид = сид забега × «cave» × волна.
+	# Порядок в _ready не двигается: билдеры и так стоят после load_game() (qa_rf).
+	cave_map = ProcGen.cave_map(ProcGen.seed_zone(GameState.run_seed, CAVE_ZONE_ID, GameState.ng_wave()))
 	var dz = load("res://scripts/dungeon_zone.gd").new()
 	cave_zone.add_child(dz)
 	dz.setup(self)
@@ -458,6 +469,8 @@ func _build_cave_entrance() -> void:
 ## Пепелище: контейнер ashen_zone уже в _ready (сдвиг ASHEN_OFFSET). Зона
 ## строится после load_game() — персист ведьмы/сундука читается из флагов.
 func _build_ashen() -> void:
+	# Шов PROCGEN §2: как у пещеры — ProcGen-словарь на сиде забега × «ashen» × волна.
+	ashen_map = ProcGen.ashen_map(ProcGen.seed_zone(GameState.run_seed, ASHEN_ZONE_ID, GameState.ng_wave()))
 	var az = load("res://scripts/ashen_zone.gd").new()
 	ashen_zone.add_child(az)
 	az.setup(self)

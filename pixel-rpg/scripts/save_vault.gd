@@ -19,7 +19,8 @@ const SAVE_PATH := "user://save_morkheim.json"
 const TMP_PATH := "user://save_import.tmp"
 const AUTO_BACKUP_PATH := "user://save_backup_auto.json"
 ## Хотя бы один ключ обязан присутствовать — иначе это не наш сейв.
-## Ключи сверены с game_state.to_dict(): gold, hp, flags есть в каждой записи v2.
+## Ключи сверены с game_state.to_dict(): gold, hp, flags есть в каждой записи
+## сейва (v2 и v3 «Моркхейм»): SaveVault от формата полей не зависит — несёт файл как есть.
 const KNOWN_KEYS := ["gold", "hp", "flags"]
 ## Защитный потолок: реальный сейв ~КБ; мегабайты base64 — мусор или атака.
 const MAX_RAW_BYTES := 1 << 20  # 1 MiB
