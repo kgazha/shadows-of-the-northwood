@@ -32,6 +32,7 @@
     { "name": "qa_cf", "desc": "Костры: один на мир, отдых/целительный отдых, ачивка-счётчик, квест q_campfires за круг", "run": ["qa_cf.tscn"], "parse": { "mode": "pf", "re": "QA_CF SUMMARY \\| PASS=(\\d+) FAIL=(\\d+)" } },
     { "name": "qa_wr0", "desc": "Тенеплёт-блокиратор: вплотную >=3 материализаций,hurt по состояниям, проход сквозь эфир", "run": ["qa_wr0.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
     { "name": "qa_run", "desc": "Смерть-петля: вайп/перенос неймспейсов, обнуление героя, счётчик смертей, вехи 5/15, R6-регрессия NG+", "run": ["qa_run.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
-    { "name": "qa_pg", "desc": "Процген: API/детерминизм/золотые сиды/BFS-достижимость/связность/uid — 50 сидов", "run": ["qa_pg.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } }
+    { "name": "qa_pg", "desc": "Процген: API/детерминизм/золотые сиды/BFS-достижимость/связность/uid — 50 сидов", "run": ["qa_pg.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } },
+    { "name": "qa_vlg", "desc": "Лес деревни: ноль синглтонов t/r, зазоры ≥2, r1 у трав/спавна чист, BFS 16 целей, деревня байт-в-байт", "run": ["qa_vlg.tscn"], "parse": { "mode": "xy", "re": "QA_VLG (\\d+)/(\\d+)" } }
   ]
 }
