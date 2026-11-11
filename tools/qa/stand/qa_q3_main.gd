@@ -167,6 +167,19 @@ func _group_A() -> void:
 	add_child(inst)
 	chk(g, "same-day restart silent", GameState.gold == 50)
 	inst.queue_free()
+	# РЕГРЕССИЯ (находка qa_rf s5): legacy-сейв без daily.stamp — первый запуск
+	# после апдейта: молча инициализируем stamp/streak, НО НЕ выдаём награду.
+	GameState.flags.erase("daily.stamp")
+	GameState.flags.erase("daily.streak")
+	GameState.gold = 50
+	var h0l: int = GameState.herbs
+	var x0l: int = GameState.xp
+	var a0l: int = ash_bal()
+	var inst2 := Achv.new()
+	add_child(inst2)
+	chk(g, "no-stamp (legacy boot): награды нет, gold/herbs/xp/ash целы", GameState.gold == 50 and GameState.herbs == h0l and GameState.xp == x0l and ash_bal() == a0l, "gold=%d dh=%d dx=%d da=%d" % [GameState.gold, GameState.herbs - h0l, GameState.xp - x0l, ash_bal() - a0l])
+	chk(g, "no-stamp (legacy boot): stamp инициализирован T, streak=1", float(GameState.flags.get("daily.stamp", 0.0)) == T and int(GameState.flags.get("daily.streak", 0)) == 1, "stamp=%s st=%s" % [str(GameState.flags.get("daily.stamp", null)), str(GameState.flags.get("daily.streak", null))])
+	inst2.queue_free()
 	GameState.flags.erase("daily.stamp")
 	GameState.flags.erase("daily.streak")
 	r = _daily_run(T - 86400.0, "x", 50)

@@ -217,6 +217,15 @@ func _daily() -> void:
 		streak = prev + 1
 	GameState.set_flag("daily.streak", streak)
 	GameState.set_flag("daily.stamp", now)
+	if last <= 0.0:
+		# LEGACY-МИГРАЦИЯ (§5.2, находка qa_rf s5): в сейве нет daily.stamp
+		# (float==0) — это НЕ смена дня, а первый запуск после апдейта.
+		# Заводим stamp/streak по штатному правилу и выходим БЕЗ награды:
+		# иначе каждый старый сейв дарит день 1 (+15 зол), а семидневная
+		# серия сдвигается раньше первого реального дня. Смена дня — путь
+		# last > 0 ниже (он не тронут).
+		GameState.save_game()
+		return
 	_grant_daily(streak)
 	GameState.save_game()  # stamp обязан пережить выход; set_flag автосейва нет
 
