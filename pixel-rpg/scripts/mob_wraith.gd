@@ -4,6 +4,8 @@ extends CharacterBody2D
 ## ударом ОБЯЗАН материализоваться: 1.1 с уплотнения (альфа 0.35 -> 1.0 как
 ## телеграф), и только в материализации получает урон и бьёт контактом.
 ## Нечестного «неуязвимого тарана» нет: фаза не наносит урона вовсе.
+## «Вечного призрака» нет: в эфире/фазе тело прозрачно для героя (слой 0,
+## маска без слоя 1), а ETHEREAL ограничен ETH_MAX_TIME — дальше форс-окно.
 ## HP 8, урон 2. Появляется ближе к нише босса пещеры (позиционирует world.gd,
 ## интеграционный запрос в отчёте). Лист assets/mobs_wraith.png — 48x64:
 ## 3 кадра (парение / взмах / материализация) на 4 ряда (вниз / влево / вправо / вверх).
@@ -22,6 +24,7 @@ const HIT_DIST := 10.0
 const ALPHA_ETH := 0.45
 const ALPHA_PHASE := 0.3
 const MAX_HP := 8
+const ETH_MAX_TIME := 3.5     # кап «вечного эфира»: принудительное окно уязвимости
 
 var world: Node2D
 var hp := MAX_HP
@@ -35,6 +38,7 @@ var dash_cd := 1.0
 var dash_t := 0.0
 var dash_dir := Vector2.ZERO
 var mat_t := 0.0
+var eth_t := 0.0              # время в текущем ETHEREAL (кап ETH_MAX_TIME)
 var facing := "down"
 var home := Vector2.ZERO
 var wander_t := 0.0
@@ -48,9 +52,8 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	position = world.tile_to_world(tile)
 	home = position
 	last_safe = position
-	collision_layer = 4
-	collision_mask = 1 | 2 | 4
 	add_to_group("enemy")
+	_enter_ethereal()  # старт — эфир: тело прозрачно для героя
 	var cs := CollisionShape2D.new()
 	var sh := RectangleShape2D.new()
 	sh.size = Vector2(10, 8)
@@ -99,9 +102,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if freeze_t > 0.0:
 		# заморозка «выбрасывает» тенеплёта из фазы обратно в эфир
-		if state == PHASING:
-			_end_phase()
-		state = ETHEREAL
+		_enter_ethereal()
 		modulate = Color(0.55, 0.75, 1.0, ALPHA_ETH)
 		velocity = Vector2.ZERO
 		return
@@ -118,6 +119,15 @@ func _physics_process(delta: float) -> void:
 
 ## Эфир: полупрозрачное блуждание, подпускание героя; рывок-фаза по кулдауну.
 func _tick_ethereal(delta: float, player: CharacterBody2D) -> void:
+	eth_t += delta
+	if eth_t >= ETH_MAX_TIME:
+		# анти-«вечный призрак»: рывок заводится лишь при d>24 — если герой
+		# прижался вплотную, фаза не наступит никогда и неуязвимое тело
+		# заблокирует проход. Материализуемся принудительно: у игрока всегда
+		# есть окно урона (дальний цикл в кап не попадает: кулдаун 1.8..2.4).
+		_enter_materialize()
+		velocity = Vector2.ZERO
+		return
 	var d := global_position.distance_to(player.global_position)
 	if d > LEASH:
 		wander_t -= delta
@@ -134,10 +144,8 @@ func _tick_ethereal(delta: float, player: CharacterBody2D) -> void:
 		dash_cd -= delta
 		if dash_cd <= 0.0 and d > 24.0:
 			# рывок сквозь стены: сквозь камень, но без урона — урон только «в теле»
-			state = PHASING
-			dash_t = DASH_TIME
 			dash_dir = (player.global_position - global_position).normalized()
-			collision_mask = 1 | 4  # стены (слой 2) игнорируются только на время фазы
+			_enter_phase()  # стены (2) и герой (1) игнорируются только на время фазы
 			GameAudio.sfx("roll")   # шелест «уходящей» тени
 	dash_cd = maxf(dash_cd, 0.0)
 	_remember_safe()
@@ -153,14 +161,11 @@ func _tick_phase(delta: float) -> void:
 	move_and_slide()
 	modulate = Color(0.85, 0.7, 1.0, ALPHA_PHASE)
 	if dash_t <= 0.0:
-		_end_phase()
 		# влезли в камень — откат на последнюю проходимую точку
 		if not _tile_walkable(global_position):
 			global_position = last_safe
-		state = MATERIALIZING
-		mat_t = MAT_TIME
+		_enter_materialize()
 		velocity = Vector2.ZERO
-		collision_mask = 1 | 2 | 4
 
 ## Материализация: уплотнение (альфа-телеграф), медленное сближение, контакт-удар.
 ## Только здесь тенеплёт уязвим — hurt() вне этого состояния урон не принимает.
@@ -176,11 +181,32 @@ func _tick_materialize(delta: float, player: CharacterBody2D) -> void:
 	if to_p.length() < HIT_DIST:
 		player.take_damage(2)
 	if mat_t <= 0.0:
-		state = ETHEREAL
+		_enter_ethereal()
 		dash_cd = DASH_CD_MIN + randf_range(0.0, DASH_CD_JITTER)
 
-func _end_phase() -> void:
+## Точки входа в состояния — единственный «канал» слоёв/масок. В «прозрачных»
+## состояниях (ETHEREAL/PHASING) слой обнулён: призрак не блокирует героя, а
+## герой — призрака (в фазе он, как и прежде, идёт сквозь камень); маска
+## не видит слой героя (1), стены (2) и соседей (4) — по-прежнему ощутимы.
+## Физическое тело и контактный урон «отрастают» только в MATERIALIZING.
+func _enter_ethereal() -> void:
+	state = ETHEREAL
+	eth_t = 0.0
 	dash_t = 0.0
+	collision_layer = 0
+	collision_mask = 2 | 4
+
+func _enter_phase() -> void:
+	state = PHASING
+	dash_t = DASH_TIME
+	collision_layer = 0
+	collision_mask = 4
+
+func _enter_materialize() -> void:
+	state = MATERIALIZING
+	mat_t = MAT_TIME
+	dash_t = 0.0
+	collision_layer = 4
 	collision_mask = 1 | 2 | 4
 
 func _hurt_flash() -> void:

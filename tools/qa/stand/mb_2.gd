@@ -211,7 +211,8 @@ func section_freeze_lock() -> void:
 		w2.freeze_t = 3.0
 		await pump_raw(2)
 		check("W: freeze из фазы -> эфир", int(w2.state) == ETH)
-		check("W: freeze вернул коллизию со стенами (mask=7)", int(w2.collision_mask) == 7)
+		check("W: freeze вернул коллизию со стенами (mask=6: 2|4)", int(w2.collision_mask) == 6)
+		check("W: freeze — тело прозрачно для героя (layer=0)", int(w2.collision_layer) == 0)
 		var pf: Vector2 = w2.global_position
 		await pump(60)
 		check("W: freeze — стоит", w2.global_position.distance_to(pf) < 0.5)

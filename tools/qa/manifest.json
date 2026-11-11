@@ -29,6 +29,7 @@
     { "name": "qa_q5", "desc": "Квестовое ядро: дыры H1..H7/D4 (пробы-дыры) + witch/q_ashen/permanent_done", "run": ["qa_q5.tscn"], "parse": { "mode": "fails", "re": "QA Q5 DONE: fails=(\\d+)" } },
     { "name": "qa_wr", "desc": "Воин: скиллы по цели, «Рывок вепря» (рывок+стан 0.7/0.35), казнь +3 HP", "run": ["qa_wr.tscn"], "parse": { "mode": "fails", "re": "QA WR DONE: checks=\\d+ fails=(\\d+)" } },
     { "name": "qa_ui", "desc": "UI: скилл-панель вне диалога/модалок, иконки талантов 12, треки полос SHRINK_BEGIN", "run": ["qa_ui.tscn"], "parse": { "mode": "fails", "re": "QA_UI SUMMARY checks=\\d+ fails=(\\d+)" } },
-    { "name": "qa_cf", "desc": "Костры: один на мир, отдых/целительный отдых, ачивка-счётчик, квест q_campfires за круг", "run": ["qa_cf.tscn"], "parse": { "mode": "pf", "re": "QA_CF SUMMARY \\| PASS=(\\d+) FAIL=(\\d+)" } }
+    { "name": "qa_cf", "desc": "Костры: один на мир, отдых/целительный отдых, ачивка-счётчик, квест q_campfires за круг", "run": ["qa_cf.tscn"], "parse": { "mode": "pf", "re": "QA_CF SUMMARY \\| PASS=(\\d+) FAIL=(\\d+)" } },
+    { "name": "qa_wr0", "desc": "Тенеплёт-блокиратор: вплотную >=3 материализаций,hurt по состояниям, проход сквозь эфир", "run": ["qa_wr0.tscn"], "parse": { "mode": "pf", "re": "RESULT: (\\d+) pass / (\\d+) fail" } }
   ]
 }
