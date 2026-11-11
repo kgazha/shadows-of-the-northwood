@@ -26,10 +26,17 @@
 		"                 существующая строка <= wave. Рост с ng_wave: капсы,",
 		"                 chest_bonus=1 с волны 3 (план §2.2: лут-сундук 1 +",
 		"                 бонусный на w>=3; флаг, раскладывает потребитель).",
-		"    mobs_per_100_walkable, herbs — СПРАВОЧНЫЕ величин для QA-коридора",
-		"                 ±20% (план §3.2.4); place_units их НЕ читает.",
-		"Числа волн 2..5 — черновой баланс (правит балансировщик); wave 1 —",
-		"эталонные константы, менять нельзя (ломает золотой тест)."
+		"    mobs_per_100_walkable, herbs — СПРАВОЧНЫЕ величины (QA-коридор",
+		"                 ±20%, план §3.2.4); place_units их НЕ читает.",
+		"                 mobs_per_100_walkable волн 2..5 = средняя реализуемая",
+		"                 плотность на сгенерированных картах (юнитов на 100",
+		"                 клеток '.',',', 50 сидов); волна 1 — факт ручной карты.",
+		"Числа волн 2..5 — калибровка баланса (обоснование и замеры:",
+		"scratch_cm/balance_waves.md): ориентир плотности — арена/45 (cave",
+		"660/45≈14.7: реализуемо в среднем 10.5..13.6 юнита (ёмкость глубоких",
+		"полос ограничена), рост давления составом tiers; ashen 1200/45≈26.7:",
+		"капсы 11..22 реализуются полностью, рост числом и составом); wave 1,",
+		"legacy_seed, kinds, pois, bands, min_spawn — не трогать (золотой тест)."
 	],
 	"version": 1,
 	"cave": {
@@ -39,10 +46,10 @@
 		"legacy_seed": 0,
 		"waves": {
 			"1": {"caps": [3, 4, 5], "chest_bonus": 0, "mobs_per_100_walkable": 7.0},
-			"2": {"caps": [4, 5, 6], "chest_bonus": 0, "mobs_per_100_walkable": 8.5},
-			"3": {"caps": [4, 6, 7], "chest_bonus": 1, "mobs_per_100_walkable": 10.0},
-			"4": {"caps": [5, 7, 8], "chest_bonus": 1, "mobs_per_100_walkable": 11.5},
-			"5": {"caps": [6, 8, 9], "chest_bonus": 1, "mobs_per_100_walkable": 13.0}
+			"2": {"caps": [4, 4, 6], "chest_bonus": 0, "mobs_per_100_walkable": 6.6},
+			"3": {"caps": [4, 5, 6], "chest_bonus": 1, "mobs_per_100_walkable": 7.0},
+			"4": {"caps": [4, 5, 7], "chest_bonus": 1, "mobs_per_100_walkable": 7.3},
+			"5": {"caps": [4, 6, 7], "chest_bonus": 1, "mobs_per_100_walkable": 7.6}
 		}
 	},
 	"ashen": {
@@ -52,10 +59,10 @@
 		"legacy_seed": 0,
 		"waves": {
 			"1": {"caps": [3, 4, 4], "chest_bonus": 0, "mobs_per_100_walkable": 1.4, "herbs": 3},
-			"2": {"caps": [4, 5, 5], "chest_bonus": 0, "mobs_per_100_walkable": 1.8, "herbs": 3},
-			"3": {"caps": [5, 6, 6], "chest_bonus": 1, "mobs_per_100_walkable": 2.2, "herbs": 4},
-			"4": {"caps": [6, 7, 7], "chest_bonus": 1, "mobs_per_100_walkable": 2.6, "herbs": 4},
-			"5": {"caps": [7, 8, 8], "chest_bonus": 1, "mobs_per_100_walkable": 3.0, "herbs": 5}
+			"2": {"caps": [4, 5, 4], "chest_bonus": 0, "mobs_per_100_walkable": 7.1, "herbs": 3},
+			"3": {"caps": [4, 6, 6], "chest_bonus": 1, "mobs_per_100_walkable": 8.7, "herbs": 4},
+			"4": {"caps": [5, 7, 7], "chest_bonus": 1, "mobs_per_100_walkable": 10.3, "herbs": 4},
+			"5": {"caps": [6, 9, 7], "chest_bonus": 1, "mobs_per_100_walkable": 11.8, "herbs": 5}
 		}
 	}
 }
