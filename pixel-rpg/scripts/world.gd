@@ -37,6 +37,22 @@ const GROVE_VARIANTS := 6
 ## Кластер крупнее — это «стена» деревьев по рамке карты, а не роща: один спрайт
 ## на несколько сотен клеток был бы абсурден, такие кластеры остаются тайлами.
 const GROVE_MAX_TREES := 8
+## Деревенские пропсы («живая стилистика», волна 3): НАД тайловой отрисовкой —
+## один спрайт на объект (изба/колодец/указатель/костёр). Меняется только
+## картинка: CHAR_TO_TILE, BLOCK_SHAPES, коллайдеры и тайлы (миникарта читает
+## атласы) остаются бит-в-бит; под пропсом рисуется прежний тайл. Как и рощи —
+## fail-safe: нет ассета → соответствующие клетки остаются тайловыми.
+const VILLAGE_ART_COTTAGE := "res://assets/art/village_cottage.png"
+const VILLAGE_ART_WELLS := [
+	"res://assets/art/village_well_1.png",
+	"res://assets/art/village_well_2.png",
+]
+const VILLAGE_ART_SIGNPOST := "res://assets/art/village_signpost.png"
+const VILLAGE_ART_CAMPFIRE := "res://assets/art/village_campfire.png"
+## Изба — связный «R»/«W»/«D» кластер (крыша/стены/дверь). Меньше 4 клеток —
+## не постройка; больше 64 — стена частокола, не изба (один спрайт не положим).
+const COTTAGE_MIN_CELLS := 4
+const COTTAGE_MAX_CELLS := 64
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
@@ -69,6 +85,8 @@ var village_zone: Node2D
 var grove_art: Array = []   # спрайты крон рощ (assets/art/tree_grove_*.png)
 var _groves: Array = []     # рощи: Array[Array[Vector2i]] — 8-связные кластеры «t»
 var _grove_cells := {}      # клетки «t» под кронами: на базовом слое там подстилка
+var village_props: Node2D   # визуальный слой пропсов деревни (z 5, «живая» картинка)
+var _cf_props: Array = []   # [{"spr": Sprite2D, "cf": Node}] — погасший костёр прячем
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -133,16 +151,23 @@ func _ready() -> void:
 	# но теперь никогда не видят «незагруженное» состояние. apply_zone() вызывается
 	# позже: зона пещеры к моменту применения должна быть собрана.
 	var loaded := GameState.load_game()  # true — сейв прочитан (F9 грузит сам, см. _unhandled_input)
+	# «Мягкий мир» (волна 3): контейнеры зон с texture_filter=LINEAR — тайлы,
+	# сущности, кроны и пропсы наследуют сглаживание (живописная стилистика без
+	# пиксельной сетки). Физика/координаты не двигаются: фильтр — только вывод.
+	# HUD/Minimap/Journal — CanvasLayer-поддеревья вне зон, не затронуты.
 	village_zone = Node2D.new()
 	village_zone.name = "Village"
+	village_zone.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(village_zone)
 	cave_zone = Node2D.new()
 	cave_zone.name = "Cave"
 	cave_zone.position = CAVE_OFFSET
+	cave_zone.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(cave_zone)
 	ashen_zone = Node2D.new()
 	ashen_zone.name = "Ashen"
 	ashen_zone.position = ASHEN_OFFSET
+	ashen_zone.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(ashen_zone)
 	_build_tiles()
 	_build_walls()
@@ -150,6 +175,7 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_entities()
 	_build_campfires()
+	_build_village_props()
 	_build_cave()
 	_build_cave_entrance()
 	_build_ashen()
@@ -340,6 +366,152 @@ func _build_grove_canopy() -> void:
 		root.add_child(spr)
 
 
+## ---- Пропсы деревни (избы/колодцы/указатель/костёр) -----------------------
+
+## 8-связные кластеры клеток, чей символ входит в chars (row-major обход —
+## детерминирован, как _grove_clusters). Возвращает Array[Array[Vector2i]]
+## кластеров размером min_size..max_size.
+func _map_clusters(chars: String, min_size: int, max_size: int) -> Array:
+	var seen := {}
+	var out: Array = []
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in map_w:
+			if not chars.contains(row[x]) or seen.has(Vector2i(x, y)):
+				continue
+			seen[Vector2i(x, y)] = true
+			var stack: Array = [Vector2i(x, y)]
+			var comp: Array = []
+			while not stack.is_empty():
+				var c: Vector2i = stack.pop_back()
+				comp.append(c)
+				for dy in range(-1, 2):
+					for dx in range(-1, 2):
+						if dx == 0 and dy == 0:
+							continue
+						var n := c + Vector2i(dx, dy)
+						if n.x < 0 or n.y < 0 or n.x >= map_w or n.y >= map_h:
+							continue
+						if seen.has(n) or not chars.contains(String(map_rows[n.y])[n.x]):
+							continue
+						seen[n] = true
+						stack.append(n)
+			if comp.size() >= min_size and comp.size() <= max_size:
+				out.append(comp)
+	return out
+
+func _map_char(x: int, y: int) -> String:
+	if x < 0 or y < 0 or x >= map_w or y >= map_h:
+		return ""
+	return String(map_rows[y])[x]
+
+## Есть ли ch в 8-окрестности (САМА клетка (x,y) не считается — иначе «r» на
+## камне всегда было бы «есть соседний r» и одиночный колодец не нашёлся бы).
+func _near_char(x: int, y: int, ch: String) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			if _map_char(x + dx, y + dy) == ch:
+				return true
+	return false
+
+func _village_art(p: String) -> Texture2D:
+	return load(p) if ResourceLoader.exists(p) else null
+
+## Спрайт-проп: по центру bbox клеток [x0..x1], низ — на нижней границе
+## последних клеток (те же +2, что у tile_to_world/GroveCanopy), LINEAR.
+## flip_h — хеш координат (позирует однообразных объектов), без randi.
+func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i) -> Sprite2D:
+	var spr := Sprite2D.new()
+	spr.texture = tex
+	spr.centered = true
+	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	spr.flip_h = posmod(seed_c.x * 3571 + seed_c.y * 7919, 2) == 0
+	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
+		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * 0.5)
+	village_props.add_child(spr)
+	return spr
+
+## Один визуальный слой z_index=5 (тот же уровень, что GroveCanopy, — поверх
+## тайлов и сущностей; в деревне кроны с пропсами не пересекаются). Полностью
+## fail-safe: без любого ассета его клетки просто остаются тайловой отрисовкой
+## (она не менялась). Геометрия, коллайдеры, миникарта — не затронуты.
+func _build_village_props() -> void:
+	village_props = Node2D.new()
+	village_props.name = "VillageProps"
+	village_props.z_index = 5
+	village_zone.add_child(village_props)
+	var missing: Array = []
+	# Избы: кластер «R»/«W»/«D» (крыша/стены/дверь ручной постройки) — один
+	# спрайт на кластер, низ по нижней границе стен, центр по bbox.
+	var cottage := _village_art(VILLAGE_ART_COTTAGE)
+	if cottage == null:
+		missing.append(VILLAGE_ART_COTTAGE)
+	else:
+		for comp in _map_clusters("RDW", COTTAGE_MIN_CELLS, COTTAGE_MAX_CELLS):
+			var x0: int = comp[0].x
+			var x1: int = comp[0].x
+			var y0: int = comp[0].y
+			var y1: int = comp[0].y
+			for c in comp:
+				x0 = mini(x0, c.x)
+				x1 = maxi(x1, c.x)
+				y0 = mini(y0, c.y)
+				y1 = maxi(y1, c.y)
+			_add_prop(cottage, x0, x1, y0, y1, Vector2i(x0, y0))
+	# Колодцы: одиночные валуны «r» впритык к воде — там деревня и ставила
+	# сруб колодца у озера. Коллайдер валуна (11x10) уже жмёт центр клетки —
+	# «твёрдость» колодца физически та же, что была у камня.
+	var wells: Array = []
+	for p in VILLAGE_ART_WELLS:
+		var t := _village_art(p)
+		if t != null:
+			wells.append(t)
+	if wells.is_empty():
+		missing.append_array(VILLAGE_ART_WELLS)
+	else:
+		var ki := 0
+		for y in map_h:
+			var row := String(map_rows[y])
+			for x in map_w:
+				if row[x] != "r" or not _near_char(x, y, "w"):
+					continue
+				if _near_char(x, y, "r"):
+					continue  # только ОДИНОЧНЫЙ камень: группа — это гряда, не колодец
+				_add_prop(wells[ki % wells.size()], x, x, y, y, Vector2i(x, y))
+				ki += 1
+	# Указатели: каждый «s» — свой столб (коллайдер 6x5 у земли не двигается).
+	var sign := _village_art(VILLAGE_ART_SIGNPOST)
+	if sign == null:
+		missing.append(VILLAGE_ART_SIGNPOST)
+	else:
+		for y in map_h:
+			var row2 := String(map_rows[y])
+			for x in map_w:
+				if row2[x] == "s":
+					_add_prop(sign, x, x, y, y, Vector2i(x, y))
+	# Костёр: живописный треножник с котелком на месте CAMPFIRE_SPOTS. Старый
+	# 16px-огонь campfire.gd остаётся узлом (зона E, аналитика), но закрыт
+	# спрайтом; когда костёр использован — пропс прячем, и снова виден прежний
+	# пепел (кампус геймплейных состояний campfire.gd не трогаем).
+	var cf_tex := _village_art(VILLAGE_ART_CAMPFIRE)
+	if cf_tex == null:
+		missing.append(VILLAGE_ART_CAMPFIRE)
+	else:
+		for cf in campfires:
+			var t: Vector2i = CAMPFIRE_SPOTS.get(cf.camp_id, Vector2i(-1, -1))
+			if t.x < 0:
+				continue
+			var spr := _add_prop(cf_tex, t.x, t.x, t.y, t.y, t)
+			spr.visible = not cf.used
+			_cf_props.append({"spr": spr, "cf": cf})
+	if not missing.is_empty():
+		var names := ""
+		for p in missing:
+			names += String(p) + " "
+		push_warning("world: нет ассетов %s— эти пропсы деревни остаются тайловыми" % names)
+
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
 	body.name = "Walls"
@@ -364,6 +536,9 @@ func _build_walls() -> void:
 
 func _spawn_player() -> void:
 	player = load("res://scripts/player.gd").new()
+	# герой живёт НЕ в контейнере зоны (общие координаты, телепорты между «этажами»),
+	# «мягкий мир» ставим ему прямо — иначе он один остался бы nearest на сглаженном мире
+	player.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	player.position = tile_to_world(spawn_tile)
 	add_child(player)
 	cam = Camera2D.new()
@@ -374,6 +549,9 @@ func _spawn_player() -> void:
 	player.add_child(cam)
 	cam.make_current()
 	hint_label = Label.new()
+	# текст world-space подсказок — не «картинка», держим пиксельную чёткость
+	# (наследовать LINEAR от героя ему не надо)
+	hint_label.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	hint_label.position = Vector2(-45, -26)
 	hint_label.size = Vector2(90, 10)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -652,6 +830,13 @@ func _process(_delta: float) -> void:
 		hint_label.text = "E: " + near[0].get_hint()
 	_check_witch_done()
 	_update_cursor()
+	# погасший (использованный) костёр: живописный треножник прячем — на его
+	# месте снова виден прежний «пепел» из спрайтов campfire.gd
+	for e in _cf_props:
+		var spr: Sprite2D = e["spr"]
+		var cf = e["cf"]
+		if is_instance_valid(spr) and is_instance_valid(cf) and spr.visible == cf.used:
+			spr.visible = not cf.used
 
 # --- мышь: курсор и враги под курсором ---
 
