@@ -47,7 +47,11 @@ var _step_alt := false                # чередование двух сэмп
 func _ready() -> void:
 	add_to_group("player")
 	collision_layer = 1
-	collision_mask = 2 | 4  # стены + слаймы
+	# Только стены: моб больше физически не блокирует героя, а герой — моба.
+	# Вплотную два CharacterBody2D пилили друг друга каждый кадр в противофазе
+	# (move_and_slide), и экран дребезжал. «Стенку» без пиления даёт мягкий
+	# односторонний выталкивание моба от героя (_push_from_hero в mob*.gd).
+	collision_mask = 2
 	var cs := CollisionShape2D.new()
 	var sh := RectangleShape2D.new()
 	sh.size = Vector2(10, 8)
@@ -167,7 +171,10 @@ func _physics_process(delta: float) -> void:
 			anim.play(facing)
 		anim.frame = 0
 		anim.pause()
+	var pre_pos := global_position
+	var pre_vel := velocity  # move_and_slide обнуляет упирающуюся компоненту — бережём намерение
 	move_and_slide()
+	_corner_slip(pre_pos, pre_vel)  # «угловая коррекция»: упор в стену по оси -> соскальзывание
 
 	# --- атака удержанием ЛКМ в сторону курсора (не кликаем сквозь UI) ---
 	if roll_t <= 0.0 and Input.is_action_pressed("attack") \
@@ -177,6 +184,40 @@ func _physics_process(delta: float) -> void:
 	# --- кувырок на пробеле ---
 	if Input.is_action_just_pressed("roll") and roll_cd <= 0.0 and roll_t <= 0.0:
 		start_roll(mv)
+
+## Угловая коррекция (классический Zelda-приём): если упёрся в стену строго по
+## оси (скорость есть, is_on_wall(), фактическое смещение ~0) — микро-сандж
+## перпендикулярно на 4..6 px в первую свободную сторону (чисты и сам сандж, и
+## шаг вперёд с новой точки) и повторный move_and_slide. Полный стоп превращается
+## в соскальзывание вдоль препятствия: деревья/углы больше не тормозят ход.
+## Детерминированно: никаких randf, порядок сторон фиксирован. Только WASD-ход:
+## кувырок и «рывок вепря» — отдельные ветки _physics_process, их не трогаем.
+func _corner_slip(pre_pos: Vector2, pre_vel: Vector2) -> void:
+	if pre_vel == Vector2.ZERO:
+		return
+	if global_position.distance_to(pre_pos) > 0.05:
+		return  # не полный стоп (уже скользим вдоль) — не вмешиваемся
+	var fwd := pre_vel.normalized()
+	if not test_move(Transform2D(0.0, global_position), fwd):
+		return  # впереди свободно — пилящих касаний нет, не вмешиваемся
+	var perp := fwd.orthogonal()  # единичный (от нормализованного)
+	var step_len := pre_vel.length() * get_physics_process_delta_time()
+	# Ищем сторону, с которой шаг вперёд открывается: микро-пробы 4..6 px — как в
+	# контракте; 8..12 px — только «разведка» (для толстых столбов), шаг всё равно
+	# не больше 6 px за кадр, проход вокруг ствола накапливается за 2-3 кадра.
+	# Плоская стена/угол: вперёд закрыто с любой точки до 12 px в обе стороны —
+	# герой НЕ начинает ползти вдоль стены сам по себе.
+	for probe: float in [4.0, 5.0, 6.0, 8.0, 10.0, 12.0]:
+		for s: float in [-1.0, 1.0]:
+			if test_move(Transform2D(0.0, global_position), perp * (probe * s)):
+				continue  # сюда и вбок нельзя
+			if test_move(Transform2D(0.0, global_position + perp * (probe * s)), fwd * step_len):
+				continue  # и вперёд с этой точки тоже закрыто
+			var side := perp * (minf(probe, 6.0) * s)
+			position += side
+			velocity = pre_vel
+			move_and_slide()
+			return
 
 func _set_facing_from(v: Vector2) -> void:
 	if absf(v.x) >= absf(v.y):

@@ -115,7 +115,7 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4
-	collision_mask = 1 | 2 | 4
+	collision_mask = 2 | 4  # слой героя (1) убран: вместо взаимной блокировки — мягкое выталкивание (_push_from_hero)
 	add_to_group("enemy")
 	if boss:
 		add_to_group("boss")
@@ -168,6 +168,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if freeze_t > 0.0:
 		velocity = Vector2.ZERO
+		_push_from_hero()  # мёрзлый гром тоже уступает место герою, не лежит под ним
 		return
 	var player: CharacterBody2D = world.player
 	var d := global_position.distance_to(player.global_position)
@@ -213,8 +214,35 @@ func _physics_process(delta: float) -> void:
 		else:
 			velocity = (player.global_position - global_position).normalized() * speed
 	move_and_slide()
+	_push_from_hero()  # до проверки урона: оценка боя идёт на равновесном контакте, как при живой стене
 	if global_position.distance_to(player.global_position) < hit_dist:
 		player.take_damage(dmg)
+
+## «Стенка без пиления» (дребезг экрана вплотную): герой (слой 1) убран из маски —
+## два CharacterBody2D при упоре друг в друга пилят каждый кадр в противофазе, а
+## камера висит на герое. Гром уступает сам: отход вдоль оси наименьшего
+## проникновения боксов до старого физического контакта (моб 10x8, босс 18x16) —
+## пороги hit_dist (9/12) ведут себя ровно как на живой стене. Стены для отхода —
+## препятствия: в углу герой может влезть в грома, дребезга при этом нет.
+func _push_from_hero() -> void:
+	if world == null or world.player == null:
+		return
+	var d: Vector2 = global_position - world.player.global_position
+	var mb := Vector2(18, 16) if boss else Vector2(10, 8)
+	var ox := (mb.x + 10.0) * 0.5 - absf(d.x)
+	var oy := (mb.y + 8.0) * 0.5 - absf(d.y)
+	if ox <= 0.0 or oy <= 0.0:
+		return
+	if ox < oy:
+		var sx := signf(d.x)
+		if sx == 0.0:
+			sx = 1.0  # точное совпадение центров — отход вправо
+		move_and_collide(Vector2(sx * (ox + 0.05), 0.0))
+	else:
+		var sy := signf(d.y)
+		if sy == 0.0:
+			sy = -1.0  # точное совпадение центров — отход вверх
+		move_and_collide(Vector2(0.0, sy * (oy + 0.05)))
 
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:

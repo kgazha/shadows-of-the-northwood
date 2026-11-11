@@ -43,7 +43,7 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4
-	collision_mask = 1 | 2 | 4
+	collision_mask = 2 | 4  # слой героя (1) убран: вместо взаимной блокировки — мягкое выталкивание (_push_from_hero)
 	add_to_group("enemy")
 	var cs := CollisionShape2D.new()
 	var sh := RectangleShape2D.new()
@@ -101,6 +101,7 @@ func _physics_process(delta: float) -> void:
 	if freeze_t > 0.0:
 		tele_t = 0.0  # заморозка срывает подготовку выстрела
 		velocity = Vector2.ZERO
+		_push_from_hero()  # мёрзлый лучник тоже уступает место герою, не лежит под ним
 		return
 	var player: CharacterBody2D = world.player
 	var to_p := player.global_position - global_position
@@ -140,6 +141,32 @@ func _physics_process(delta: float) -> void:
 	_face(to_p)
 	_anim_move(tele_t > 0.0)
 	move_and_slide()
+	_push_from_hero()  # «стенка без пиления»: упор герой<->лучник больше не дребезжит камерой
+
+## «Стенка без пиления» (дребезг экрана вплотную): герой (слой 1) убран из маски —
+## два CharacterBody2D при упоре друг в друга пилят каждый кадр в противофазе, а
+## камера висит на герое. Лучник уступает сам: отход вдоль оси наименьшего
+## проникновения боксов до старого контакта (бокс 9x7). Контактного урона нет —
+## дистанции кайта (HOLD_MIN) не затронуты. Стены — препятствия.
+func _push_from_hero() -> void:
+	if world == null or world.player == null:
+		return
+	var d: Vector2 = global_position - world.player.global_position
+	var mb := Vector2(9, 7)
+	var ox := (mb.x + 10.0) * 0.5 - absf(d.x)
+	var oy := (mb.y + 8.0) * 0.5 - absf(d.y)
+	if ox <= 0.0 or oy <= 0.0:
+		return
+	if ox < oy:
+		var sx := signf(d.x)
+		if sx == 0.0:
+			sx = 1.0  # точное совпадение центров — отход вправо
+		move_and_collide(Vector2(sx * (ox + 0.05), 0.0))
+	else:
+		var sy := signf(d.y)
+		if sy == 0.0:
+			sy = -1.0  # точное совпадение центров — отход вверх
+		move_and_collide(Vector2(0.0, sy * (oy + 0.05)))
 
 ## Кулдаун и пуск подготовки: нужен прямой луч до героя; кувырок героя (i-frames)
 ## тоже блокирует пуск — не тратим выстрел впустую.
