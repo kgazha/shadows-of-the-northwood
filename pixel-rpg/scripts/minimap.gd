@@ -136,7 +136,10 @@ func _build_ui() -> void:
 	_radar.offset_top = PAD
 	_radar.offset_right = -PAD
 	_radar.offset_bottom = PAD + SIZE
-	_radar.visible = false
+	_radar.visible = true      # сам радар видим всегда; гейт показа — _layer.visible
+	                           # в _process (M/settings); скрытый CanvasLayer не показывает
+	                           # детей, но видимый — НЕ показывает и скрытого ребёнка:
+	                           # false здесь прятал миникарту навсегда (юзер-баг).
 	_layer.add_child(_radar)
 	_radar.build_frame()
 

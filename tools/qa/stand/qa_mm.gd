@@ -7,6 +7,10 @@ extends Node2D
 ## локальных координатах, сборка без ashen_grid без падения, M-тумблер и
 ## персист user://minimap_cfg.json, пересборка мира (мёртвая ведьма/взятый
 ## сундук не возрождаются на радаре).
+## ВИДИМОСТЬ (юзер-баг «не отображается миникарта» при зелёном стенде): данные
+## зелёные не значат, что контрол рисуется — проверяем _radar.visible,
+## is_visible_in_tree() и фактическое срабатывание _draw радара в деревне и в
+## обеих ПРОЦЕДУРНЫХ зонах (cave/ashen), а также в фазе M-тумблера.
 
 const Main := "res://scenes/main.tscn"
 const SAVE_PATH := "user://save_morkheim.json"
@@ -16,6 +20,7 @@ var pass_n := 0
 var fail_n := 0
 var world: Node2D
 var mm: Node
+var radar_draws := 0   # счётчик сработавших _draw у контрола радара
 
 func chk(cond: bool, name: String) -> void:
 	if cond:
@@ -58,6 +63,22 @@ func _poi_of(c: Color) -> Array:
 			out.append(p)
 	return out
 
+## Счётчик реальной отрисовки: signal draw у контрола радара. В headless _draw
+## тоже происходит (тот же механизм, что у пробы _paint_ok) — но ТОЛЬКО пока
+## контрол видим в дереве, поэтому скрытый _radar даёт 0.
+func _hook_draws() -> void:
+	radar_draws = 0
+	if mm != null and mm._radar != null:
+		mm._radar.draw.connect(func() -> void: radar_draws += 1)
+
+## Видимость радара «по-настоящему»: флаг, дерево, и что _draw реально firing.
+func _vis_ok(tag: String) -> void:
+	chk(bool(mm._radar.visible), "%s: _radar.visible == true" % tag)
+	chk(bool(mm._radar.is_visible_in_tree()), "%s: радар в видимом дереве" % tag)
+	var d0 := radar_draws
+	await _frames(4)
+	chk(radar_draws > d0, "%s: _draw радара срабатывает (%d -> %d)" % [tag, d0, radar_draws])
+
 func _ready() -> void:
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
@@ -73,6 +94,7 @@ func _ready() -> void:
 	await _frames(4)
 	mm = Minimap.I
 	chk(mm != null, "Minimap.I назначен")
+	_hook_draws()
 	await _phase_village()
 	await _phase_cave()
 	await _phase_ashen()
@@ -105,6 +127,7 @@ func _phase_village() -> void:
 	chk(_poi_of(Minimap.C_NPC).size() > 0, "деревня: NPC на месте")
 	var pt: Vector2i = mm._tile_of(world.player.global_position, Vector2.ZERO, 16.0)
 	chk(pt.x >= 0 and pt.y >= 0 and pt.x < mm._grid_w and pt.y < mm._grid_h, "герой в поле сетки")
+	await _vis_ok("деревня")
 
 # ---------------------------------------------------------------- пещера
 func _phase_cave() -> void:
@@ -116,6 +139,7 @@ func _phase_cave() -> void:
 	var dz = world.dungeon_zone
 	chk(int(mm._grid_w) == int(dz.map_w) and int(mm._grid_h) == int(dz.map_h), "сетка пещеры из dungeon_zone")
 	chk(_poi_of(Minimap.C_PORTAL).size() >= 1, "пещера: лестница-блип")
+	await _vis_ok("пещера proc")
 	world.apply_area("village", true)
 	await _repoll()
 	chk(mm._zone == "village" and mm._sig.begins_with("v|"), "обратно: village")
@@ -149,6 +173,7 @@ func _phase_ashen() -> void:
 		if is_instance_valid(e) and (e as Node2D).global_position.y > world.ASHEN_OFFSET.y:
 			enemies += 1
 	chk(enemies >= 5, "enemy-мобы Пепелища на радаре (%d)" % enemies)
+	await _vis_ok("Пепелище proc")
 	await _paint_ok("ashen")
 
 func _bosses_in_ashen() -> Array:
@@ -198,6 +223,7 @@ func _phase_toggle() -> void:
 	chk(not Minimap.is_on(), "set_on(false)")
 	await _frames(2)
 	chk(not bool(mm._layer.visible), "радар скрыт на следующий кадр")
+	chk(not bool(mm._radar.is_visible_in_tree()), "M off: радар вне видимого дерева")
 	var f := FileAccess.open(CFG_PATH, FileAccess.READ)
 	chk(f != null, "cfg-файл записан")
 	if f != null:
@@ -207,6 +233,7 @@ func _phase_toggle() -> void:
 	chk(Minimap.is_on(), "toggle -> вкл")
 	await _frames(2)
 	chk(bool(mm._layer.visible), "радар виден")
+	chk(bool(mm._radar.is_visible_in_tree()), "M on: радар вернулся в видимое дерево")
 	f = FileAccess.open(CFG_PATH, FileAccess.READ)
 	if f != null:
 		var d2: Variant = JSON.parse_string(f.get_as_text())
@@ -220,6 +247,7 @@ func _phase_rebuild() -> void:
 	add_child(world)
 	await _frames(4)
 	mm = Minimap.I
+	_hook_draws()
 	await _repoll()
 	chk(mm._zone == "village" and mm._sig.begins_with("v|"), "новый мир: деревня как раньше")
 	world.apply_area("ashen", true)
