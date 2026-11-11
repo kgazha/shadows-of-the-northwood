@@ -44,7 +44,7 @@ Headless-смоук чистый (exit 0, SCRIPT ERROR 0). Ждёт живой �
 - **Классы** (`classes_data.gd`): warrior hp12/melee, archer hp8/range80, mage hp6/range70.
   XP-кривая ×1.6. Урон — getter (записи в `damage` игнорировать!). Смена класса запрещена.
 - **Реген**: вне боя +1 HP/4 с, маг +2 маны/2 с; «в бою» = 6 с после контакта.
-- **Костры** (`campfire.gd`): 3 шт — `CAMPFIRE_SPOTS` cf_village(18,13)/cf_forest(12,19)/cf_cave(38,18);
+- **Костры** (`campfire.gd`): ОДИН на мир — `CAMPFIRE_SPOTS` cf_village(18,13) (замысел сложности, ebe610e);
   отдых 4 с → +6 HP, ОДНОРАЗОВЫЕ, состояние в сейве (`_resync_campfires()` после load/quickload!).
 - **Алхимия**: материалы (suhotsvet/zhim) с трав и мобов; MAT_CAP 5, BREWED_CAP 2;
   слаймы дроп 0.25; мобы пещеры (не босс) тоже 0.25 (`brute._roll_mat_drop`);
