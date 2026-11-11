@@ -1,8 +1,20 @@
 extends Area2D
-## NPC: спрайт, зона взаимодействия, подсказка "E".
+## NPC: спрайт, зона взаимодействия, подсказка "E", квестовый маркер «!»/«?».
+## Маркер (задача «Квесты: однократность + маркеры»): «!» — квест можно взять
+## (жёлтый), «?» — можно сдать (зелёный, приоритетнее); состояние считает
+## QuestsData.marker_state, обновляемся по сигналу quest_changed (не поллингом);
+## во время диалога/модалки (input_locked) прячемся; лёгкое синусоидальное
+## покачивание — единственная пер-кадровая работа (косметика).
+
+const MARKER_BASE_Y := -25.0   # верхняя строка метки над макушкой (спрайт 16px)
+const MARKER_BOB_HZ := 3.4     # rad/s — спокойное «дышащее» покачивание
+const MARKER_BOB_AMP := 1.5    # px амплитуда
 
 var world: Node2D
 var npc_id := ""
+var _marker: Label
+var _marker_state := QuestsData.MARKER_NONE
+var _bob := 0.0
 
 func setup(p_world: Node2D, id: String, tile: Vector2i) -> void:
 	world = p_world
@@ -20,6 +32,29 @@ func setup(p_world: Node2D, id: String, tile: Vector2i) -> void:
 	collision_mask = 1
 	body_entered.connect(_on_enter)
 	body_exited.connect(_on_exit)
+	_make_marker()
+
+func _make_marker() -> void:
+	# Label вместо спрайта — процедурная графика проекта (никаких ассетов);
+	# контур и кегль как у world.hint_label / цифр урона — читаемо на лесу.
+	_marker = Label.new()
+	_marker.name = "QuestMarker"
+	_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_marker.size = Vector2(24, 10)
+	_marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_marker.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_marker.add_theme_constant_override("outline_size", 4)
+	_marker.add_theme_font_size_override("font_size", 8)
+	# y_sort в проекте не используется (канон отмечен в dmg_numbers.gd:7),
+	# z_index — штатный способ держать world-space подпись поверх сущностей:
+	# выше спрайтов (0) и декора (-8), ниже цифр урона (90) и радара (100).
+	_marker.z_index = 8
+	_marker.visible = false
+	add_child(_marker)
+	_refresh_marker()
+	# GameState — вечноживущий autoload, но коннект к освобождённому NPC
+	# отваливается сам; каждый новый NPC подписывается на своём setup().
+	GameState.quest_changed.connect(_on_quest_state)
 
 func get_hint() -> String:
 	return "Поговорить"
@@ -59,3 +94,36 @@ func _on_enter(b: Node) -> void:
 func _on_exit(b: Node) -> void:
 	if b.is_in_group("player"):
 		world.near.erase(self)
+
+func _on_quest_state() -> void:
+	# Канон однократности «Трав»: world.gd в колбэке сдачи пишет elder_quest=2
+	# и сразу эмитит quest_changed — вечную meta-метку ловим в этом же эмите
+	# (идемпотентный sync) и тут же фиксируем на диск, чтобы следующий
+	# _wipe_circle застал её даже после crash/reload.
+	if QuestsData.sync_story_permanence(GameState):
+		GameState.save_game()
+	_refresh_marker()
+
+func _refresh_marker() -> void:
+	_marker_state = QuestsData.marker_state(GameState, npc_id)
+	match _marker_state:
+		QuestsData.MARKER_TAKE:
+			_marker.text = "!"
+			_marker.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))  # «!» — золото: брать
+		QuestsData.MARKER_READY:
+			_marker.text = "?"
+			_marker.add_theme_color_override("font_color", Color(0.45, 1.0, 0.5))  # «?» — зелёный: сдавай
+		_:
+			_marker.visible = false
+
+func _process(delta: float) -> void:
+	# Диалог/модалка (input_locked) — маркер прячем: реплика важнее подсказки.
+	if _marker_state == QuestsData.MARKER_NONE or GameState.input_locked:
+		_marker.visible = false
+		return
+	_bob += delta
+	# Фаза — от позиции NPC (без RNG — глобальный рандер не крутим, D3):
+	# синхронно не дышат, но детерминированно.
+	var y := MARKER_BASE_Y + sin(_bob * MARKER_BOB_HZ + fmod(position.x, TAU)) * MARKER_BOB_AMP
+	_marker.position = Vector2(-12, y)
+	_marker.visible = true

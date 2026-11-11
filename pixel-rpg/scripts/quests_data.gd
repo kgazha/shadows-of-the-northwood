@@ -142,6 +142,31 @@ static func quest_def(id: String) -> Dictionary:
 static func is_story(id: String) -> bool:
 	return bool(quest_def(id).get("story", false))
 
+## --- маркеры над головами NPC (задача «Квесты: однократность + маркеры») ---
+const MARKER_NONE := 0    # маркера нет
+const MARKER_TAKE := 1    # «!» — квест можно взять
+const MARKER_READY := 2   # «?» — можно сдать (приоритетнее «!»)
+
+## Маркер NPC по id — дословное отражение гейтов выдачи/сдачи world.gd::talk():
+## elder: 0 => взять, 1 + herbs>=3 => сдать; merchant: 0 => взять,
+## 1 + slime_kills_circle>=3 => сдать. Однократность «Трав» обеспечивает сам
+## elder_quest: после meta.q_elder_done круг стартует с 2 (_wipe_circle) —
+## стадии 0 (а значит, и «!») больше не будет. Кузнец квестов не даёт;
+## Геральд — внутренний класс dungeon_zone.gd (не npc.gd), здесь не описан.
+static func marker_state(gs, npc_id: String) -> int:
+	match npc_id:
+		"elder":
+			if int(gs.elder_quest) == 1 and int(gs.herbs) >= 3:
+				return MARKER_READY
+			if int(gs.elder_quest) == 0:
+				return MARKER_TAKE
+		"merchant":
+			if int(gs.slime_quest) == 1 and int(gs.slime_kills_circle) >= 3:
+				return MARKER_READY
+			if int(gs.slime_quest) == 0:
+				return MARKER_TAKE
+	return MARKER_NONE
+
 ## Статус квеста: сюжетные — из полей-канона GameState, побочки — из флага "q.<id>".
 static func status(gs, id: String) -> int:
 	match id:
@@ -306,6 +331,21 @@ static func refresh(gs) -> void:
 					gs.quest_changed.emit()
 			_:
 				pass
+
+## Вечная метка однократности сюжетных «Трав» (задача «Квесты: однократность
+## + маркеры»). Сдача (elder_quest>=2) ставит meta.q_elder_done: meta.* —
+## вечный слой, переживает вайп q.* и сюжетных полей (_wipe_circle), поэтому
+## в новом круге/после смерти world.talk("elder") не увидит стадию 0 — ни
+## повторной выдачи, ни повторной награды. Идемпотентна; true — только
+## первая постановка (вызывающему зафиксировать автосейвом). refresh()
+## сюжетные квесты не трогает никогда, поэтому метку зовёт npc.gd синхронно
+## на quest_changed: world.gd в колбэке сдачи пишет elder_quest=2 и сразу
+## эмитит quest_changed — гонки со смертью/вайпом не остаётся.
+static func sync_story_permanence(gs) -> bool:
+	if int(gs.elder_quest) >= 2 and int(gs.get_flag("meta.q_elder_done", 0)) == 0:
+		gs.set_flag("meta.q_elder_done", 1)
+		return true
+	return false
 
 ## Кумулятивный учёт собранного материала: сколько прибавилось в рюкзаке с
 ## прошлого тика — то «собрано» (варка/трата не откатывает прогресс цели).
