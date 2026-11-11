@@ -514,8 +514,9 @@ func sim_achv_gates() -> void:
 		and String(_catalog_row("treasure").get("desc", "")) == "Открыть все сундуки мира.")
 	ck("D2.витрина hunter_100: goal=40 (число синхронно гейту)",
 		int(_catalog_row("hunter_100").get("goal", 0)) == 40)
-	ck("D2.каталог: witch_slayer добавлен (18 строк)",
-		_catalog_row("witch_slayer") != null and AchvCatalog.ITEMS.size() == 18)
+	ck("D2.каталог: witch_slayer+смерть-вехи добавлены (20 строк)",
+		_catalog_row("witch_slayer") != null and _catalog_row("rekindled") != null
+		and _catalog_row("undying") != null and AchvCatalog.ITEMS.size() == 20)
 
 func _catalog_row(id: String) -> Dictionary:
 	for r in AchvCatalog.ITEMS:
