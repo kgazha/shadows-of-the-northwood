@@ -1013,3 +1013,284 @@ static func _reachable(reach: Dictionary, t: Vector2i) -> bool:
 		if reach.has(_key(Vector2i(t.x + int(d[0]), t.y + int(d[1])))):
 			return true
 	return false
+
+# ============================================================================
+# T3: расстановка юнитов (place_units) + профили волн (data/proc_profiles.json)
+# ============================================================================
+
+## ----------------------------------------------------------------------------
+## place_units — СИГНАТУРА КАНОНИЗИРОВАНА в T3 (вместо литеры PROCGEN_PLAN §5
+## «place_units(grid, rng, pois, bands, caps, profile)», по решению родителя):
+##
+##   place_units(zone_seed: int, map: Dictionary, zone_id: String,
+##               wave: int = 1) -> Dictionary
+##
+##   zone_seed — сид зоны (обычно ProcGen.seed_zone(run_seed, zone, wave));
+##   map       — словарь формата cave_map(...)/ashen_map(...) (тот же формат,
+##               что у data/map_cave.json / data/map_ashen.json, т.е. и
+##               «ручные» карты пригодны напрямую);
+##   zone_id   — "cave" | "ashen";
+##   wave      — номер волны ng_wave (1..PLACE_MAX_WAVE; выше таблицы —
+##               максимальная существующая строка не больше wave; wave<1 == 1).
+##
+## Возврат: {"units": [{"kind": String, "tier": int, "pos": [x, y]}, ...],
+##           "chest_bonus": int} — units строго в порядке row-major скана;
+## tier = 1..3 (для cave = глубинная полоса, для ashen = индекс вида + 1);
+## chest_bonus — флаг бонусного сундука волны (0/1; сам сундук раскладывает
+## потребитель).
+##
+## ЗОЛОТОЙ ТЕСТ (приёмка T3): при zone_seed == 0 (в профиле — "legacy_seed")
+## на РУЧНОЙ карте data/map_cave.json и wave 1 выдаёт расстановку, равную
+## множеству world._spawn_cave_mobs (world.gd:401–444 — эталон, 11 брутов).
+## Золотистость по построению: сидовый член фильтра
+##   delta(seed, x, y) = mixi(seed, k, PLACE_SEED_SALT) - mixi(0, k, PLACE_SEED_SALT),
+##   k = x*31 + y*17, фильтр: (k + delta) mod 3 == 0
+## при seed == 0 тождественно равен 0, и фильтр совпадает с каноническим
+## (x*31 + y*17) % 3 == 0 из эталона. Радиусы POI, полосы и капсы wave 1
+## ([3,4,5]) в профиле — тоже канонические (world.gd:45–46).
+##
+## Чистота (D3): НИ GameState, НИ сцен, НИ randomize()/randi()/randf(); только
+## целочисленная арифметика zone_seed/map и числа профиля. Обход — row-major;
+## никакого обхода Dictionary в алгоритме (ключи POI, виды, волны — фиксированные
+## массивы / числовой цикл по известным ключам "1".."PLACE_MAX_WAVE").
+## ----------------------------------------------------------------------------
+
+const PROC_PROFILES_PATH := "res://data/proc_profiles.json"
+const PLACE_SEED_SALT := 0x51ED       # соль сидового сдвига хэш-фильтра
+const PLACE_MAX_WAVE := 16            # потолок номера волны в таблице профиля
+## Ключи якорей-POI (фиксированный порядок; boss_trigger POI НЕ является — в
+## эталоне его нет). Радиусы — из профиля зоны (по умолчанию = эталонные).
+const CAVE_POI_KEYS := ["spawn", "stairs_out", "chest", "door", "hermit", "boss"]
+const ASHEN_POI_KEYS := ["spawn", "exit_portal", "boss"]
+## Ключ-массив ashen -> имя радиуса в pois: [ключ в meta, ключ радиуса].
+const ASHEN_POI_LISTS := [["chests", "chest"], ["herbs", "herb"]]
+
+## Legacy-профиль пещеры = канон world._spawn_cave_mobs (world.gd:45–46):
+## полосы [4..7], [8..11], [12..inf], капсы wave 1 [3,4,5], радиусы POI
+## {spawn:4, stairs_out:2, chest:2, door:1, hermit:2, boss:3}. Фолбэк, если
+## JSON профилей нечитаем.
+const PLACE_DEF_CAVE := {
+	"kinds": ["brute", "brute_t2", "brute_t3"],
+	"bands": [[4, 7], [8, 11], [12, 999999]],
+	"pois": {"spawn": 4, "stairs_out": 2, "chest": 2, "door": 1, "hermit": 2, "boss": 3},
+	"legacy_seed": 0,
+	"waves": {"1": {"caps": [3, 4, 5], "chest_bonus": 0}},
+}
+## Legacy-профиль Пепелища = канон ashen_map/_scatter: archers 3 (ot spawn >=4),
+## wraiths 4 (>=6), swarm 4 (>=6); радиусы {spawn:4, exit_portal:2, boss:5,
+## chest:2, herb:1}. Фолбэк.
+const PLACE_DEF_ASHEN := {
+	"kinds": ["archer", "wraith", "swarmling"],
+	"min_spawn": [4, 6, 6],
+	"pois": {"spawn": 4, "exit_portal": 2, "boss": 5, "chest": 2, "herb": 1},
+	"legacy_seed": 0,
+	"waves": {"1": {"caps": [3, 4, 4], "chest_bonus": 0}},
+}
+
+static func place_units(zone_seed: int, map: Dictionary, zone_id: String, wave: int = 1) -> Dictionary:
+	var prof: Dictionary = _place_profile(zone_id, wave)
+	var kinds: Array = prof["kinds"]
+	var caps: Array = prof["caps"]
+	var bands: Array = prof["bands"]
+	var min_spawn: Array = prof["min_spawn"]
+	var bonus: int = int(prof["chest_bonus"])
+	var units: Array = []
+	var grid: Array = map.get("grid", [])
+	if grid.is_empty() or kinds.is_empty():
+		return {"units": units, "chest_bonus": bonus}
+	var pois: Array = _place_pois(map, zone_id, prof["pois"])
+	var sp: Array = _place_spawn(map, zone_id)
+	var sx := int(sp[0])
+	var sy := int(sp[1])
+	var total := 0
+	var counts: Array = []
+	for i in kinds.size():
+		counts.append(0)
+		total += int(caps[i])
+	var placed: Array = []  # Array[Vector2i] — только для интервала между юнитами
+	var full := false
+	var y := 0
+	while y < grid.size() and not full:
+		var row := String(grid[y])
+		for x in row.length():
+			var ch: String = row[x]
+			if ch != "." and ch != ",":
+				continue
+			var k := x * 31 + y * 17
+			var delta: int = mixi(zone_seed, k, PLACE_SEED_SALT) - mixi(0, k, PLACE_SEED_SALT)
+			if _mod3(k + delta) != 0:
+				continue
+			var d := maxi(absi(x - sx), absi(y - sy))
+			var kind: String = ""
+			var ki := -1
+			if not bands.is_empty():
+				# Пещера: вид = глубинная полоса от spawn (эталон world.gd:401–444).
+				if d < int(bands[0][0]):
+					continue
+				ki = bands.size() - 1
+				for i in bands.size():
+					if d <= int(bands[i][1]):
+						ki = i
+						break
+			else:
+				# Пепелище: вид по перебору фиксированного порядка — первый с
+				# остатком капса и выдержанным min_spawn от spawn.
+				for i in kinds.size():
+					if int(counts[i]) >= int(caps[i]):
+						continue
+					if d < int(min_spawn[i]):
+						continue
+					ki = i
+					break
+			if ki < 0 or int(counts[ki]) >= int(caps[ki]):
+				continue
+			var t := Vector2i(x, y)
+			if _place_near_poi(t, pois):
+				continue
+			if _place_near_placed(placed, t):
+				continue
+			kind = String(kinds[ki])
+			counts[ki] = int(counts[ki]) + 1
+			units.append({"kind": kind, "tier": ki + 1, "pos": [x, y]})
+			placed.append(t)
+			if units.size() >= total:
+				full = true
+				break
+		y += 1
+	return {"units": units, "chest_bonus": bonus}
+
+## Отрицательный остаток в GDScript отрицателен — нормализуем mod 3.
+static func _mod3(v: int) -> int:
+	return ((v % 3) + 3) % 3
+
+## Профиль зоны/волны: JSON PROC_PROFILES_PATH; при нечитаемости файла/зоны/
+## строки — встроенные legacy-константы (wave 1). Строка волны: точная; иначе
+## максимальная существующая не больше wave. Перебор — числовой цикл по ключам
+## "1".."PLACE_MAX_WAVE", без обхода Dictionary.
+static func _place_profile(zone_id: String, wave: int) -> Dictionary:
+	var def: Dictionary = PLACE_DEF_CAVE if zone_id == "cave" else PLACE_DEF_ASHEN
+	var zd: Dictionary = def
+	var doc: Variant = _load_profiles()
+	if typeof(doc) == TYPE_DICTIONARY:
+		var z: Variant = (doc as Dictionary).get(zone_id, null)
+		if typeof(z) == TYPE_DICTIONARY:
+			zd = z
+	var kinds: Array = _as_arr(zd.get("kinds", null))
+	var row: Dictionary = _wave_row(zd.get("waves", null), wave)
+	var caps: Array = _as_arr(row.get("caps", null))
+	if kinds.is_empty() or caps.size() != kinds.size():
+		zd = def
+		kinds = _as_arr(zd["kinds"])
+		row = _wave_row(zd["waves"], wave)
+		caps = _as_arr(row["caps"])
+	var bands: Array = _as_arr(zd.get("bands", null))
+	if zone_id == "cave" and not _bands_ok(bands, kinds.size()):
+		bands = _as_arr(def["bands"])
+	var min_spawn: Array = _as_arr(zd.get("min_spawn", null))
+	if zone_id != "cave" and min_spawn.size() != kinds.size():
+		min_spawn = _as_arr(def["min_spawn"])
+	var pois: Variant = zd.get("pois", null)
+	if typeof(pois) != TYPE_DICTIONARY:
+		pois = def["pois"]
+	return {
+		"kinds": kinds, "caps": caps, "bands": bands, "min_spawn": min_spawn,
+		"pois": pois, "chest_bonus": int(row.get("chest_bonus", 0)),
+	}
+
+static func _as_arr(v: Variant) -> Array:
+	return v if typeof(v) == TYPE_ARRAY else []
+
+static func _bands_ok(bands: Array, n: int) -> bool:
+	if bands.size() != n:
+		return false
+	for b in bands:
+		if typeof(b) != TYPE_ARRAY or (b as Array).size() < 2:
+			return false
+	return true
+
+## JSON профилей читается при каждом вызове (как шаблоны _load_templates) —
+## кэша нет, вызовов мало, чистота и свежесть важнее.
+static func _load_profiles() -> Variant:
+	if not FileAccess.file_exists(PROC_PROFILES_PATH):
+		push_warning("ProcGen: нет профилей волн %s — канон wave 1" % PROC_PROFILES_PATH)
+		return null
+	var f := FileAccess.open(PROC_PROFILES_PATH, FileAccess.READ)
+	if f == null:
+		return null
+	return JSON.parse_string(f.get_as_text())
+
+## Строка волны из словаря {"1": {...}, ...}: точная или максимальная
+## существующая <= wave; пусто — {}. Ключи — числа, обход числовой.
+static func _wave_row(waves: Variant, wave: int) -> Dictionary:
+	if typeof(waves) != TYPE_DICTIONARY:
+		return {}
+	var last := {}
+	var want := maxi(1, wave)
+	for i in range(1, PLACE_MAX_WAVE + 1):
+		var key := str(i)
+		if not (waves as Dictionary).has(key):
+			continue
+		var cand: Variant = (waves as Dictionary)[key]
+		if typeof(cand) != TYPE_DICTIONARY:
+			continue
+		last = cand
+		if i == want:
+			return cand
+	return last
+
+## POI зоны: triple-массив [x, y, r]. Ключи — фиксированные списки выше;
+## вложенная форма [[x, y]] (door на ручной карте) сворачивается в первую пару.
+static func _place_pois(map: Dictionary, zone_id: String, pois: Dictionary) -> Array:
+	var src: Variant = map.get("meta", {}) if zone_id == "ashen" else map
+	var out: Array = []
+	if typeof(src) != TYPE_DICTIONARY:
+		return out
+	var sd: Dictionary = src
+	if zone_id == "ashen":
+		for key in ASHEN_POI_KEYS:
+			_poi_add(out, sd.get(key, null), int(pois.get(key, 0)))
+		for pairv in ASHEN_POI_LISTS:
+			var lst: Variant = sd.get(String(pairv[0]), null)
+			if typeof(lst) == TYPE_ARRAY:
+				var r := int(pois.get(String(pairv[1]), 0))
+				for p in (lst as Array):
+					_poi_add(out, p, r)
+	else:
+		for key in CAVE_POI_KEYS:
+			_poi_add(out, sd.get(key, null), int(pois.get(key, 0)))
+	return out
+
+static func _poi_add(out: Array, v: Variant, r: int) -> void:
+	if typeof(v) != TYPE_ARRAY:
+		return
+	var a: Array = v
+	if a.size() >= 1 and typeof(a[0]) == TYPE_ARRAY:
+		a = a[0]
+	if a.size() < 2:
+		return
+	out.append([int(a[0]), int(a[1]), r])
+
+## spawn зоны: верхний уровень (cave) или meta (ashen). Нет — [-1,-1].
+static func _place_spawn(map: Dictionary, zone_id: String) -> Array:
+	var src: Variant = map.get("meta", {}) if zone_id == "ashen" else map
+	if typeof(src) == TYPE_DICTIONARY:
+		var v: Variant = (src as Dictionary).get("spawn", null)
+		if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
+			return [int((v as Array)[0]), int((v as Array)[1])]
+	return [-1, -1]
+
+## Эталонный _near_cave_poi: cheb <= r хотя бы от одного POI.
+static func _place_near_poi(t: Vector2i, pois: Array) -> bool:
+	for p in pois:
+		var a: Array = p
+		if maxi(absi(t.x - int(a[0])), absi(t.y - int(a[1]))) <= int(a[2]):
+			return true
+	return false
+
+## Эталонный _near_placed: cheb < 2 (т.е. 8-соседство) к любому поставленному.
+static func _place_near_placed(placed: Array, t: Vector2i) -> bool:
+	for u in placed:
+		var v: Vector2i = u
+		if maxi(absi(t.x - v.x), absi(t.y - v.y)) < 2:
+			return true
+	return false

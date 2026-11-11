@@ -1,0 +1,61 @@
+{
+	"_doc": [
+		"Профили волн ProcGen.place_units (T3). Формат (канон зафиксирован в",
+		"pixel-rpg/scripts/procregion.gd, секция T3):",
+		"  version      — версия схемы (1).",
+		"  <zone_id>    — секция зоны: 'cave' | 'ashen'.",
+		"    kinds      — фиксированный порядок видов юнитов (индекс = tier-1);",
+		"                 имена = лут-киды RP3: cave brute/brute_t2/brute_t3",
+		"                 (вид = глубинная полоса от spawn), ashen",
+		"                 archer/wraith/swarmling (вид = первый с остатком капса",
+		"                 и выдержанным min_spawn).",
+		"    caps       — на строке волны: лимиты ИСПОЛЬНЕНИЯ по видам (row-major",
+		"                 скан, капс вида не пускает дальше по этому виду).",
+		"    bands      — только cave: полосы глубины [lo, hi] по Chebyshev от",
+		"                 spawn; wave 1 = канон world.gd:45 [4..7],[8..11],[12..].",
+		"    min_spawn  — только ashen: мин. Chebyshev от spawn по видам",
+		"                 (канон _scatter: 4/6/6).",
+		"    pois       — радиусы-запретники якорей (Chebyshev <= r); cave:",
+		"                 spawn/stairs_out/chest/door/hermit/boss (канон",
+		"                 world.gd:401–444; boss_trigger — НЕ POI); ashen:",
+		"                 spawn/exit_portal/boss + массивы chests/herbs из meta.",
+		"    legacy_seed— сид, при котором расстановка побайтово совпадает с",
+		"                 эталоном world._spawn_cave_mobs (золотой тест T3:",
+		"                 seed 0, ручная map_cave.json, wave 1 -> 11 брутов).",
+		"    waves      — строки '1'..'5'; выше таблицы берётся максимальная",
+		"                 существующая строка <= wave. Рост с ng_wave: капсы,",
+		"                 chest_bonus=1 с волны 3 (план §2.2: лут-сундук 1 +",
+		"                 бонусный на w>=3; флаг, раскладывает потребитель).",
+		"    mobs_per_100_walkable, herbs — СПРАВОЧНЫЕ величин для QA-коридора",
+		"                 ±20% (план §3.2.4); place_units их НЕ читает.",
+		"Числа волн 2..5 — черновой баланс (правит балансировщик); wave 1 —",
+		"эталонные константы, менять нельзя (ломает золотой тест)."
+	],
+	"version": 1,
+	"cave": {
+		"kinds": ["brute", "brute_t2", "brute_t3"],
+		"bands": [[4, 7], [8, 11], [12, 999999]],
+		"pois": {"spawn": 4, "stairs_out": 2, "chest": 2, "door": 1, "hermit": 2, "boss": 3},
+		"legacy_seed": 0,
+		"waves": {
+			"1": {"caps": [3, 4, 5], "chest_bonus": 0, "mobs_per_100_walkable": 7.0},
+			"2": {"caps": [4, 5, 6], "chest_bonus": 0, "mobs_per_100_walkable": 8.5},
+			"3": {"caps": [4, 6, 7], "chest_bonus": 1, "mobs_per_100_walkable": 10.0},
+			"4": {"caps": [5, 7, 8], "chest_bonus": 1, "mobs_per_100_walkable": 11.5},
+			"5": {"caps": [6, 8, 9], "chest_bonus": 1, "mobs_per_100_walkable": 13.0}
+		}
+	},
+	"ashen": {
+		"kinds": ["archer", "wraith", "swarmling"],
+		"min_spawn": [4, 6, 6],
+		"pois": {"spawn": 4, "exit_portal": 2, "boss": 5, "chest": 2, "herb": 1},
+		"legacy_seed": 0,
+		"waves": {
+			"1": {"caps": [3, 4, 4], "chest_bonus": 0, "mobs_per_100_walkable": 1.4, "herbs": 3},
+			"2": {"caps": [4, 5, 5], "chest_bonus": 0, "mobs_per_100_walkable": 1.8, "herbs": 3},
+			"3": {"caps": [5, 6, 6], "chest_bonus": 1, "mobs_per_100_walkable": 2.2, "herbs": 4},
+			"4": {"caps": [6, 7, 7], "chest_bonus": 1, "mobs_per_100_walkable": 2.6, "herbs": 4},
+			"5": {"caps": [7, 8, 8], "chest_bonus": 1, "mobs_per_100_walkable": 3.0, "herbs": 5}
+		}
+	}
+}
