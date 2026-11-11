@@ -1,7 +1,10 @@
 extends Node2D
-## Пещера «Осквернение»: карта data/map_cave.json, тайлы assets/dungeon_tiles.png
-## (регион index*16, 0, 16, 16), стены, отшельник, лестница выхода, запертая дверь,
-## алтарный сундук и босс. Публичный API: setup(p_world) -> void.
+## Пещера «Осквернение»: карта — ProcGen-словарь из world._build_cave (T4),
+## формат тот же, что у эталона data/map_cave.json (grid+якоря верхним уровнем);
+## пуст/бит словарь — откат на эталон с push_warning. Тайлы
+## assets/dungeon_tiles.png (регион index*16, 0, 16, 16), стены, отшельник,
+## лестница выхода, запертая дверь, алтарный сундук и босс.
+## Публичный API: setup(p_world, p_map) -> void.
 ## Вход/выход: world.enter_cave() / world.exit_cave() (меняют видимость зон).
 
 const TILE := 16
@@ -27,18 +30,33 @@ var hermit_node: Node2D
 var boss_node: Node2D
 var chest_node: Node2D
 var stairs_node: Node2D
+## Фактически построенный словарь карты (генераторный или фолбэк-эталон) —
+## world расставляет по нему мобов (ProcGen.place_units) и эмберы.
+var loaded_map: Dictionary = {}
 
-func setup(p_world: Node2D) -> void:
+func setup(p_world: Node2D, p_map: Dictionary = {}) -> void:
 	world = p_world
-	if not FileAccess.file_exists("res://data/map_cave.json"):
-		push_warning("Нет карты data/map_cave.json — пещера не построена")
-		return
-	var f := FileAccess.open("res://data/map_cave.json", FileAccess.READ)
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("Повреждена карта data/map_cave.json — пещера не построена")
-		return
-	var m: Dictionary = parsed
+	# Основной путь (T4): ProcGen-словарь из world._build_cave — grid-строки и
+	# якоря (spawn/stairs_out/hermit/boss/boss_trigger/chest/door) верхним
+	# уровнем, тот же формат, что у map_cave.json. Пуст/бит — откат на эталон.
+	var m: Dictionary = {}
+	if typeof(p_map.get("grid", null)) == TYPE_ARRAY \
+			and not (p_map["grid"] as Array).is_empty() \
+			and typeof((p_map["grid"] as Array)[0]) == TYPE_STRING \
+			and String((p_map["grid"] as Array)[0]).length() > 0:
+		m = p_map
+	else:
+		push_warning("ProcGen-словарь пещеры пуст/бит — откат на эталон data/map_cave.json")
+		if not FileAccess.file_exists("res://data/map_cave.json"):
+			push_warning("Нет карты data/map_cave.json — пещера не построена")
+			return
+		var f := FileAccess.open("res://data/map_cave.json", FileAccess.READ)
+		var parsed: Variant = JSON.parse_string(f.get_as_text())
+		if typeof(parsed) != TYPE_DICTIONARY:
+			push_warning("Повреждена карта data/map_cave.json — пещера не построена")
+			return
+		m = parsed
+	loaded_map = m
 	map_rows = m["grid"]
 	map_h = map_rows.size()
 	map_w = String(map_rows[0]).length()

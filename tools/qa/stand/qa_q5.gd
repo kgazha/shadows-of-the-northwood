@@ -147,7 +147,9 @@ func open_cave_chest() -> void:  # dungeon_zone.gd CaveChest fixed
 		gs.toast.emit("Сундук пуст — амулет уже у тебя.")  # fixed-ветка dungeon_zone.gd
 		return
 	gs.has_amulet = true
-	gs.chest_mark_used("chest@cave:18,18")
+	# PIN-SEED 42 (T4): сундук генераторной пещеры seed_zone(42,"cave",0) стоит
+	# на (9,12) (дамп scratch_cm/dump_cave42.gd) — литерал ручной карты 18,18 мёртв.
+	gs.chest_mark_used("chest@cave:9,12")
 	Achv.on_chest_opened()
 	gs.recalc_max_hp()
 	gs.quest_changed.emit()
@@ -447,7 +449,7 @@ func sim_ng_plus() -> void:
 	var marks0: int = gs.chests_used.size()
 	open_cave_chest()
 	ck("C4.сундук круга 2 при амулете: ни метки, ни прогресса treasure",
-		gs.chests_used.size() == marks0 and not bool(gs.chest_used("chest@cave:18,18")))
+		gs.chests_used.size() == marks0 and not bool(gs.chest_used("chest@cave:9,12")))
 	# честность вкладки «Достижения» на живом Journal (до легаси-сейва, что сотрёт ach.*)
 	sim_journal_honesty()
 	# легаси-сейв: seed кругового счётчика тоталом (активный квест не обнуляется)
@@ -575,7 +577,7 @@ func sim_old_holes() -> void:
 	hole("H5.алтарный сундук в круге 2 — «Открыть сундук» без ответа",
 		not any_toast("Сундук пуст"), "fixed: toast-ответ + ни метки, ни лута")
 	ck("H5.и по-прежнему ни метки, ни двойного амулета",
-		not bool(gs.chest_used("chest@cave:18,18")) and bool(gs.has_amulet))
+		not bool(gs.chest_used("chest@cave:9,12")) and bool(gs.has_amulet))
 	# --- H6/D4/H7: статические пробы исходников (поставка, не реплика) ---
 	var src_cave := file_src("res://scripts/dungeon_zone.gd")
 	var src_ashen := file_src("res://scripts/ashen_zone.gd")

@@ -32,7 +32,8 @@ func section_spawn() -> void:
 		check("S1: крыса swarm_id=glade_west", String(r.swarm_id) == "glade_west")
 	for wr in wraiths:
 		var t3 := tile_of((wr as Node2D).position)
-		check("S1: тенеплёт на тайле пещеры %s" % str(t3), t3 == Vector2i(9, 16) or t3 == Vector2i(13, 17))
+		# T4: тенеплёты от генератора (ниши у босса), факт seed 42 / wave 0.
+		check("S1: тенеплёт на тайле пещеры %s" % str(t3), t3 == Vector2i(15, 7) or t3 == Vector2i(16, 7))
 		check("S1: тайл тенеплёта %s проходим" % str(t3), cave_tile_walkable(t3))
 
 ## Кандидатная позиция стаба вокруг точки center на дистанции dist с LOS от archer.

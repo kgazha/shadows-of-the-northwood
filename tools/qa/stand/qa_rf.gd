@@ -13,12 +13,19 @@ extends Node2D
 ## Временный харнесс песочницы: в дифф не входит.
 
 const SAVE := "user://save_morkheim.json"
-const DOOR := Vector2i(17, 18)
-const CHEST := Vector2i(18, 18)
+# PIN-SEED 42 (T4): пещера строится генератором seed_zone(42,"cave",0) — свежий
+# сейв без ng.wave. Якоря/подход/ниша/босс — фактические клетки карты этой цепи
+# (дамп scratch_cm/dump_cave42.gd), прежние литералы ручной map_cave.json удалены.
+const PIN_SEED := 42
+const DOOR := Vector2i(10, 12)
+const CHEST := Vector2i(9, 12)
+const APPROACH := Vector2i(11, 12)  # проходимая клетка коридора у двери (восток)
+const NICHE := Vector2i(9, 13)      # проходимая клетка ниши у сундука (юг)
+const BOSS := Vector2i(16, 8)
 const HINT_DOOR := "Открыть дверь"
 const HINT_CHEST := "Открыть сундук"
-const CAVE_PX := 264.0
-const CAVE_PY := 5096.0  # клетка (16,18) — коридор у открытой двери, в стороне от лестницы выхода
+const CAVE_PX := 184.0
+const CAVE_PY := 5000.0  # глобаль (CAVE_OFFSET.y 4800 + клетка 12) — коридор у открытой двери, в стороне от лестницы выхода
 
 var total := 0
 var ok := 0
@@ -86,7 +93,7 @@ func _case_door(dz) -> void:
 	_chk("s1: CaveDoor не заспавнен (нет фантомной подсказки)", _hint_node(dz, HINT_DOOR) == null)
 	_chk("s1: тайл двери = атлас 0", _atlas_x(dz, DOOR) == 0)
 	_probe("s1: клетка двери (%d,%d) свободна" % [DOOR.x, DOOR.y], _w(DOOR), false)
-	_probe("s1: подход (%d,%d) свободен" % [16, 18], _w(Vector2i(16, 18)), false)
+	_probe("s1: подход (%d,%d) свободен" % [APPROACH.x, APPROACH.y], _w(APPROACH), false)
 	_chk("s1: тон атмосферы — пещера мгновенно (zone_changed(in_cave, true) уже знает зону)", _is_cave_tint())
 	_chk("s1: игрок в пещере", main.player.global_position.y > main.CAVE_OFFSET.y)
 
@@ -98,7 +105,7 @@ func _case_chest(dz) -> void:
 	_chk("s2: dz.chest_node не висит", dz.chest_node == null or not is_instance_valid(dz.chest_node))
 	_chk("s2: тайл сундука = атлас 12", _atlas_x(dz, CHEST) == 12)
 	_probe("s2: клетка сундука (%d,%d) свободна" % [CHEST.x, CHEST.y], _w(CHEST), false)
-	_probe("s2: ниша (%d,%d) свободна" % [19, 18], _w(Vector2i(19, 18)), false)
+	_probe("s2: ниша (%d,%d) свободна" % [NICHE.x, NICHE.y], _w(NICHE), false)
 	_chk("s2: cell_walkable(сундук) == true", dz.cell_walkable(CHEST))
 
 ## 3: привал и деревенский сундук уже использованы.
@@ -145,7 +152,7 @@ func _case_boss(dz) -> void:
 	_chk("s4: боссов в дереве 0 (лут не задваивается)", bosses == 0)
 	_chk("s4: обычные мобны спавнятся (>=1)", mobs >= 1)
 	_chk("s4: BossTrigger не мешает (нет диалога)", not main.hud.is_dialog_open())
-	_probe("s4: клетка босса (12,16) пуста (тела врага нет)", _w(Vector2i(12, 16)), false, 4)
+	_probe("s4: клетка босса (%d,%d) пуста (тела врага нет)" % [BOSS.x, BOSS.y], _w(BOSS), false, 4)
 
 ## 5: старый сейв без v2-полей.
 func _case_legacy() -> void:
@@ -181,6 +188,9 @@ func _seed_save(s: int) -> void:
 		"hp": 20, "mana": 5, "seen_intro": true, "in_cave": false,
 		"px": 136.0, "py": 168.0, "pos_valid": true,
 		"v": 2, "gold": 10,
+		# PIN-SEED: сид забега приезжает в сейве — load_game() применит его ДО
+		# _build_cave(), пещера s1..s4 детерминирована (константы выше).
+		"run_seed": PIN_SEED,
 	}
 	match s:
 		1:

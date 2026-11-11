@@ -46,6 +46,9 @@ func read_clickmove_cfg() -> Variant:
 
 func _ready() -> void:
 	# ВАЖНО: сейв и clickmove_cfg НЕ удаляем — это и есть проверка рестарта.
+	# PIN-SEED 42 (T4): канонический сид приезжает из сейва qa_r1; присваивание
+	# ниже — страховка стенда, запущенного без сейва (детерминизм пещеры).
+	GameState.run_seed = 42
 	print("NOTE cfg at start: %s" % str(read_clickmove_cfg()))
 	world = load("res://scenes/main.tscn").instantiate()
 	add_child(world)

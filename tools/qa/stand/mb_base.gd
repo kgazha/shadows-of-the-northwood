@@ -113,6 +113,8 @@ func save_for(cave_state: int) -> Dictionary:
 		"seen_intro": true, "seen_cave_intro": true, "seen_boss_intro": true,
 		"cave_state": cave_state, "in_cave": false,
 		"gold": 0, "gear": {"weapon": "", "armor": ""}, "flags": {},
+		# T4: пин канон-сида — пещера детерминирована (якори/мобы от генератора).
+		"run_seed": 42,
 	}
 
 class PStub extends CharacterBody2D:

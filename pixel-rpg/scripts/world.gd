@@ -321,7 +321,9 @@ func _build_cave() -> void:
 	cave_map = ProcGen.cave_map(ProcGen.seed_zone(GameState.run_seed, CAVE_ZONE_ID, GameState.ng_wave()))
 	var dz = load("res://scripts/dungeon_zone.gd").new()
 	cave_zone.add_child(dz)
-	dz.setup(self)
+	# Словарь-шов §2: карта пещеры строится генератором (как Пепелище в T5b);
+	# битый/пустой dict dungeon_zone сам откатывает на эталон map_cave.json.
+	dz.setup(self, cave_map)
 	dungeon_zone = dz
 	_spawn_cave_embers()
 	_apply_cave_shapes(dz)
@@ -330,21 +332,68 @@ func _build_cave() -> void:
 	GameState.stats_changed.connect(_sync_cave_chest)
 	_spawn_cave_mobs()
 	# Тенеплёты в нише босса (появляются только живым боссом, песочница sand_m).
+	# Клетки — из сетки вокруг якоря boss (литералы ручной карты удалены, T4):
+	# две первые проходимые «.,»-клетки ближних колец, row-major по кольцам.
 	if not GameState.boss_defeated and dungeon_zone != null and dungeon_zone.boss_node != null:
 		var wraith_script := load("res://scripts/mob_wraith.gd")
-		for t: Vector2i in [Vector2i(9, 16), Vector2i(13, 17)]:
-			var wr = wraith_script.new()
-			dungeon_zone.add_child(wr)
-			wr.setup(self, t)
+		var bmeta: Array = dungeon_zone.loaded_map.get("boss", [])
+		if bmeta.size() == 2:
+			var bt := Vector2i(int(bmeta[0]), int(bmeta[1]))
+			var used: Array = []
+			for _i in 2:
+				var spot := _cave_free_near(bt, 1, 8, used)
+				if spot == Vector2i(-1, -1):
+					break
+				used.append(spot)
+				var wr = wraith_script.new()
+				dungeon_zone.add_child(wr)
+				wr.setup(self, spot)
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
 
-## Тлеющие угли — 3 точки пещеры (у входа, у комнаты отшельника, у зала босса).
-## Генераторы живут в cave_zone: с выходом из пещеры замирают (DISABLED),
-## со сменой сцены удаляются вместе с зоной — утечек нет.
+## Первая проходимая клетка-«пол» ('.'/','), отсутствующая в banned: обход
+## колец Chebyshev d_min..d_max от t0 (внутри кольца — row-major). Якоря/двери/
+## сундуки/лестницы не «пол» — их клетки автоматически пропускаются.
+## Нет кандидата (t0 вне карты, всё занято) — Vector2i(-1,-1).
+func _cave_free_near(t0: Vector2i, d_min: int, d_max: int, banned: Array) -> Vector2i:
+	if dungeon_zone == null:
+		return Vector2i(-1, -1)
+	var dz = dungeon_zone
+	for d in range(d_min, d_max + 1):
+		for y in range(t0.y - d, t0.y + d + 1):
+			if y < 0 or y >= dz.map_rows.size():
+				continue
+			var row := String(dz.map_rows[y])
+			for x in range(t0.x - d, t0.x + d + 1):
+				if maxi(absi(x - t0.x), absi(y - t0.y)) != d:
+					continue
+				if x < 0 or x >= row.length():
+					continue
+				var ch: String = row[x]
+				if ch != "." and ch != ",":
+					continue
+				var t := Vector2i(x, y)
+				if t in banned:
+					continue
+				return t
+	return Vector2i(-1, -1)
+
+## Тлеющие угли — из сетки (T4): по одному у каждого якоря-ориентира ручной
+## расстановки (у входа, у комнаты отшельника, у зала босса) на ближайшей
+## проходимой «.,»-клетке (кольца 1..2). На генераторной карте прежние три
+## фиксированные точки легли бы в стены.
 func _spawn_cave_embers() -> void:
-	for t: Vector2i in [Vector2i(15, 2), Vector2i(23, 11), Vector2i(13, 15)]:
-		var e := Fx.ember_bed(Vector2(t.x * TILE + 8, t.y * TILE + 10))
+	if dungeon_zone == null:
+		return
+	var m: Dictionary = dungeon_zone.loaded_map
+	for key: String in ["spawn", "hermit", "boss"]:
+		var a: Array = m.get(key, [])
+		if a.size() != 2:
+			continue
+		var spot := _cave_free_near(Vector2i(int(a[0]), int(a[1])), 1, 2, [])
+		if spot == Vector2i(-1, -1):
+			continue
+		var e := Fx.ember_bed(Vector2(spot.x * TILE + 8, spot.y * TILE + 10))
 		if e != null:
 			cave_zone.add_child(e)
 
@@ -395,71 +444,34 @@ func _sync_cave_chest() -> void:
 		if t == dungeon_zone.chest_tile:
 			cs.queue_free()
 
-## Детерминированный спавн мобов по ярусам глубины (см. CAVE_MOB_BANDS/CAPS):
-## тайлы проходимы, подальше от «точек интереса», не в узких коридорах, с
-## интервалом ≥2. Плотность ограничена(cap), состав — см. brute.TIERS.
+## Расстановка мобов — ProcGen.place_units (T3, профили волн
+## data/proc_profiles.json) на фактической карте пещеры. Мануальные литералы
+## удалены: золотой эталон (legacy_seed 0 = 11 брутов ручной карты) держит
+## золотой тест T3, world его не воспроизводит. Вид/ярус/клетка — из units[]
+## (row-major, капсы/полосы — профиль); интервалы и POI-запретники внутри
+## place_units.
 func _spawn_cave_mobs() -> void:
 	if dungeon_zone == null:
 		return
 	var dz = dungeon_zone
-	var sp: Vector2i = dz.spawn_tile
-	var pois: Array = [[sp, 4], [dz.chest_tile, 2], [dz.door_tile, 1]]
-	if dz.stairs_node != null:
-		pois.append([_node_tile(dz.stairs_node), 2])
-	if dz.hermit_node != null:
-		pois.append([_node_tile(dz.hermit_node), 2])
-	if dz.boss_node != null:
-		pois.append([_node_tile(dz.boss_node), 3])
-	var counts := {1: 0, 2: 0, 3: 0}
-	var placed: Array = []
-	for y in dz.map_h:
-		var row := String(dz.map_rows[y])
-		for x in row.length():
-			var ch: String = row[x]
-			if ch != "." and ch != ",":
-				continue
-			var d := maxi(absi(x - sp.x), absi(y - sp.y))
-			if d < 4:
-				continue
-			var tier := 1
-			if d > 7:
-				tier = 2
-			if d > 11:
-				tier = 3
-			if counts[tier] >= int(CAVE_MOB_CAPS[tier]):
-				continue
-			if d < int(CAVE_MOB_BANDS[tier][0]):
-				continue
-			if (x * 31 + y * 17) % 3 != 0:
-				continue
-			var t := Vector2i(x, y)
-			if not dz.cell_walkable(t) or _near_cave_poi(t, pois) or _near_placed(placed, t):
-				continue
-			var m = load("res://scripts/brute.gd").new()
-			m.boss = false
-			m.tier = tier
-			dz.add_child(m)
-			m.setup(self, t)
-			counts[tier] += 1
-			placed.append(t)
-
-func _node_tile(n: Node2D) -> Vector2i:
-	return Vector2i(int(n.position.x / float(TILE)), int((n.position.y - 2.0) / float(TILE)))
-
-func _near_cave_poi(t: Vector2i, pois: Array) -> bool:
-	for p: Array in pois:
-		var pt: Vector2i = p[0]
-		if pt.x < 0:
+	if dz.loaded_map.is_empty():
+		return
+	var zone_seed := ProcGen.seed_zone(GameState.run_seed, CAVE_ZONE_ID, GameState.ng_wave())
+	var res: Dictionary = ProcGen.place_units(zone_seed, dz.loaded_map, "cave", GameState.ng_wave())
+	for u: Variant in res.get("units", []):
+		if typeof(u) != TYPE_DICTIONARY:
 			continue
-		if maxi(absi(t.x - pt.x), absi(t.y - pt.y)) <= int(p[1]):
-			return true
-	return false
-
-func _near_placed(list: Array, t: Vector2i) -> bool:
-	for q: Vector2i in list:
-		if maxi(absi(t.x - q.x), absi(t.y - q.y)) < 2:
-			return true
-	return false
+		var pos: Array = (u as Dictionary).get("pos", [])
+		if pos.size() < 2:
+			continue
+		var t := Vector2i(int(pos[0]), int(pos[1]))
+		if not dz.cell_walkable(t):
+			continue
+		var m = load("res://scripts/brute.gd").new()
+		m.boss = false
+		m.tier = int((u as Dictionary).get("tier", 1))
+		dz.add_child(m)
+		m.setup(self, t)
 
 func _build_cave_entrance() -> void:
 	var stairs := CaveStairs.new()

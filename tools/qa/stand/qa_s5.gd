@@ -30,6 +30,11 @@ func _cave_bosses() -> Array:
 
 func _ready() -> void:
 	# сейв «босс уже мёртв»: cave_state=2 + boss_defeated
+	# PIN-SEED 42 (T4): сид приезжает в сейве и load_game() применит его до
+	# _build_cave() — генераторная пещера стенда детерминирована. Проверки
+	# стенда координатно-инвариантны (счётчики brute), пин — для воспроизводимости.
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_morkheim.json"))
+	GameState.run_seed = 42
 	GameState.class_id = "warrior"
 	GameState.seen_intro = true
 	GameState.cave_state = 2

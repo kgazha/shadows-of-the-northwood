@@ -49,6 +49,9 @@ func _ready() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_morkheim.json"))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://audio_cfg.json"))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://clickmove_cfg.json"))
+	# PIN-SEED 42 (T4): сид убеждает в final-seedsave ниже — процесс-2 (qa_r2)
+	# грузит его и строит ту же детерминированную генераторную пещеру.
+	GameState.run_seed = 42
 	GameState.class_id = "warrior"
 	GameState.seen_intro = true
 	world = load("res://scenes/main.tscn").instantiate()
