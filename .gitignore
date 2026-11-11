@@ -13,3 +13,7 @@ tools/appdata_*/
 tools/export_tpl/
 shots/
 build/
+
+# Мастерские агентов и сырые генерации (в игру попадает только утверждённое)
+scratch_cm/
+art_gen/
