@@ -163,7 +163,11 @@ func _ready() -> void:
 	var w1: int = GameState.start_ng_plus()
 	ck("start_returns_1", w1 == 1, "ret=%d" % w1)
 	ck("wave_is_1", GameState.ng_wave() == 1)
-	ck("reset_quests", GameState.elder_quest == 0 and GameState.slime_quest == 0)
+	# Новый канон (8f8dc78): квест старейшины однократный. Fixture сдал его
+	# (elder_quest=2) до NG+, sync по загрузке мира поставил meta.q_elder_done —
+	# вайп держит квест закрытым (2). Слайм-квест — по-прежнему per-circle сброс.
+	ck("reset_quests", GameState.elder_quest == 2 and GameState.slime_quest == 0)
+	ck("elder_done_pinned", int(GameState.flags.get("meta.q_elder_done", 0)) == 1)
 	ck("reset_cave", GameState.cave_state == 0 and not GameState.has_key \
 		and not GameState.door_opened and not GameState.boss_defeated)
 	ck("reset_chests_cf", GameState.chests_used.is_empty() and GameState.campfires_used.is_empty())
