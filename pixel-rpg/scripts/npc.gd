@@ -6,9 +6,13 @@ extends Area2D
 ## во время диалога/модалки (input_locked) прячемся; лёгкое синусоидальное
 ## покачивание — единственная пер-кадровая работа (косметика).
 
-const MARKER_BASE_Y := -25.0   # верхняя строка метки над макушкой (спрайт 16px)
+const MARKER_BASE_Y := -27.0   # верхняя строка метки над макушкой (волна 5: спрайт ×1.5, макушка ~-11.5)
 const MARKER_BOB_HZ := 3.4     # rad/s — спокойное «дышащее» покачивание
 const MARKER_BOB_AMP := 1.5    # px амплитуда
+## Волна 5: визуальный масштаб NPC (коллайдер 14x16 и зона взаимодействия —
+## прежние). Якорь по контент-стопам 16px-спрайтов: +5*(1−1.5) = −2.5.
+const VISUAL_SCALE := 1.5
+const SPR_HOME_Y := -2.5
 
 var world: Node2D
 var npc_id := ""
@@ -22,6 +26,9 @@ func setup(p_world: Node2D, id: String, tile: Vector2i) -> void:
 	position = world.tile_to_world(tile)
 	var spr := Sprite2D.new()
 	spr.texture = load("res://assets/npc_%s.png" % id)
+	# волна 5: крупнее только визуально — Area2D-триггер разговора не изменился
+	spr.scale = Vector2.ONE * VISUAL_SCALE
+	spr.position = Vector2(0, SPR_HOME_Y)
 	add_child(spr)
 	var cs := CollisionShape2D.new()
 	var sh := RectangleShape2D.new()

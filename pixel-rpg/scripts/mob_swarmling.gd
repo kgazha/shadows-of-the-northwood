@@ -13,6 +13,9 @@ const SPEED_FLEE := 66.0      # испуганная крыса почти не 
 const SPEED_WANDER := 14.0
 const FLEE_RADIUS := 128.0    # отбежал на это расстояние — стая растворилась в тумане
 const MAX_HP := 2
+## Волна 5: визуальный масштаб ×1.5 (коллайдер 8x6, дистанции и скорости —
+## прежние). Контент-стоп 16px-кадра на +6: якорь +6*(1−1.5) = −3.0.
+const VISUAL_SCALE := 1.5
 
 ## Реестры стай: swarm_id -> {total, alive, panicked, scatter}.
 ## static — переживает конкретный экземпляр; чистится сам, когда стая гибнет/исчезает.
@@ -74,6 +77,8 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 					fr.add_frame(an, at, 0.0)
 		anim.sprite_frames = fr
 		add_child(anim)
+		anim.scale = Vector2.ONE * VISUAL_SCALE
+		anim.position = Vector2(0, -3.0)
 		anim.play("idle_down")
 	else:
 		push_warning("Нет ассета: assets/mobs_swarmling.png — у мглокрыса цветная заглушка")

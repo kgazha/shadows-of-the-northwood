@@ -23,6 +23,11 @@ const BOSS_XP := 40
 ## материалов не даёт (материалы — за гринд мобов, не за босса).
 const MAT_DROP_CHANCE := 0.25
 const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
+## Волна 5: визуальный масштаб ×1.5 поверх всего (ярусные пропорции TIERS.scale
+## сохранены — они домножаются). Коллайдеры (босс 18x16, моб 10x8), скорости,
+## рывок и дистанции — прежние. Контент-стоп листа 32px на +11 от центра кадра:
+## якорь = +11*(s_old−s_new) держит ноги на прежней линии, тень следует сама.
+const VISUAL_SCALE := 1.5
 ## Ярусы мобов: чем глубже, тем жирнее, злее и быстрее (xp — за убийство).
 const TIERS := {
 	1: {"hp": 6, "dmg": 1, "speed": 24.0, "xp": 6, "cd": 0.0, "scale": 0.72},
@@ -142,8 +147,13 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		anim.sprite_frames = fr
 		add_child(anim)
 		anim.play("walk")
-		if not boss:
-			anim.scale = Vector2.ONE * float(TIERS[tier].scale)  # ярус 1 мельче, ярус 3 полный
+		# волна 5: весь лист домножается ×1.5 — ярусные пропорции TIERS.scale
+		# сохранены (ярус 1 мельче, ярус 3 полный, босс между ними). Якорь по
+		# контент-стопам 32px-кадра (+11): ноги остаются на прежней линии.
+		var s_old := 1.0 if boss else float(TIERS[tier].scale)
+		var s := s_old * VISUAL_SCALE
+		anim.scale = Vector2.ONE * s
+		anim.position = Vector2(0, 11.0 * (s_old - s))
 	else:
 		push_warning("Нет ассета: assets/brute.png — у босса цветная заглушка")
 		var ph := ColorRect.new()
@@ -248,11 +258,20 @@ func _push_from_hero() -> void:
 			sy = -1.0  # точное совпадение центров — отход вверх
 		move_and_collide(Vector2(0.0, sy * (oy + 0.05)))
 
+## Якорь появления цифр урона — над макушкой С учётом текущего визуального
+## масштаба (волна 5): аним-узел несёт scale/position, макушка листа 32px на
+## −10 от центра кадра. Работает и для Грома, и для отпрысков ярусов, и для
+## Ведьмы (mob_boss2 меняет scale выше) — берем фактические значения anim.
+func _head_spawn_y() -> float:
+	if anim == null or not is_instance_valid(anim):
+		return -14.0
+	return anim.position.y - 10.0 * anim.scale.x - 4.0
+
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:
 		return  # труп не получает урон: XP и quest_changed — ровно один раз (фикс T3)
 	GameState.entered_combat()  # контакт с врагом — реген паузится
-	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg_in, "normal")
+	DmgNumbers.spawn(global_position + Vector2(0, _head_spawn_y()), dmg_in, "normal")
 	hp -= dmg_in
 	hurt_t = 0.3
 	# §D w3 «Костяная кора»: удар почти не сносит Грому с места (база — 50.0).

@@ -346,6 +346,9 @@ func _build_grove_canopy() -> void:
 	var root := Node2D.new()
 	root.name = "GroveCanopy"
 	root.z_index = 5
+	# волна 5: тот же Y-порядок внутри слоя, что у VillageProps — южная крона
+	# перекрывает северную, а не наоборот
+	root.y_sort_enabled = true
 	village_zone.add_child(root)
 	for comp in _groves:
 		var x0: int = comp[0].x
@@ -444,14 +447,17 @@ func _village_art(p: String) -> Texture2D:
 ## Спрайт-проп: по центру bbox клеток [x0..x1], низ — на нижней границе
 ## последних клеток (те же +2, что у tile_to_world/GroveCanopy), LINEAR.
 ## flip_h — хеш координат (позирует однообразных объектов), без randi.
-func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i) -> Sprite2D:
+## k — визуальный масштаб под bbox кластера (паттерн GroveCanopy): низ
+## по-прежнему стоит на нижней границе, масштабом меняется только картинка.
+func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i, k := 1.0) -> Sprite2D:
 	var spr := Sprite2D.new()
 	spr.texture = tex
 	spr.centered = true
 	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	spr.flip_h = posmod(seed_c.x * 3571 + seed_c.y * 7919, 2) == 0
+	spr.scale = Vector2(k, k)
 	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
-		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * 0.5)
+		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * k * 0.5)
 	village_props.add_child(spr)
 	return spr
 
@@ -463,10 +469,16 @@ func _build_village_props() -> void:
 	village_props = Node2D.new()
 	village_props.name = "VillageProps"
 	village_props.z_index = 5
+	# Волна 5: порядок рисования детей по Y — южный (ближний) дом честно перекрывает
+	# северный, «дом поверх дома» больше нет. Сортировка внутри слоя (z 5 общий).
+	village_props.y_sort_enabled = true
 	village_zone.add_child(village_props)
 	var missing: Array = []
 	# Избы: кластер «R»/«W»/«D» (крыша/стены/дверь ручной постройки) — один
-	# спрайт на кластер, низ по нижней границе стен, центр по bbox.
+	# спрайт на кластер, низ по нижней границе стен, центр по bbox. Спрайт
+	# клампится по размеру кластера (паттерн GroveCanopy: k = max(bw,bh)-cover
+	# с 12% нависанием, кламп как у крон) — маленький кластер не накрывает
+	# соседа гигантской избой, большой не торчит голыми тайлами из-под избы.
 	var cottage := _village_art(VILLAGE_ART_COTTAGE)
 	if cottage == null:
 		missing.append(VILLAGE_ART_COTTAGE)
@@ -481,7 +493,11 @@ func _build_village_props() -> void:
 				x1 = maxi(x1, c.x)
 				y0 = mini(y0, c.y)
 				y1 = maxi(y1, c.y)
-			_add_prop(cottage, x0, x1, y0, y1, Vector2i(x0, y0))
+			var bw := float(x1 - x0 + 1) * TILE
+			var bh := float(y1 - y0 + 1) * TILE
+			var k := maxf(bw * 1.12 / float(cottage.get_width()), bh * 1.12 / float(cottage.get_height()))
+			k = clampf(k, 0.5, 1.45)
+			_add_prop(cottage, x0, x1, y0, y1, Vector2i(x0, y0), k)
 	# Колодцы: одиночные валуны «r» впритык к воде — там деревня и ставила
 	# сруб колодца у озера. Коллайдер валуна (11x10) уже жмёт центр клетки —
 	# «твёрдость» колодца физически та же, что была у камня.
@@ -625,6 +641,7 @@ func _build_env4_props() -> void:
 	_env4_cave_props = Node2D.new()
 	_env4_cave_props.name = "Env4CaveProps"
 	_env4_cave_props.z_index = 5
+	_env4_cave_props.y_sort_enabled = true  # волна 5: порядок по Y внутри слоя
 	cave_zone.add_child(_env4_cave_props)
 	if dungeon_zone != null:
 		var altar := _env4_tex("altar")
@@ -654,6 +671,7 @@ func _build_env4_props() -> void:
 	_env4_ashen_props = Node2D.new()
 	_env4_ashen_props.name = "Env4AshenProps"
 	_env4_ashen_props.z_index = 5
+	_env4_ashen_props.y_sort_enabled = true  # волна 5: порядок по Y внутри слоя
 	ashen_zone.add_child(_env4_ashen_props)
 	if ashen_grid != null:
 		var portal := _env4_tex("portal")
@@ -707,6 +725,10 @@ func _spawn_player() -> void:
 	player.position = tile_to_world(spawn_tile)
 	add_child(player)
 	cam = Camera2D.new()
+	# Волна 5: мир рисуется вдвое крупнее во всех трёх зонах. Лимиты — мировые
+	# пиксели, Godot клампит вида-окно (640/2 × 360/2) внутрь лимитов зоны, а
+	# _set_cam_limits переставляет их на каждой смене зоны — герой всегда в кадре.
+	cam.zoom = Vector2(2, 2)
 	cam.limit_left = 0
 	cam.limit_top = 0
 	cam.limit_right = map_w * TILE
@@ -717,7 +739,9 @@ func _spawn_player() -> void:
 	# текст world-space подсказок — не «картинка», держим пиксельную чёткость
 	# (наследовать LINEAR от героя ему не надо)
 	hint_label.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	hint_label.position = Vector2(-45, -26)
+	# волна 5: герой визуально ×1.5 (макушка ~ -16 от центра) — подсказка не
+	# должна залезать на голову
+	hint_label.position = Vector2(-45, -28)
 	hint_label.size = Vector2(90, 10)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.add_theme_color_override("font_color", Color(1, 1, 0.75))
@@ -1107,7 +1131,7 @@ func drink_potion() -> void:
 	Achv.on_herb_drunk()  # ачивка «Травник» (achv.gd §2 #11)
 	var _hp0 := GameState.hp  # heal-число = реально восстановленные HP
 	GameState.heal(3)
-	DmgNumbers.spawn(player.global_position + Vector2(0, -12), GameState.hp - _hp0, "heal")
+	DmgNumbers.spawn(player.global_position + Vector2(0, -18), GameState.hp - _hp0, "heal")
 	GameState.quest_changed.emit()  # автосейв + обновление HUD
 	GameState.toast.emit("Лесное зелье: +%d HP" % (GameState.hp - _hp0))  # факт долечено (QA F1)
 

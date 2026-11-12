@@ -37,7 +37,13 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	home_tile = tile
 	super.setup(p_world, tile)
 	if anim != null:
-		anim.scale = Vector2.ONE * 1.12  # визуальная «главнее» отпрысков — без нового ассета
+		# визуальная «главнее» отпрысков — без нового ассета; волна 5: законные
+		# +12% домножаются сверху общим ×1.5, якорь по контент-стопу +11 —
+		# стопы Ведьмы остаются там, где стояли
+		var s_old := 1.12
+		var s := s_old * VISUAL_SCALE
+		anim.scale = Vector2.ONE * s
+		anim.position = Vector2(0, 11.0 * (s_old - s))
 
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:

@@ -20,6 +20,9 @@ const ARROW_SPEED := 170.0
 const ARROW_LIFE := 1.6
 const SHOT_MIN := 28.0        # в упор не стреляет — только отходит
 const MAX_HP := 4
+## Волна 5: визуальный масштаб ×1.5 (коллайдер 9x7, дистанции кайта и урон —
+## прежние). Контент-стоп 16px-кадра на +7: якорь +7*(1−1.5) = −3.5.
+const VISUAL_SCALE := 1.5
 
 var world: Node2D
 var hp := MAX_HP
@@ -72,6 +75,8 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 					fr.add_frame(an, at, 0.0)
 		anim.sprite_frames = fr
 		add_child(anim)
+		anim.scale = Vector2.ONE * VISUAL_SCALE
+		anim.position = Vector2(0, -3.5)
 		anim.play("idle_down")
 	else:
 		push_warning("Нет ассета: assets/mobs_archer.png — у лучника цветная заглушка")

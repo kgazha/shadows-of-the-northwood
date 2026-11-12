@@ -13,6 +13,9 @@ const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
 ## NG+ §1.3: базы до скейла по волне. Формулы — в game_state.gd (одна точка истины).
 const BASE_HP := 3
 const BASE_DMG := 1
+## Волна 5: визуальный масштаб ×1.5 (коллайдер 10x8, дистанции боя и скорости —
+## прежние). Контент-стопы 16px-кадра на +5: якорь +5*(1−1.5) = −2.5, ноги там же.
+const VISUAL_SCALE := 1.5
 
 var world: Node2D
 var hp := BASE_HP
@@ -57,6 +60,8 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		at.region = Rect2(col * 16, 0, 16, 16)
 		fr.add_frame("walk", at, 0.0)
 	anim.sprite_frames = fr
+	anim.scale = Vector2.ONE * VISUAL_SCALE
+	anim.position = Vector2(0, -2.5)
 	add_child(anim)
 	anim.play("walk")
 
@@ -136,7 +141,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 	if dying:
 		return
 	GameState.entered_combat()  # контакт с врагом — реген паузится
-	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg, "normal")
+	DmgNumbers.spawn(global_position + Vector2(0, -14), dmg, "normal")  # волна 5: выше макушки ×1.5
 	hp -= dmg
 	hurt_t = 0.3
 	velocity = (global_position - from).normalized() * 70.0

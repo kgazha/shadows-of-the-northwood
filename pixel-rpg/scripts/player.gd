@@ -16,6 +16,13 @@ const BOAR_DASH_TIME := 0.14   # длительность полёта рывк�
 const BOAR_STUN := 0.7         # оглушение цели, с
 const BOAR_STUN_BOSS := 0.35   # босс держит оглушение вдвое короче (канон brute)
 const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP воину (кламп по max_hp)
+# --- волна 5: визуальный масштаб героя ---
+# Спрайт 16px: контент-стопы на +5 от центра кадра (замер assets/player.png и
+# class_*.png — бот-ряд 12..13). ×1.5 только визуально: коллайдер 10x8, скорости
+# и хитбоксы не тронуты. Якорь по стопам: ANIM_HOME = +5*(1−1.5) = −2.5 — ноги
+# на прежней линии, тень (atmosphere меряет низ кадров) следует за спрайтом сама.
+const VISUAL_SCALE := 1.5
+const ANIM_HOME := Vector2(0, -2.5)
 
 var anim: AnimatedSprite2D
 var facing := "down"
@@ -58,19 +65,24 @@ func _ready() -> void:
 	cs.shape = sh
 	add_child(cs)
 	anim = AnimatedSprite2D.new()
+	# волна 5: герой крупнее только визуально — тело, коллайдер 10x8 и всё
+	# движение не тронуты
+	anim.scale = Vector2.ONE * VISUAL_SCALE
+	anim.position = ANIM_HOME
 	add_child(anim)
 	apply_class()
 	anim.play("down")
-	# тик регенерации — видимая искра над героем
+	# тик регенерации — видимая искра над героем (волна 5: макушка ушла на ~-12,
+	# искры/цифры подняты вместе с головой)
 	GameState.regen_hp_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			Fx.heal(global_position + Vector2(0, -12), world))
+			Fx.heal(global_position + Vector2(0, -18), world))
 	GameState.regen_mana_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			_spark(global_position + Vector2(0, -12), Color(0.4, 0.65, 1.0, 0.9), 5.0))
+			_spark(global_position + Vector2(0, -18), Color(0.4, 0.65, 1.0, 0.9), 5.0))
 	GameState.leveled_up.connect(func(_l: int) -> void:
 		if is_instance_valid(self):
-			Fx.level_up(global_position + Vector2(0, -10), world))
+			Fx.level_up(global_position + Vector2(0, -16), world))
 
 func class_data() -> Dictionary:
 	return Classes.class_data(GameState.class_id)
@@ -314,10 +326,11 @@ func do_attack() -> void:
 func _lunge_fx(dir: Vector2, dist: float) -> void:
 	if _atk_fx_t != null and _atk_fx_t.is_valid():
 		_atk_fx_t.kill()
-	anim.position = Vector2.ZERO
+	# волна 5: «домой» спрайт возвращается не в ноль, а в ANIM_HOME (якорь ног)
+	anim.position = ANIM_HOME
 	_atk_fx_t = create_tween()
-	_atk_fx_t.tween_property(anim, "position", dir * dist, 0.06)
-	_atk_fx_t.tween_property(anim, "position", Vector2.ZERO, 0.13)\
+	_atk_fx_t.tween_property(anim, "position", ANIM_HOME + dir * dist, 0.06)
+	_atk_fx_t.tween_property(anim, "position", ANIM_HOME, 0.13)\
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 ## Дуга замаха: серповидный «всплеск» клинка, проворачивается по дуге и гаснет.
@@ -481,7 +494,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 				# EXEC_HEAL HP (heal клампит по max_hp). Промах/не-добивание — без хила.
 				if tgt.get("hp") != null and int(tgt.get("hp")) <= 0:
 					GameState.heal(EXEC_HEAL)
-					Fx.heal(global_position + Vector2(0, -10), world)
+					Fx.heal(global_position + Vector2(0, -16), world)
 					GameState.toast.emit("+%d HP" % EXEC_HEAL)
 			else:
 				melee_hit(1.5, Vector2.INF, 13.0, tgt)
@@ -517,7 +530,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			GameState.toast.emit("Морозная нова!")
 		"siphon":
 			siphon_t = 5.0
-			Fx.heal(global_position + Vector2(0, -8), world)
+			Fx.heal(global_position + Vector2(0, -14), world)
 			GameState.toast.emit("Поглощение: попадания снарядов лечат")
 		"firestorm":
 			for k in 3:
@@ -541,7 +554,7 @@ func _skill_target() -> Node2D:
 ## Кулдаун и мана НЕ тратятся — скилл просто не активировался (п.6).
 func _no_target_reject() -> void:
 	GameAudio.sfx("ui_deny")
-	_spark(global_position + Vector2(0, -10), Color(1.0, 0.55, 0.45, 0.9), 5.0)
+	_spark(global_position + Vector2(0, -16), Color(1.0, 0.55, 0.45, 0.9), 5.0)
 	GameState.toast.emit("Нет цели рядом")
 
 ## Цель «Рывка вепря»: ближайший враг в собственном радиусе (шире радиуса атаки).
@@ -662,7 +675,7 @@ func take_damage(n: int) -> void:
 	GameState.entered_combat()  # реген «замолкает» на время боя
 	var _hp0 := GameState.hp  # число урона = реально снятые HP (после брони), не входящий урон
 	GameState.hurt(n)
-	DmgNumbers.spawn(global_position + Vector2(0, -12), maxi(0, _hp0 - GameState.hp), "normal")
+	DmgNumbers.spawn(global_position + Vector2(0, -18), maxi(0, _hp0 - GameState.hp), "normal")
 	Fx.hit(global_position + Vector2(0, -6), world)
 	if GameState.hp <= 0:
 		cancel_orders()

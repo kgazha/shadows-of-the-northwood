@@ -126,5 +126,7 @@ static func _player_pos() -> Vector2:
 		return Vector2.INF
 	for p in tree.get_nodes_in_group("player"):
 		if is_instance_valid(p):
-			return (p as Node2D).global_position + Vector2(0, -12)
+			# −18: точка отсчёта — глобальная позиция героя; визуальная макушка
+			# поднята масштабом 1.5 (t9), числа всплывают над головой, а не на уровне груди
+			return (p as Node2D).global_position + Vector2(0, -18)
 	return Vector2.INF
