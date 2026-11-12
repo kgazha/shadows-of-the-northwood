@@ -14,6 +14,7 @@ func _ready() -> void:
 	await section_clear_original()
 	await section_panic()
 	await section_registry()
+	await section_flee_pocket()
 	await section_dying_xp()
 	await section_lock()
 	done()
@@ -130,6 +131,40 @@ func section_registry() -> void:
 	pack5[1].hurt(99, Vector2.ZERO)
 	await pump(3)
 	check("Q: путь «все убиты» — реестр чист", not SScript.SWARMS.has("qa5"))
+
+func section_flee_pocket() -> void:
+	# t44 RED-пин: геометрический карман поляны. Свип t43 (48 углов × 2 тайла):
+	# из тайла (6,18) с углом разлёта 0° крыса упирается в стену — за 30 с симуляции
+	# максимальное удаление от дома 8.8 px, FLEE_RADIUS=128 не достигается НИКОГДА,
+	# крыса не despawn-ится → стая вечно «держит» живую особу (утечка живых мобов).
+	# Анти-залипание: FLEE_STUCK_T секунд без обновления рекорда удаления от дома →
+	# despawn тем же путём, что и FLEE_RADIUS (без XP/лута/тоста/убийства).
+	# Бюджет пина: 12 с (720 кадров) — порог 9 с + запас; до фикса крыса жива вечно.
+	var pack := spawn_pack("qa7", [Vector2i(6, 16), Vector2i(6, 18)])
+	await pump(2)
+	pack[0].hurt(99, Vector2.ZERO)   # 1/2 живых = 50% — паника; вторая крыса убегает
+	await pump(2)
+	var rat = pack[1]
+	var rid: int = rat.get_instance_id()
+	rat.set_flee(Vector2(1.0, 0.0))  # 0° — карманный угол из свипа t43 (STUCK, maxd 8.8)
+	clear_toasts()
+	var xp0 := GameState.xp
+	var gone := false
+	for i in range(720):
+		GameState.hp = GameState.max_hp
+		await get_tree().physics_frame
+		if not is_instance_id_valid(rid):
+			gone = true
+			break
+	if not gone:
+		var n: Node2D = instance_from_id(rid) as Node2D
+		print("DEBUG t44 pocket: pos=%s vel=%s home_dist=%.1f (ожидание: despawn ≤12 c)" % [
+			str(n.global_position), str(n.velocity), n.global_position.distance_to(n.home)])
+	check("Q(t44): карманная крыса despawn-нулась в срок анти-залипания (≤12 c)", gone)
+	check("Q(t44): despawn в кармане — без XP и без тоста убийства",
+		GameState.xp == xp0 and n_toast("Мглокрыс повержен") == 0)
+	await pump(5)
+	check("Q(t44): реестр чист после карманного despawn", not SScript.SWARMS.has("qa7"))
 
 func section_dying_xp() -> void:
 	var pack6 := spawn_pack("qa6", [Vector2i(6, 16), Vector2i(9, 16), Vector2i(6, 18)])
