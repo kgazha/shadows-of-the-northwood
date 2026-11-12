@@ -190,9 +190,16 @@ func _ready() -> void:
 		"meta.ash=%d ng_second=%s" % [ash_after, str(GameState.flags.get("ach.ng_second", false))])
 	ck("reset_ng_boss_gates_p0", not GameState.flags.has("ng.boss_0"), "P0 9402ee1")
 	ck("keep_plain_flag", bool(GameState.flags.get("merchant_seen", false)))
+	# t19: quests_data переведён с String(...) на str(...) (починка мягкого крэша
+	# «Nonexistent 'String' constructor»). Раньше refresh() journals падал на
+	# int-значениях флагов и автозавершение side-квестов никогда не выдавало
+	# награду; в этом fixture («пройденный мир»: cave_state=4, амулет, q.*=1)
+	# цели side-квестов легитимно выполнены на загрузке → +25 XP → ап 3→4.
+	# Золото/экипировка/амулет пинются жёстко; уровень — «не обнулился» (>= 3):
+	# точный уровень здесь — побочный эффект награды квестовой системы, а не носимый NG+ параметр.
 	ck("keep_gold_gear_amulet_level", GameState.gold == 123 \
 		and String(GameState.gear["weapon"]) == "sword" and GameState.has_amulet \
-		and GameState.level == 3)
+		and GameState.level >= 3)
 	ck("world_entry_reset", not GameState.in_cave and not GameState.pos_valid)
 	ck("sig_ng_started_once", int(sp["ng"]) == 1, "count=%d" % int(sp["ng"]))
 	ck("sig_quest_changed", int(sp["q"]) >= 1, "count=%d" % int(sp["q"]))

@@ -5,8 +5,20 @@ extends CharacterBody2D
 ## Баланс (правка пещеры): герой 3–5 уровня проходит ярусы с потерями, но живым;
 ## пик сложности — босс. Было: hp 12 / dmg 2 / speed 30 / рывок раз в 4.5 с.
 
-const HIT_DIST_BOSS := 12.0
+const HIT_DIST_BOSS := 16.0  # t19 «честный Гром»: радиус замаха. Бокс босса 18x16 + героя
+# 10x8: пол покоя контакта центр-в-центр 12–14 px (см. mob_boss2.gd: hit_dist=15, иначе
+# «база 12 геометрически недостижима»). 16.0 ≤ 1.2×18 — ширина силуэта босса (тест qa_gb).
 const HIT_DIST_MOB := 9.0
+## t19 «честный Гром» (P0-2А, только настоящем Гром — см. var fair):
+## замах → красный телеграф-сектор (геометрия == фактическая зона урона) →
+## урон только после замаха и только внутри сектора → окно наказания.
+const WINDUP_TIME := 0.5        # длительность замаха, канон 0.4–0.6 с
+const STRIKE_RECOVER := 1.6     # окно наказания после замаха, канон ≥1.5 с: Гром оседает,
+#                                # удары героя валятся, в ответ он не бьёт
+const STRIKE_HALF_ANGLE := 1.0471975511965976  # 60° — полуугол смертельного сектора (полный 120°)
+const TELEGRAPH_SEGMENTS := 12  # сегментов дуги телеграфа (полигон = истина для удара)
+const WINDUP_TINT := Color(1.35, 0.42, 0.36)   # t18-дисциплина цвета: красный = смертельно
+const RECOVER_TINT := Color(0.62, 0.58, 0.72)  # «оседание» — приглушённый, не боевой сигнал
 ## Рывок: босс каждые 4.0 с, ярусы 2–3 — реже; ярус 1 не рывкует (cd=0).
 const CHARGE_SPEED := 80.0
 const CHARGE_TIME := 0.7
@@ -84,6 +96,14 @@ var freeze_t := 0.0
 var charge_t := 2.5
 var rush_t := 0.0
 var rush_dir := Vector2.ZERO
+## t19 «честный Гром»: fair — модель честности живёт только на настоящем Грома
+## (тот же фильтр get_script(), что у венцов §D): ярусные отпрыски и Ведьма
+## (mob_boss2.gd) сохраняют прежнее поведение контакты-урона.
+var fair := false
+var windup_t := 0.0        # >0 — замах: телеграф висит, урона нет, позиция зафиксирована
+var recover_t := 0.0       # >0 — окно наказания: не бьёт, герой долбит без сопротивления
+var strike_dir := Vector2.RIGHT  # направление замаха, фиксируется в начале замаха (телеграф честен)
+var tg: Polygon2D = null   # наземный телеграф сектора (алый = смертельно)
 ## Страж повторной смерти: queue_free откладывается до конца кадра, и залп
 ## (volley) успевал «убить» моба 2–3 раза — двойной XP и quest_changed (фикс T3).
 var dying := false
@@ -190,9 +210,20 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(ph)
 	modulate = base_tint
+	# t19: честная модель — только у настоящего Грома. Ведьма зовёт super.setup из
+	# своего setup(), но её get_script() — mob_boss2.gd, фильтр её не пропускает.
+	fair = boss and get_script() == load("res://scripts/brute.gd")
+	if fair:
+		tg = Polygon2D.new()
+		tg.color = Color(0.86, 0.12, 0.1, 0.38)  # алый = смертельное (t18-дисциплина)
+		tg.visible = false
+		add_child(tg)
+		move_child(tg, 1)  # сразу за CollisionShape2D, перед anim: сектор под спрайтом, над тайлами
 
 func _physics_process(delta: float) -> void:
 	if dying:
+		if tg != null and tg.visible:
+			tg.visible = false  # t19: труп не светит зоной урона
 		return
 	hurt_t = maxf(0.0, hurt_t - delta)
 	freeze_t = maxf(0.0, freeze_t - delta)
@@ -222,6 +253,25 @@ func _physics_process(delta: float) -> void:
 		if ash_timer <= 0.0:
 			ash_timer = SWARM_CD
 			_spawn_ash()
+	# t19 «честный Гром»: замах и окно наказания — состояния с приоритетом над ИИ.
+	if fair:
+		if windup_t > 0.0:
+			windup_t -= delta
+			velocity = Vector2.ZERO  # стойка замаха: позиция зафиксирована — телеграф честен
+			if hurt_t <= 0.0:
+				modulate = WINDUP_TINT
+			if tg != null:
+				tg.visible = true  # телеграф висит ВСЁ время замаха
+			if windup_t <= 0.0:
+				_strike()
+			return
+		if recover_t > 0.0:
+			recover_t -= delta  # окно наказания: герой бьёт без сопротивления
+			if hurt_t <= 0.0:
+				modulate = RECOVER_TINT
+			velocity = velocity.move_toward(Vector2.ZERO, 140.0 * delta)  # только докат от ударов
+			move_and_slide()
+			return
 	if d > (boss_leash if boss else LEASH) and (not boss or boss_leash > 0.0):
 		# героя далеко нет — не идём на весь cave, а сторожим свою часть карты
 		# (Гром: boss_leash=0 — тотальный преслед как раньше;
@@ -255,8 +305,49 @@ func _physics_process(delta: float) -> void:
 		else:
 			velocity = (player.global_position - global_position).normalized() * speed
 	move_and_slide()
+	if fair:
+		_push_from_hero()
+		# t19: контактного урона у честного Грома нет — урон только после замаха и
+		# только внутри телеграфа. Рывок — сближение, сам по себе не бьёт.
+		if rush_t <= 0.0 and global_position.distance_to(player.global_position) <= hit_dist:
+			_begin_windup()
+		return
 	_push_from_hero()  # до проверки урона: оценка боя идёт на равновесном контакте, как при живой стене
 	if global_position.distance_to(player.global_position) < hit_dist:
+		player.take_damage(dmg)
+
+## t19: геометрия lethal-зоны = полигон телеграфа (один источник истины: и картинка,
+## и удар резолвятся этим полигоном — тест qa_gb сверяет сетку проб с strike_contains).
+func telegraph_points() -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	pts.append(Vector2.ZERO)
+	var a0 := strike_dir.angle() - STRIKE_HALF_ANGLE
+	for i in range(TELEGRAPH_SEGMENTS + 1):
+		var a := a0 + 2.0 * STRIKE_HALF_ANGLE * (float(i) / float(TELEGRAPH_SEGMENTS))
+		pts.append(Vector2(cos(a), sin(a)) * hit_dist)
+	return pts
+
+## Точка внутри фактической зоны урона? Центр Грома — всегда контакт (вершина веера).
+func strike_contains(p: Vector2) -> bool:
+	var v: Vector2 = p - global_position
+	if v.length_squared() < 0.25:
+		return true
+	return Geometry2D.is_point_in_polygon(v, telegraph_points())
+
+func _begin_windup() -> void:
+	windup_t = WINDUP_TIME
+	var p: Vector2 = world.player.global_position - global_position
+	strike_dir = p.normalized() if p.length_squared() > 0.0001 else Vector2.RIGHT
+	if tg != null:
+		tg.polygon = telegraph_points()
+		tg.visible = true
+
+func _strike() -> void:
+	if tg != null:
+		tg.visible = false
+	recover_t = STRIKE_RECOVER  # и после попадания тоже: окно, чтобы добить не отвечающего
+	var player: CharacterBody2D = world.player
+	if player != null and is_instance_valid(player) and strike_contains(player.global_position):
 		player.take_damage(dmg)
 
 ## «Стенка без пиления» (дребезг экрана вплотную): герой (слой 1) убран из маски —

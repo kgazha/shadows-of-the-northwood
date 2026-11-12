@@ -180,7 +180,7 @@ static func status(gs, id: String) -> int:
 		"witch":
 			# story-цель NG-лупа: флаг смерти пишет mob_boss2.gd, вайп ashen.*
 			# в start_ng_plus пере-взводит цель каждый круг
-			return STATUS_DONE if String(gs.flags.get("ashen.boss", "")) == "dead" else STATUS_ACTIVE
+			return STATUS_DONE if str(gs.flags.get("ashen.boss", "")) == "dead" else STATUS_ACTIVE
 	return int(gs.get_flag(FLAG_PREFIX + id, 0))
 
 ## Показывать ли квест в журнале: побочки — только начатые; «Гром» и «Травы»
@@ -196,8 +196,8 @@ static func visible_in_journal(gs, id: String) -> bool:
 		"witch":
 			# не спойлерим зону до первого взгляда на Пепелище (world.gd::enter_ashen
 			# ставит флаг вместе с FirstHint); смерть ведьмы тоже делает цель видимой
-			return String(gs.flags.get("ashen.intro_seen", "")) != "" \
-				or String(gs.flags.get("ashen.boss", "")) == "dead"
+			return str(gs.flags.get("ashen.intro_seen", "")) != "" \
+				or str(gs.flags.get("ashen.boss", "")) == "dead"
 	return int(gs.get_flag(FLAG_PREFIX + id, 0)) != STATUS_NONE
 
 ## Прогресс одной цели (0..+; витрина клампит к need). param — mat для collect_mat.
@@ -234,7 +234,7 @@ static func progress(gs, type: String, param: String = "") -> int:
 		"return_amulet":
 			return 1 if int(gs.cave_state) >= 4 else 0
 		"kill_witch":
-			return 1 if String(gs.flags.get("ashen.boss", "")) == "dead" else 0
+			return 1 if str(gs.flags.get("ashen.boss", "")) == "dead" else 0
 		"brew_total":
 			# вечный счётчик варок (achv.gd::count("brews")); badge-квест закрыт
 			# навсегда meta-меткой — вайп q.* в NG+ его не ре-взводит
@@ -242,8 +242,11 @@ static func progress(gs, type: String, param: String = "") -> int:
 		"hold_gold":
 			return int(gs.gold)
 		"visit_ashen":
-			# тот же флаг/событие, что у FirstHint "ashen" (world.gd::enter_ashen)
-			return 1 if String(gs.flags.get("ashen.intro_seen", "")) != "" else 0
+			# тот же флаг/событие, что у FirstHint "ashen" (world.gd::enter_ashen).
+			# t19: str(), а не String(...) — конструктор String() падает на значениях
+			# не-строкового типа («Nonexistent 'String' constructor», мягкий спам в qa_ng);
+			# str() принимает любой Variant. Вся строка флагов в файле переведена на str().
+			return 1 if str(gs.flags.get("ashen.intro_seen", "")) != "" else 0
 		"collect_mat":
 			return int(gs.get_flag(GOT_PREFIX + param, 0))
 		"rest_campfire":

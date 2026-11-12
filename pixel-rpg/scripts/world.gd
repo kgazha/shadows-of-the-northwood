@@ -150,6 +150,7 @@ var spawn_tile := Vector2i(8, 10)
 var dialogues: Dictionary = {}
 var player: CharacterBody2D
 var hud: CanvasLayer
+var quest_marker: CanvasLayer  # t19: стрелка цели квеста (scripts/quest_marker.gd)
 var near: Array = []
 var hint_label: Label
 var village_zone: Node2D
@@ -266,6 +267,11 @@ func _ready() -> void:
 	hud = load("res://scripts/hud.gd").new()
 	add_child(hud)
 	hud.setup(self)
+	# t19 (P0-2Б): мировая стрелка цели квеста — отдельный слой (указание капитана:
+	# на время t23 в hud.gd не входить). Добавляемся сразу за hud, тот же layer 1.
+	quest_marker = load("res://scripts/quest_marker.gd").new()
+	add_child(quest_marker)
+	quest_marker.setup(self)
 	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
@@ -1562,8 +1568,23 @@ func _objective_raw() -> Vector2:
 				return hb.global_position
 		var el := _find_npc("elder")
 		return el.global_position if el != null else Vector2.INF
+	# t19 (P0-2Б): линия торговца — цель «вернуться сдать» становится маршрутом.
+	# Пока слаймов не хватает — цели нет (лес открыт, стрелка на случайных слаймов
+	# лишь мешала бы); как добыто — стрелка ведёт к Грииму.
+	if int(GameState.slime_quest) == 1 and int(GameState.slime_kills_circle) >= 3:
+		var me := _find_npc("merchant")
+		if me != null:
+			return me.global_position
 	# --- линия пещеры (cave_state 0..3) ---
 	if GameState.cave_state >= 4:
+		# t19 (P0-2Б): амулет сдан — раньше цель была INF, и стрелка гасла на всю
+		# NG-линию. Квест «Ведьма Пепелища» живёт на флаге ashen.boss: ведьма жива —
+		# ведём на неё (из другой зоны objective_pos сам переключит на переход);
+		# Пепелище ещё не построено — на вход. Ведьма мертва — цели нет, как раньше.
+		if str(GameState.flags.get("ashen.boss", "")) != "dead":
+			if ashen_grid != null and ashen_grid.boss_node != null and is_instance_valid(ashen_grid.boss_node):
+				return ashen_grid.boss_node.global_position
+			return tile_to_world(ASHEN_ENTRANCE_TILE)
 		return Vector2.INF
 	if dungeon_zone == null:
 		return Vector2.INF
