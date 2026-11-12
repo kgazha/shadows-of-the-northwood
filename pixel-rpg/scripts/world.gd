@@ -201,6 +201,11 @@ func _ready() -> void:
 	add_child(audio)
 	GameAudio.I = audio
 	GameAudio.music("forest")
+	# t31: процедурный Sfx-движок — сразу за GameAudio, чтобы при _ready он
+	# унаследовал уже прочитанные им громкости, а meta-хранилище (audio.*)
+	# применилось поверх. Хостинг как у GameAudio/ClickMove: экземпляр + static I.
+	var sfx_host := Sfx.new()
+	add_child(sfx_host)
 	# ПКМ-перемещение: синглтон ClickMove (по образцу GameAudio — экземпляр + static I).
 	var click_move := ClickMove.new()
 	add_child(click_move)
@@ -1972,7 +1977,7 @@ func _check_witch_done() -> void:
 	start_dialogue("witch_done")
 
 func on_player_death() -> void:
-	GameAudio.sfx("drop")  # смерть героя: тот же «шлепок кожи», что у мобов (аудио-аудит)
+	Sfx.play("player_death")  # t31: низкий нисходящий тон (процедурный каталог) вместо «шлепка кожи»
 	# t29 B-02 (реестр t28, blocker): смерть при открытой лавке хоронила диалог
 	# смерти под вуалью лавки (диалог — hud, CanvasLayer 1; лавка — CanvasLayer 5):
 	# все клики съедал полноэкранный dim лавки, Esc был мёртв, оставалось слепое E.

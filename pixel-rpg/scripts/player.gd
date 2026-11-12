@@ -64,6 +64,7 @@ var siphon_t := 0.0                   # «Поглощение»: лечение
 var _atk_fx_t: Tween = null           # туин «подачи тела», один на героя
 var _step_t := 0.0                    # таймер звука шага
 var _step_alt := false                # чередование двух сэмплов шага
+var _swing_alt := false               # t31: чередование двух процедурных ударов
 var _ghost_t := 0.0                   # t18: таймер паузы между «призраками» шлейфа
 
 @onready var world: Node2D = get_parent()
@@ -363,7 +364,11 @@ func _spawn_ghost() -> void:
 func attack_at(p: Vector2) -> void:
 	if attack_cd > 0.0 or roll_t > 0.0:
 		return
-	GameAudio.sfx("attack")  # ровно раз на удар: держание ЛКМ глушит кулдаун выше
+	# t31: два тёплых процедурных удара поочерёдно (Kenney "attack" на этом
+	# событии ЗАМЕНЁН, а не задвоен). Ровно раз на удар: держание ЛКМ глушит
+	# кулдаун выше.
+	_swing_alt = not _swing_alt
+	Sfx.play("hit_a" if _swing_alt else "hit_b")
 	face_to(p)
 	if String(class_data().kind) == "melee":
 		do_attack()
@@ -789,6 +794,7 @@ func take_damage(n: int, src := "") -> void:
 	GameState.hurt(n)
 	DmgNumbers.spawn(global_position + Vector2(0, -24), maxi(0, _hp0 - GameState.hp), "normal")  # SCALE_CANON: макушка ~-17.5
 	Fx.hit(global_position + Vector2(0, -6), world)
+	Sfx.play("hurt")  # t31:глухой тёплый «в тело» (процедурный каталог)
 	# t18 «сочность»: hitstop + тряска; фатальный удар — тяжелее. Восстановление
 	# time_scale гарантировано realtime-watchdog'ом juice.gd (смерть/диалог не залипают).
 	Juice.hit()

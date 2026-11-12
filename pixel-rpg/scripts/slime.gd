@@ -167,7 +167,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 func _die() -> void:
 	dying = true
 	respawn_t = RESPAWN
-	GameAudio.sfx("drop")  # шлепок тела (кожа)
+	Sfx.play("mob_die")  # t31: процедурный «оседающий» тон смерти рядовой твари
 	GameState.slime_kills += 1
 	GameState.slime_kills_circle += 1  # убийства ТЕКУЩЕГО круга: квесты-обёртки и
 									   # сдача торговцу считаются по нему (game_state)

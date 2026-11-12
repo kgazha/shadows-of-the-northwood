@@ -61,7 +61,7 @@ static func brew(rid: String) -> bool:
 		_:
 			push_warning("Рецепт без эффекта: %s" % rid)
 			return false
-	GameAudio.sfx("potion")  # сварено: бульканье котелка (metal_pot_2), разово, вне цикла
+	Sfx.play("potion")  # t31: процедурное трёхпузырьковое бульканье, разово, вне цикла
 	GameState.quest_changed.emit()  # трата материалов переживает перезапуск
 	Achv.on_brew()  # ачивки «Алхимик» / «10 варок» (achv.gd)
 	return true
@@ -85,4 +85,5 @@ static func drink_brewed() -> bool:
 	DmgNumbers.spawn(Vector2.INF, GameState.hp - _hp0, "heal")
 	GameState.quest_changed.emit()
 	GameState.toast.emit("Крепкое зелье: +%d HP (осталось %d)" % [GameState.hp - _hp0, GameState.brewed_potions])
+	Sfx.play("potion")  # t31: глоток — тот же тёплый булькающий тембр
 	return true

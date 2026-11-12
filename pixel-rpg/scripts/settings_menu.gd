@@ -477,6 +477,9 @@ func _save_now() -> void:
 		GameAudio.I.set_volumes(mus_slider.value, sfx_slider.value, master_slider.value, true)
 	else:
 		_sync_pct_labels()
+	# t31: зеркало в meta-хранилище (audio.*) — переживает зачистку круга и
+	# даёт Sfx единственный источник истины на старте, даже без GameAudio-конфига.
+	Sfx.persist_volumes(master_slider.value, mus_slider.value, sfx_slider.value)
 
 func _on_reset() -> void:
 	var d := snappedf(GameAudio.DEF_VOL, 0.05)
@@ -486,6 +489,7 @@ func _on_reset() -> void:
 	_sync_pct_labels()
 	if GameAudio.I != null:
 		GameAudio.I.set_volumes(d, d, d, true)  # «Сброс» — жмём один раз, пишем сразу
+	Sfx.persist_volumes(d, d, d)  # t31: сброс обязан уехать и в meta (audio.*)
 	GameAudio.sfx("ui_confirm")
 
 # --- тумблер «Ход по правому клику» (внешний контракт ClickMove) ---

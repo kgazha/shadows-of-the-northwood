@@ -81,6 +81,7 @@ static func open() -> void:
 		GameAudio.sfx("ui_deny")
 		return
 	I._set_open(true)
+	Sfx.play("panel_open")  # t31: мягкий взмах ткани на открытии витрины
 
 static func close() -> void:
 	if I != null and I.root != null:
@@ -320,7 +321,7 @@ func _on_buy(id: String) -> void:
 	GameState.equip_item(slot, "")
 	GameState.equip_item(slot, id)
 	GameState.stats_changed.emit()  # armor-слот equip_item не эмитит — HUD сам обновим
-	GameAudio.sfx("ui_confirm")
+	Sfx.play("coin")  # t31: тёплый монетный «дзынь» вместо ui_confirm
 	GameState.toast.emit("Куплено: %s. Надето!" % String(it.get("name", id)))
 	Achv.on_buy()  # ачивка «Покупатель: 5 вещей» (achv.gd)
 	refresh()
@@ -392,7 +393,7 @@ func _on_ash_buy(id: String) -> void:
 	GameState.set_flag("meta." + id, owned + 1)
 	if FirstHint.I != null: FirstHint.I.show_hint("ash", "Пепел — валюта алтаря: усиления покупаются навсегда, даже между жизнями.")
 	GameState.save_game()  # трата обязана пережить выход (железное правило P1)
-	GameAudio.sfx("ui_confirm")  # паттерн существующего _on_buy
+	Sfx.play("altar")  # t31: алтарный аккорд A-E-A — взяточнее простого «подтверждения»
 	var total := _owned(id)
 	var cap_s := "∞" if cap <= 0 else str(cap)
 	GameState.toast.emit("Алтарь: %s (куплено %d/%s)." % [String(e.get("name", id)), total, cap_s])

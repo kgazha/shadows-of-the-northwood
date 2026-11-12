@@ -617,6 +617,7 @@ func is_modal_open() -> bool:
 	return modal_shown
 
 func advance() -> void:
+	Sfx.play("dialog_step")  # t31: мягкий «листательный» тик на каждое «далее»
 	if typing:
 		typing = false
 		dtext.visible_characters = -1
@@ -742,7 +743,7 @@ func _build_skill_panel(th: Theme) -> void:
 	add_child(potion_btn)
 
 func _on_potion_pressed() -> void:
-	GameAudio.sfx("ui_click")
+	Sfx.play("ui_click")  # t31: бархатный тик вместо чиптюн-клика
 	if world != null and world.has_method("drink_potion"):
 		world.drink_potion()
 
@@ -978,7 +979,7 @@ func _on_skill_slot_input(event: InputEvent, i: int) -> void:
 			world.player.cast_skill(i, world.get_global_mouse_position())
 
 func _on_leveled_up(lv: int) -> void:
-	GameAudio.sfx("ui_levelup")
+	Sfx.play("levelup")  # t31: тёплое G-C-G вместо чиптюн-фанфары
 	if GameState.class_id == "":
 		return
 	for sid in Classes.skills_for(GameState.class_id):

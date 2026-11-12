@@ -335,6 +335,7 @@ func strike_contains(p: Vector2) -> bool:
 	return Geometry2D.is_point_in_polygon(v, telegraph_points())
 
 func _begin_windup() -> void:
+	Sfx.play("grom_windup")  # t31: нарастающий гул замахa ровно на WINDUP_TIME — телеграф слышно
 	windup_t = WINDUP_TIME
 	var p: Vector2 = world.player.global_position - global_position
 	strike_dir = p.normalized() if p.length_squared() > 0.0001 else Vector2.RIGHT
@@ -343,6 +344,7 @@ func _begin_windup() -> void:
 		tg.visible = true
 
 func _strike() -> void:
+	Sfx.play("grom_slam")  # t31: суб-удар «в землю» — кульминация телеграфа
 	if tg != null:
 		tg.visible = false
 	recover_t = STRIKE_RECOVER  # и после попадания тоже: окно, чтобы добить не отвечающего
@@ -417,6 +419,9 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	if hp <= 0:
 		dying = true
 		remove_from_group("enemy")  # мёртвый моб больше не бьёт и не целивается
+		# t31: элита/босс (Гром, Ведьма) — двойной «проваливающийся» тон,
+		# отпрыски гнили — обычный тон смерти.
+		Sfx.play("mob_die_elite" if boss else "mob_die")
 		if boss:
 			GameState.boss_defeated = true
 			Achv.on_boss_death()  # ачивки «Убийца босса» / «хардкор» (achv.gd)
