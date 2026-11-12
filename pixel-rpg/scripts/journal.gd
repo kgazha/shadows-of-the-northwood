@@ -39,6 +39,7 @@ var _panel: PanelContainer
 var _scroll: ScrollContainer
 var _list: VBoxContainer
 var _frame_tex: Texture2D
+var _paper: PaperEdge            # t27 P0-2: кромка вне Container-раскладки окна
 var _tab := TAB_QUESTS
 var _tab_btns: Array = []        # Button на вкладку (стилизация flat-тегми)
 var _ach_list: VBoxContainer     # список 12 строк достижений (вкладка TAB_ACHV)
@@ -54,7 +55,7 @@ func _ready() -> void:
 	else:
 		push_warning("Нет ассета: assets/ui/panel_frame.png — журнал без рамки")
 	var th := Theme.new()
-	th.default_font_size = 8  # пиксельная сетка HUD: 8 px базовый шрифт
+	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
 	_root = Control.new()
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -71,21 +72,10 @@ func _ready() -> void:
 		# контент-марджин 28: за рисуемой бумажной кромкой 24 + отдушина 4 (аутлайн текста 3)
 		_panel.add_theme_stylebox_override("panel", _ui_frame_style(28.0))
 	# волна 3 «Живая стилистика»: бумажная кромка пергамента по краю окна —
-	# ПЕРВЫМ ребёнком PanelContainer (под контентом); t24: вместо NinePatchRect
-	# (256-текстура, марджин 1:1 -> кромка даунскейлена 4x и растянута анизотропно,
-	# юзер: «размытый и сильно растянутый фон») — PaperEdge: масштабированный
-	# 9-patch с независимыми src/dst марджинами от нативной 999-текстуры.
-	# Позиции текста/списков не сдвигаются: это фон, mouse IGNORE.
-	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		var paper := PaperEdge.new()
-		paper.name = "PaperEdge"
-		paper.tex = load("res://assets/ui/decor_paper_edge.png")
-		paper.src_margin = 95.0  # реальный край рамки: на срезе alpha=0 (t24_measure)
-		paper.dst_margin = 24.0
-		paper.set_anchors_preset(Control.PRESET_FULL_RECT)
-		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		_panel.add_child(paper)
+	# t27 P0-2: кромка НЕ ребёнок PanelContainer (контейнер укладывает детей
+	# в контент-прямоугольник, и кромка рисовалась с отступом ~28, не доставая
+	# до рамки). Теперь — сосед панели под _root, статичный PRESET_CENTER
+	# прямоугольник = ровно глобальный прямоугольник окна.
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 3)
 	_panel.add_child(vb)
@@ -113,24 +103,46 @@ func _ready() -> void:
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vb.add_child(_scroll)
 	_list = VBoxContainer.new()
-	_list.add_theme_constant_override("separation", 4)
+	_list.add_theme_constant_override("separation", 6)  # t27 P1-1: +2
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(_list)
 	_ach_list = VBoxContainer.new()
-	_ach_list.add_theme_constant_override("separation", 4)
+	_ach_list.add_theme_constant_override("separation", 6)  # t27 P1-1: +2
 	_ach_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ach_list.visible = false
 	_scroll.add_child(_ach_list)
 	_tal_list = VBoxContainer.new()
-	_tal_list.add_theme_constant_override("separation", 4)
+	_tal_list.add_theme_constant_override("separation", 6)  # t27 P1-1: +2
 	_tal_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tal_list.visible = false
 	_scroll.add_child(_tal_list)
-	var hint := _mk_label("J / Esc — закрыть, Tab — вкладка", 7, Color(1, 1, 1, 0.45))
+	var hint := _mk_label("J / Esc — закрыть, Tab — вкладка", 8, Color(1, 1, 1, 0.75))  # t27 P0-3: 7px/.45 -> 8px/.75
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	vb.add_child(hint)
 	_panel.theme = th
 	_root.add_child(_panel)
+	# t27 P0-2: кромка — сосед панели под _root (не ребёнок PanelContainer!).
+	# PRESET_CENTER с offsets зеркала _panel — стартовый прямоугольник; если
+	# контент-минимум перерастает якорный бокс (9-px ступень: 276 -> 279),
+	# панель растёт и кромка догоняет её по panel.resized.
+	# t24-наследие: PaperEdge — масштабированный 9-patch с независимыми
+	# src/dst марджинами от нативной 999-текстуры; рисует только кольцо
+	# dst_margin от края, mouse IGNORE, контент (марджин 28) не трогает.
+	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
+		_paper = PaperEdge.new()
+		_paper.name = "PaperEdge"
+		_paper.tex = load("res://assets/ui/decor_paper_edge.png")
+		_paper.src_margin = 95.0  # реальный край рамки: на срезе alpha=0 (t24_measure)
+		_paper.dst_margin = 24.0
+		_paper.set_anchors_preset(Control.PRESET_CENTER)
+		_paper.offset_left = -200
+		_paper.offset_right = 200
+		_paper.offset_top = -138
+		_paper.offset_bottom = 138
+		_paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		_root.add_child(_paper)
+		_panel.resized.connect(_sync_paper)
 	_tab_style()
 	close()  # стартовое состояние: скрыт, мышь насквозь
 	GameState.quest_changed.connect(func() -> void: _dirty = true)
@@ -164,6 +176,7 @@ func open() -> void:
 	_dirty = false
 	_rebuild()
 	_root.visible = true
+	_sync_paper()  # t27 P0-2: кромка = фактический rect окна (после ростa контента)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
 	for b in _tab_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
@@ -185,6 +198,14 @@ func toggle() -> void:
 func is_open() -> bool:
 	return _open
 
+## t27 P0-2: кромка — сосед панели под _root; повторяет её глобальный прямоугольник
+## (панель может перерасти якорный бокс, если минимум контента больше).
+func _sync_paper() -> void:
+	if _paper == null or not is_instance_valid(_paper):
+		return
+	_paper.global_position = _panel.global_position
+	_paper.size = _panel.size
+
 func select_tab(i: int) -> void:
 	if i < 0 or i >= TAB_TITLES.size() or i == _tab:
 		return
@@ -203,7 +224,7 @@ func _tab_style() -> void:
 	for i in _tab_btns.size():
 		var b: Button = _tab_btns[i]
 		b.add_theme_color_override(
-			"font_color", Color(1, 0.9, 0.55) if i == _tab else Color(1, 1, 1, 0.45))
+			"font_color", Color(1, 0.9, 0.55) if i == _tab else Color(1, 1, 1, 0.75))  # t27 P0-3: неактивная вкладка .45 -> .75
 		b.add_theme_color_override(
 			"font_hover_color", Color(1, 0.9, 0.55) if i == _tab else Color(1, 1, 1, 0.7))
 
@@ -266,14 +287,14 @@ func _rebuild() -> void:
 		var col := Color(0.55, 0.85, 0.5) if st == QuestsData.STATUS_DONE else (Color(1, 0.9, 0.55) if bool(e.get("story", false)) else Color(0.7, 0.88, 1.0))
 		var t := _mk_label(head + String(e.get("title", "")), 8, col)
 		_list.add_child(t)
-		var d := _mk_label(String(e.get("desc", "")), 7, Color(0.85, 0.8, 0.7, 0.7))
+		var d := _mk_label(String(e.get("desc", "")), 8, Color(0.85, 0.8, 0.7, 0.7))  # t27 P1-1: 7 -> 8
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		d.custom_minimum_size = Vector2(330, 0)  # t24: +12 min ширины скролла < 344 (иначе панель распухнет)
 		_list.add_child(d)
 		for raw_tg in e.get("targets", []):
 			var tg: Dictionary = raw_tg
 			var done := bool(tg.get("done", false))
-			var row := _mk_label("    %s %s  %d/%d" % ["[x]" if done else "[ ]", String(tg.get("label", "")), int(tg.get("cur", 0)), int(tg.get("need", 1))], 7, Color(0.55, 0.85, 0.5) if done else Color(1, 1, 1, 0.85))
+			var row := _mk_label("    %s %s  %d/%d" % ["[x]" if done else "[ ]", String(tg.get("label", "")), int(tg.get("cur", 0)), int(tg.get("need", 1))], 8, Color(0.55, 0.85, 0.5) if done else Color(1, 1, 1, 0.85))  # t27 P1-1: 7 -> 8
 			_list.add_child(row)
 
 # --- построение вкладки достижений (P1.5) ---
@@ -331,7 +352,7 @@ func _rebuild_achv() -> void:
 			"  ✓ закрыто" if unlocked else "",
 		], 8, head_col)
 		_ach_list.add_child(head)
-		var d := _mk_label(String(c.get("desc", "")), 7,
+		var d := _mk_label(String(c.get("desc", "")), 8,  # t27 P1-1: 7 -> 8
 			Color(0.85, 0.8, 0.7, 0.7) if unlocked else Color(0.85, 0.8, 0.7, 0.4))
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		d.custom_minimum_size = Vector2(330, 0)  # t24: +12 min ширины скролла < 344 (иначе панель распухнет)
@@ -342,7 +363,7 @@ func _rebuild_achv() -> void:
 				# live-счётчики (campfires/chests/...) обнуляются сменой круга,
 				# а анлок вечен: «0/3» рядом с «✓ закрыто» врал бы игроку (Q5)
 				_ach_list.add_child(_mk_label("    %s: ✓" % String(c.get("hint", "Прогресс")),
-					7, Color(0.55, 0.85, 0.5)))
+					8, Color(0.55, 0.85, 0.5)))  # t27 P1-1: 7 -> 8
 			else:
 				var cur := _ach_cur(spec)
 				var goal := int(c.get("goal", 0))

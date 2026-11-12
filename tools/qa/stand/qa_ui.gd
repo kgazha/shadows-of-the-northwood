@@ -135,6 +135,24 @@ func _journal_checks() -> void:
 	print("QA_UI INFO widths scroll=%.0f col_minmax=%.1f clipped_btns=%d" % [j._scroll.size.x, need_max, clipped])
 	_chk("j5_no_clip", clipped == 0,
 		"иконка+имя+ранг не обрезаются: widest min=%.1f px при колонке ~%.0f px" % [need_max, (j._scroll.size.x - 12.0) / 3.0])
+	# t27 P0-2: бумажная кромка журнала — НЕ ребёнок PanelContainer (контейнер
+	# укладывал её в контент-прямоугольник, кромка не доставала до рамки),
+	# а сосед окна под _root с ровно тем же глобальным прямоугольником.
+	# Layout прогнан выше (2 кадра при _root.visible). Стенд показывает корень
+	# напрямую (без open()), поэтому повторяем синк кромки из open() — сам
+	# пользовательский путь open() вызывает _sync_paper() (см. journal.gd).
+	j._sync_paper()
+	var paper: PaperEdge = j._paper
+	var paper_in_panel := false
+	for c in j._panel.get_children():
+		if c is PaperEdge:
+			paper_in_panel = true
+	var j6_ok := paper != null and not paper_in_panel and paper.get_parent() == j._root \
+		and paper.global_position.is_equal_approx(j._panel.global_position) \
+		and paper.size.is_equal_approx(j._panel.size)
+	_chk("j6_paper_on_frame", j6_ok,
+		"PaperEdge — сосед _panel под _root, rect==rect окна: paper=%s panel=%s" % [
+			str(paper.size) if paper != null else "-", str(j._panel.size)])
 	j.close()
 
 # --- п.2 + п.4: hud.gd ---

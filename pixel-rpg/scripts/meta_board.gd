@@ -24,13 +24,14 @@ const COSTS := [2, 5, 9]
 const TALENTS := [
 	{"id": "first_coal",   "name": "Первые угли",     "vals": [15, 30, 50], "fmt": "+%d зол. в начале забега"},
 	{"id": "coal_heart",   "name": "Углевое сердце",  "vals": [4, 8, 12],   "fmt": "+%d к макс. HP"},
-	{"id": "ash_step",     "name": "Пепельная поступь", "vals": [4, 8, 12],  "fmt": "+%d% к скорости хода"},
-	{"id": "deep_pockets", "name": "Глубокие карманы", "vals": [8, 16, 24],  "fmt": "+%d% золота с мобов"},
+	{"id": "ash_step",     "name": "Пепельная поступь", "vals": [4, 8, 12],  "fmt": "+%d%% к скорости хода"},
+	{"id": "deep_pockets", "name": "Глубокие карманы", "vals": [8, 16, 24],  "fmt": "+%d%% золота с мобов"},
 ]
 
 var root: Control                # полноэкранный корень; visible = «открыта»
 var dim: ColorRect
 var panel: PanelContainer
+var paper: PaperEdge             # t27 P0-2: кромка вне Container-раскладки панели
 var rows_box: VBoxContainer      # ряды талантов (пересобираются)
 var balance_lbl: Label
 var bless_lbl: Label
@@ -108,7 +109,7 @@ static func buy(id: String) -> bool:
 
 func _build() -> void:
 	var th := Theme.new()
-	th.default_font_size = 8
+	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
 	root = Control.new()
 	root.name = "MetaBoardRoot"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -130,18 +131,22 @@ func _build() -> void:
 		panel.add_theme_stylebox_override("panel", _ui_frame_style(26.0))
 	center.add_child(panel)
 	# бумажная кромка пергамента — общий компонент t20 (scripts/paper_edge.gd,
-	# ex-внутренний класс Journal; те же марджины, что в журнале)
+	# ex-внутренний класс Journal; те же марджины, что в журнале).
+	# t27 P0-2: НЕ ребёнок panel — PanelContainer укладывает всех детей в
+	# контент-прямоугольник, и кромка уезжала внутрь (перетягивала ряды).
+	# Кромка — сосед панели под root, повторяет её глобальный прямоугольник;
+	# размер доски динамический, поэтому синхронизация по panel.resized.
 	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		var paper := PaperEdge.new()
+		paper = PaperEdge.new()
 		paper.tex = load("res://assets/ui/decor_paper_edge.png")
 		paper.src_margin = 95.0
 		paper.dst_margin = 24.0
-		paper.set_anchors_preset(Control.PRESET_FULL_RECT)
 		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		panel.add_child(paper)
+		root.add_child(paper)
+		panel.resized.connect(_sync_paper)
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 4)
+	vb.add_theme_constant_override("separation", 6)  # t27 P1-1: разделители +2
 	panel.add_child(vb)
 	var head := Label.new()
 	head.text = "Пепельная доска"
@@ -166,7 +171,7 @@ func _build() -> void:
 	balance_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.6))
 	bal_row.add_child(balance_lbl)
 	rows_box = VBoxContainer.new()
-	rows_box.add_theme_constant_override("separation", 3)
+	rows_box.add_theme_constant_override("separation", 5)  # t27 P1-1: +2
 	vb.add_child(rows_box)
 	bless_lbl = Label.new()
 	bless_lbl.add_theme_color_override("font_color", Color(0.65, 0.8, 0.7))
@@ -201,6 +206,15 @@ func _set_open(v: bool) -> void:
 	GameAudio.sfx("ui_confirm" if v else "ui_click")
 	if v:
 		_rebuild()
+		_sync_paper()
+
+## t27 P0-2: кромка — сосед панели под root; повторяет её глобальный прямоугольник.
+## Вызывается по panel.resized (пересборка рядов меняет высоту) и при открытии.
+func _sync_paper() -> void:
+	if paper == null or not is_instance_valid(paper):
+		return
+	paper.global_position = panel.global_position
+	paper.size = panel.size
 
 ## Пересборка рядов и счётчиков (после открытия и каждой покупки).
 func _rebuild() -> void:
@@ -234,7 +248,7 @@ func _add_row(t: Dictionary) -> void:
 	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.87, 0.75))
 	col.add_child(name_lbl)
 	var eff := Label.new()
-	eff.add_theme_font_size_override("font_size", 7)
+	eff.add_theme_font_size_override("font_size", 8)  # t27 P1-1: мин. ступень 7 -> 8
 	eff.add_theme_color_override("font_color", Color(0.7, 0.66, 0.58))
 	if r < COSTS.size():
 		eff.text = String(t["fmt"]) % int((t["vals"] as Array)[r])
@@ -252,6 +266,10 @@ func _add_row(t: Dictionary) -> void:
 		btn.pressed.connect(_on_buy.bind(id))
 	btn.custom_minimum_size = Vector2(96, 0)
 	hb.add_child(btn)
+	# t27: латентный база-баг — row НИКОГДА не добавлялся в rows_box (ни в каком
+	# коммите), строки талантов не попадали в дерево и не рисовались. Без этой
+	# строки P0-1 («eff-текст каждой строки») невыполним в принципе.
+	rows_box.add_child(row)
 
 func _on_buy(id: String) -> void:
 	var tname := id

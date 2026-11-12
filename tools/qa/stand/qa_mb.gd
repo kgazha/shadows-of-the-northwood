@@ -174,11 +174,21 @@ func r6_death_screen() -> void:
 	await get_tree().process_frame
 	RunSummary.open()
 	check("R6: панель открылась на голом хосте (is_open)", RunSummary.is_open())
-	var has_paper := false
+	# t27 P0-2 (замена t20-пина «PaperEdge — ребёнок panel», ставшего структурно
+	# неверным): кромка — сосед панели под root и повторяет её глобальный
+	# прямоугольник (иначе PanelContainer сдвигает её в контент-область).
+	await get_tree().process_frame  # layout: rect панели зафиксирован, paper синхронизирован
+	var paper_ok := false
+	var paper_in_panel := false
+	for c in rs.root.get_children():
+		if c is PaperEdge:
+			var pc := c as Control
+			paper_ok = pc.global_position.is_equal_approx(rs.panel.global_position) \
+				and pc.size.is_equal_approx(rs.panel.size)
 	for c in rs.panel.get_children():
 		if c is PaperEdge:
-			has_paper = true
-	check("R6: фон панели — общий PaperEdge (t20-компонент)", has_paper)
+			paper_in_panel = true
+	check("R6: PaperEdge — сосед панели под root, rect == rect панели (t27 P0-2)", paper_ok and not paper_in_panel)
 	var st := rs.stats_lbl.text
 	check("R6: сид показан (Сид: 777)", st.contains("Сид: 777"))
 	check("R6: глубина/волна показана (Круг (глубь): 2)", st.contains("Круг (глубь): 2"))
@@ -193,6 +203,41 @@ func r6_death_screen() -> void:
 	# Esc-маршрут: 1-й Esc закрывает открытую доску, 2-й — «Вспыхнуть заново»
 	MetaBoard.open()
 	check("R6: доска открыта поверх экрана смерти", MetaBoard.is_open())
+	# t27 P0-2: кромка доски — сосед панели под root, rect == rect панели.
+	await get_tree().process_frame
+	var bpaper_ok := false
+	var bpaper_in_panel := false
+	for c in rs.board.root.get_children():
+		if c is PaperEdge:
+			var bpc := c as Control
+			bpaper_ok = bpc.global_position.is_equal_approx(rs.board.panel.global_position) \
+				and bpc.size.is_equal_approx(rs.board.panel.size)
+	for c in rs.board.panel.get_children():
+		if c is PaperEdge:
+			bpaper_in_panel = true
+	check("R6: PaperEdge доски — сосед панели, rect == rect панели (t27 P0-2)", bpaper_ok and not bpaper_in_panel)
+	# t27 P0-1: eff-текст каждой строки доски непустой и ровно fmt % значение
+	# ранга (в бейзлайне fmt содержал одинарный '%' -> String formatting error
+	# -> две строки таблицы были битыми; пустоты/неотформатированных строк быть не должно)
+	var brows: Array = []
+	for c in rs.board.rows_box.get_children():
+		if not c.is_queued_for_deletion():  # пересборка рядов делает queue_free старых
+			brows.append(c)
+	check("t27: рядов доски ровно 4 (факт=%d)" % brows.size(), brows.size() == MetaBoard.TALENTS.size())
+	for i in mini(brows.size(), MetaBoard.TALENTS.size()):
+		var t: Dictionary = MetaBoard.TALENTS[i]
+		var trow := brows[i] as PanelContainer
+		var eff: Label = null
+		if trow != null and trow.get_child_count() > 0:
+			var hb: Node = trow.get_child(0)
+			if hb.get_child_count() > 0:
+				var col: Node = hb.get_child(0)
+				if col.get_child_count() > 1:
+					eff = col.get_child(1) as Label
+		var want: String = String(t["fmt"]) % int((t["vals"] as Array)[MetaBoard.rank_of(String(t["id"]))])
+		var got := "" if eff == null else eff.text
+		check("t27: eff-строка '%s' непустая и форматирована ('%s')" % [String(t["id"]), want],
+			eff != null and got != "" and got == want)
 	var ev := InputEventAction.new()
 	ev.action = "ui_cancel"
 	ev.pressed = true

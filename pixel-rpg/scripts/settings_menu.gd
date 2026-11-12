@@ -198,7 +198,7 @@ func _on_dim_input(event: InputEvent) -> void:
 
 func _build() -> void:
 	var th := Theme.new()
-	th.default_font_size = 8
+	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
 	dim = ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.55)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -342,7 +342,7 @@ func _build() -> void:
 	vb.add_child(row_i)
 
 	sv_msg = Label.new()
-	sv_msg.add_theme_font_size_override("font_size", 7)
+	sv_msg.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	sv_msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(sv_msg)
 
@@ -356,7 +356,7 @@ func _build() -> void:
 
 	var hint := Label.new()
 	hint.text = "Esc или клик мимо — закрыть"
-	hint.add_theme_font_size_override("font_size", 7)
+	hint.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.45))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -391,12 +391,12 @@ func _key_row(box: VBoxContainer, act: String, key: String) -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var la := Label.new()
 	la.text = act
-	la.add_theme_font_size_override("font_size", 7)
+	la.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	la.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	la.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var lk := Label.new()
 	lk.text = key
-	lk.add_theme_font_size_override("font_size", 7)
+	lk.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	lk.add_theme_color_override("font_color", Color(1, 0.93, 0.65))
 	lk.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	lk.mouse_filter = Control.MOUSE_FILTER_IGNORE

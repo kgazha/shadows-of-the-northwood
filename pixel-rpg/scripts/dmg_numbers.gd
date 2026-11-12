@@ -25,10 +25,10 @@ const COLORS := {
 	"heal": Color("5da24a"),    # зелёный лечения из палитры
 	"block": Color("8f93a3"),   # сталь — метка «броня» (полное поглощение)
 }
-# Шрифт — тот же, чем набита HUD (своя Theme с default_font_size=8 в hud.gd;
-# FontFile в проекте нет, пиксельность даёт дефолтный шрифт + stretch canvas_items).
-# Крит чуть крупнее — 10 px, остальное 8 px (мирная подсказка world.gd — тоже 8).
-const FONT_SIZES := {"crit": 10, "normal": 8, "heal": 8, "block": 6}
+# t27 P1-1: тот же пиксельный шрифт, что и HUD (UIFont -> assets/fonts/handjet.ttf;
+# дефолтный шрифт проекта не менялся). Ступени подняты на шаг: крит 11, обычное/
+# лечение 9, «броня» 7 (минимальная читаемая ступень; мирная подсказка world.gd — 8).
+const FONT_SIZES := {"crit": 11, "normal": 9, "heal": 9, "block": 7}
 
 static var _inst: DmgNumbers = null
 
@@ -119,6 +119,10 @@ func _acquire() -> Label:
 		# контур как у world.hint_label / hud.hp_txt — читаемо на тёмном лесу
 		lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 		lbl.add_theme_constant_override("outline_size", 3)
+		# t27 P1-1: Label под Node2D темы не наследуют — пиксельный шрифт в лоб
+		var f := UIFont.get_font()
+		if f != null:
+			lbl.add_theme_font_override("font", f)
 		add_child(lbl)
 		return lbl
 	return _pool.pop_back()

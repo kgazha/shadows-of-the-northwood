@@ -92,7 +92,7 @@ static func is_open() -> bool:
 
 func _build() -> void:
 	var th := Theme.new()
-	th.default_font_size = 8
+	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
 	root = Control.new()
 	root.name = "ShopRoot"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -160,7 +160,7 @@ func _build() -> void:
 func _section_label(text: String) -> Label:
 	var lb := Label.new()
 	lb.text = text
-	lb.add_theme_font_size_override("font_size", 7)
+	lb.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	lb.add_theme_color_override("font_color", Color(0.85, 0.75, 0.6))
 	return lb
 

@@ -109,7 +109,7 @@ func setup(p_world: Node2D) -> void:
 	else:
 		push_warning("Нет ассета: assets/ui/panel_frame.png — панели без рамки")
 	var th := Theme.new()
-	th.default_font_size = 8
+	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
 	hp_bg = ColorRect.new()
 	hp_bg.color = Color(0.08, 0.08, 0.1, 0.9)
 	hp_bg.size = Vector2(130, 9)
@@ -125,7 +125,7 @@ func setup(p_world: Node2D) -> void:
 	hp_fill.size = Vector2(128, 7)
 	hp_bg.add_child(hp_fill)
 	hp_txt = Label.new()
-	hp_txt.add_theme_font_size_override("font_size", 7)
+	hp_txt.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	hp_txt.add_theme_color_override("font_color", Color(1, 0.92, 0.86))
 	hp_txt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	hp_txt.add_theme_constant_override("outline_size", 3)
@@ -144,7 +144,7 @@ func setup(p_world: Node2D) -> void:
 	mana_fill.size = Vector2(128, 7)
 	mana_bg.add_child(mana_fill)
 	mana_txt = Label.new()
-	mana_txt.add_theme_font_size_override("font_size", 7)
+	mana_txt.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	mana_txt.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
 	mana_txt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	mana_txt.add_theme_constant_override("outline_size", 3)
@@ -186,13 +186,13 @@ func setup(p_world: Node2D) -> void:
 	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	panel.offset_left = 8
 	panel.offset_right = -8
-	panel.offset_top = -66
+	panel.offset_top = -72  # t27 P1-2: панель диалога 58 -> 64 px
 	panel.offset_bottom = -8
 	dname = Label.new()
 	dname.add_theme_color_override("font_color", Color(1, 0.9, 0.55))
 	dtext = RichTextLabel.new()
 	dtext.bbcode_enabled = false
-	dtext.custom_minimum_size = Vector2(0, 40)
+	dtext.custom_minimum_size = Vector2(0, 36)  # t27 P1-2: контент 48 = dname + dtext (было 40 при контенте 50)
 	dtext.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	portrait = TextureRect.new()
 	portrait.custom_minimum_size = Vector2(40, 40)
@@ -244,15 +244,17 @@ func setup(p_world: Node2D) -> void:
 	panel.add_child(hbox)
 	var dhint := Label.new()
 	dhint.text = "ЛКМ / E — далее"
-	dhint.add_theme_font_size_override("font_size", 7)
-	dhint.add_theme_color_override("font_color", Color(1, 1, 1, 0.45))
+	dhint.add_theme_font_size_override("font_size", 8)  # t27 P0-3: 7 -> 8
+	dhint.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))  # t27 P0-3: .45 -> .75
+	dhint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))  # t27 P0-3: читаемость на светлом
+	dhint.add_theme_constant_override("outline_size", 3)
 	dhint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	dhint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	dhint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(dhint)
 	panel.theme = th
 	if ui_frame_tex != null:
-		panel.add_theme_stylebox_override("panel", _ui_frame_style(4.0))
+		panel.add_theme_stylebox_override("panel", _ui_frame_style(8.0))  # t27 P1-2: контент-марджин 4 -> 8 (глифы >=4 лог. px от рамки)
 	add_child(panel)
 	panel.visible = false
 
@@ -578,7 +580,7 @@ func _build_skill_panel(th: Theme) -> void:
 		cdnum.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		sc.add_child(cdnum)
 		var lvl := Label.new()
-		lvl.add_theme_font_size_override("font_size", 7)
+		lvl.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 		lvl.add_theme_color_override("font_color", Color(1, 0.75, 0.4))
 		lvl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 		lvl.add_theme_constant_override("outline_size", 3)
@@ -586,7 +588,7 @@ func _build_skill_panel(th: Theme) -> void:
 		lvl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		sc.add_child(lvl)
 		var hot := Label.new()
-		hot.add_theme_font_size_override("font_size", 7)
+		hot.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 		hot.add_theme_color_override("font_color", Color(1, 1, 0.7, 0.9))
 		hot.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 		hot.add_theme_constant_override("outline_size", 3)
@@ -641,7 +643,7 @@ func _build_alch_ui(th: Theme) -> void:
 	mat_lbl.offset_right = 246
 	mat_lbl.offset_top = -55
 	mat_lbl.offset_bottom = -43
-	mat_lbl.add_theme_font_size_override("font_size", 7)
+	mat_lbl.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	mat_lbl.add_theme_color_override("font_color", Color(0.85, 0.95, 0.75))
 	mat_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	mat_lbl.add_theme_constant_override("outline_size", 3)
@@ -697,7 +699,7 @@ func _build_alch_ui(th: Theme) -> void:
 	var rtxt := Label.new()
 	rtxt.text = "Отдых…"
 	rtxt.position = Vector2(49, 1)
-	rtxt.add_theme_font_size_override("font_size", 7)
+	rtxt.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	rtxt.add_theme_color_override("font_color", Color(1, 0.95, 0.85))
 	rtxt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	rtxt.add_theme_constant_override("outline_size", 3)

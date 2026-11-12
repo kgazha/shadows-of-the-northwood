@@ -25,6 +25,7 @@ static var I: RunSummary        # синглтон; назначает сам с
 var root: Control               # полноэкранный корень панели; visible = «открыта»
 var dim: ColorRect              # затемнение мира; клики мимо окна глушатся
 var panel: PanelContainer
+var paper: PaperEdge            # t27 P0-2: кромка вне Container-раскладки панели
 var stats_lbl: Label
 var kills_lbl: Label
 var bless_lbl: Label
@@ -77,7 +78,7 @@ static func is_open() -> bool:
 
 func _build() -> void:
 	var th := Theme.new()
-	th.default_font_size = 8
+	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
 	root = Control.new()
 	root.name = "RunSummaryRoot"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -101,17 +102,20 @@ func _build() -> void:
 	# t20: бумажная кромка пергамента — общий компонент wave-3 (PaperEdge,
 	# те же марджины, что в журнале; панель расширена 200→232 и content 6→26,
 	# чтобы текст не залезал на кромку — урок t24).
+	# t27 P0-2: НЕ ребёнок PanelContainer (контейнер сдвигает детей в контент-
+	# прямоугольник, кромка не доставала до рамки) — сосед панели под root;
+	# высота панели динамическая -> синхронизация по panel.resized.
 	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		var paper := PaperEdge.new()
+		paper = PaperEdge.new()
 		paper.tex = load("res://assets/ui/decor_paper_edge.png")
 		paper.src_margin = 95.0
 		paper.dst_margin = 24.0
-		paper.set_anchors_preset(Control.PRESET_FULL_RECT)
 		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		panel.add_child(paper)
+		root.add_child(paper)
+		panel.resized.connect(_sync_paper)
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 4)
+	vb.add_theme_constant_override("separation", 6)  # t27 P1-1: разделители +2
 	panel.add_child(vb)
 	var head := Label.new()
 	head.text = "Забег окончен"
@@ -125,12 +129,12 @@ func _build() -> void:
 	vb.add_child(stats_lbl)
 	kills_lbl = Label.new()
 	kills_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	kills_lbl.add_theme_font_size_override("font_size", 7)
+	kills_lbl.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	kills_lbl.add_theme_color_override("font_color", Color(0.72, 0.68, 0.6))
 	vb.add_child(kills_lbl)
 	bless_lbl = Label.new()
 	bless_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	bless_lbl.add_theme_font_size_override("font_size", 7)
+	bless_lbl.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	bless_lbl.add_theme_color_override("font_color", Color(0.65, 0.8, 0.7))
 	vb.add_child(bless_lbl)
 	# t20: ряд «Пепел: заработано …» с утверждённой иконкой ash_v2 (вердикт юзера)
@@ -140,7 +144,7 @@ func _build() -> void:
 	ash_row.add_child(AshIcon.make_rect(14))
 	var ash_note := Label.new()
 	ash_note.text = "Пепел переживает смерть: сохраняется 60–70% заработанного."
-	ash_note.add_theme_font_size_override("font_size", 7)
+	ash_note.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	ash_note.add_theme_color_override("font_color", Color(0.78, 0.68, 0.5))
 	ash_row.add_child(ash_note)
 	board_btn = Button.new()
@@ -179,6 +183,14 @@ func _set_open(v: bool) -> void:
 	if v:
 		_acquire_lock()
 		_refresh()
+		_sync_paper()
+
+## t27 P0-2: кромка — сосед панели под root; повторяет её глобальный прямоугольник.
+func _sync_paper() -> void:
+	if paper == null or not is_instance_valid(paper):
+		return
+	paper.global_position = panel.global_position
+	paper.size = panel.size
 
 ## Снимок итогов t20 — в момент открытия (start_new_run ещё не вызывался,
 ## rs.* ещё живы). Значения из сейва — каноническим парсером GameState._num

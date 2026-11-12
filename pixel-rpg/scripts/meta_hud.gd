@@ -59,6 +59,10 @@ func _process(delta: float) -> void:
 
 func _mk(col: Color) -> Label:
 	var l := Label.new()
+	# t27 P1-1: тема здесь не задаётся — пиксельный шрифт в лоб (как в DmgNumbers)
+	var f := UIFont.get_font()
+	if f != null:
+		l.add_theme_font_override("font", f)
 	l.add_theme_font_size_override("font_size", 8)
 	l.add_theme_color_override("font_color", col)
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
