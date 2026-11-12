@@ -16,13 +16,14 @@ const BOAR_DASH_TIME := 0.14   # длительность полёта рывк�
 const BOAR_STUN := 0.7         # оглушение цели, с
 const BOAR_STUN_BOSS := 0.35   # босс держит оглушение вдвое короче (канон brute)
 const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP воину (кламп по max_hp)
-# --- волна 5: визуальный масштаб героя ---
+# --- SCALE_CANON: рост героя = эталон H = 32 мир. px ---
 # Спрайт 16px: контент-стопы на +5 от центра кадра (замер assets/player.png и
-# class_*.png — бот-ряд 12..13). ×1.5 только визуально: коллайдер 10x8, скорости
-# и хитбоксы не тронуты. Якорь по стопам: ANIM_HOME = +5*(1−1.5) = −2.5 — ноги
+# class_*.png — бот-ряд 12..13). Рисуем кадр 16px × 2.0 = 32 px — это и есть
+# канонический рост (SCALE_CANON.md). Только визуально: коллайдер 10x8, скорости
+# и хитбоксы не тронуты. Якорь по стопам: ANIM_HOME = +5*(1−2.0) = −5 — ноги
 # на прежней линии, тень (atmosphere меряет низ кадров) следует за спрайтом сама.
-const VISUAL_SCALE := 1.5
-const ANIM_HOME := Vector2(0, -2.5)
+const VISUAL_SCALE := 2.0
+const ANIM_HOME := Vector2(0, -5.0)
 
 var anim: AnimatedSprite2D
 var facing := "down"
@@ -72,17 +73,17 @@ func _ready() -> void:
 	add_child(anim)
 	apply_class()
 	anim.play("down")
-	# тик регенерации — видимая искра над героем (волна 5: макушка ушла на ~-12,
-	# искры/цифры подняты вместе с головой)
+	# тик регенерации — видимая искра над героем (SCALE_CANON: рост 32 px,
+	# макушка ~-17.5, искры/цифры подняты вместе с головой)
 	GameState.regen_hp_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			Fx.heal(global_position + Vector2(0, -18), world))
+			Fx.heal(global_position + Vector2(0, -24), world))
 	GameState.regen_mana_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			_spark(global_position + Vector2(0, -18), Color(0.4, 0.65, 1.0, 0.9), 5.0))
+			_spark(global_position + Vector2(0, -24), Color(0.4, 0.65, 1.0, 0.9), 5.0))
 	GameState.leveled_up.connect(func(_l: int) -> void:
 		if is_instance_valid(self):
-			Fx.level_up(global_position + Vector2(0, -16), world))
+			Fx.level_up(global_position + Vector2(0, -22), world))
 
 func class_data() -> Dictionary:
 	return Classes.class_data(GameState.class_id)
@@ -675,7 +676,7 @@ func take_damage(n: int) -> void:
 	GameState.entered_combat()  # реген «замолкает» на время боя
 	var _hp0 := GameState.hp  # число урона = реально снятые HP (после брони), не входящий урон
 	GameState.hurt(n)
-	DmgNumbers.spawn(global_position + Vector2(0, -18), maxi(0, _hp0 - GameState.hp), "normal")
+	DmgNumbers.spawn(global_position + Vector2(0, -24), maxi(0, _hp0 - GameState.hp), "normal")  # SCALE_CANON: макушка ~-17.5
 	Fx.hit(global_position + Vector2(0, -6), world)
 	if GameState.hp <= 0:
 		cancel_orders()

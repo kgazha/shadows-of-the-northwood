@@ -501,10 +501,11 @@ func _build_village_props() -> void:
 	village_zone.add_child(village_props)
 	var missing: Array = []
 	# Избы: кластер «R»/«W»/«D» (крыша/стены/дверь ручной постройки) — один
-	# спрайт на кластер, низ по нижней границе стен, центр по bbox. Спрайт
-	# клампится по размеру кластера (паттерн GroveCanopy: k = max(bw,bh)-cover
-	# с 12% нависанием, кламп как у крон) — маленький кластер не накрывает
-	# соседа гигантской избой, большой не торчит голыми тайлами из-под избы.
+	# спрайт на кластер, низ по нижней границе стен, центр по bbox. SCALE_CANON:
+	# ассет 96×77 = 2.4H; k — точное покрытие bbox (без нависающих 12%: иначе
+	# стандартный кластер 6×4 рисовался бы 86 px вместо канонических 77).
+	# Маленький кластер рисуется пропорционально меньше, большой — больше,
+	# кламп как у крон.
 	var cottage := _village_art(VILLAGE_ART_COTTAGE)
 	if cottage == null:
 		missing.append(VILLAGE_ART_COTTAGE)
@@ -521,7 +522,7 @@ func _build_village_props() -> void:
 				y1 = maxi(y1, c.y)
 			var bw := float(x1 - x0 + 1) * TILE
 			var bh := float(y1 - y0 + 1) * TILE
-			var k := maxf(bw * 1.12 / float(cottage.get_width()), bh * 1.12 / float(cottage.get_height()))
+			var k := maxf(bw / float(cottage.get_width()), bh / float(cottage.get_height()))
 			k = clampf(k, 0.5, 1.45)
 			_add_prop(cottage, x0, x1, y0, y1, Vector2i(x0, y0), k)
 	# Колодцы: одиночные валуны «r» впритык к воде — там деревня и ставила
@@ -843,9 +844,9 @@ func _spawn_player() -> void:
 	# текст world-space подсказок — не «картинка», держим пиксельную чёткость
 	# (наследовать LINEAR от героя ему не надо)
 	hint_label.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	# волна 5: герой визуально ×1.5 (макушка ~ -16 от центра) — подсказка не
-	# должна залезать на голову
-	hint_label.position = Vector2(-45, -28)
+	# SCALE_CANON: герой рисуется 32 px (макушка до ~ -23 у высоких классов) —
+	# подсказка не должна залезать на голову
+	hint_label.position = Vector2(-45, -35)
 	hint_label.size = Vector2(90, 10)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.add_theme_color_override("font_color", Color(1, 1, 0.75))
@@ -1235,7 +1236,7 @@ func drink_potion() -> void:
 	Achv.on_herb_drunk()  # ачивка «Травник» (achv.gd §2 #11)
 	var _hp0 := GameState.hp  # heal-число = реально восстановленные HP
 	GameState.heal(3)
-	DmgNumbers.spawn(player.global_position + Vector2(0, -18), GameState.hp - _hp0, "heal")
+	DmgNumbers.spawn(player.global_position + Vector2(0, -24), GameState.hp - _hp0, "heal")
 	GameState.quest_changed.emit()  # автосейв + обновление HUD
 	GameState.toast.emit("Лесное зелье: +%d HP" % (GameState.hp - _hp0))  # факт долечено (QA F1)
 
