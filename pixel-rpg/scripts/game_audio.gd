@@ -4,7 +4,9 @@ extends Node
 ## синглтон — static var I; world.gd создаёт узел в _ready() и присваивает I.
 ## Шины "Music" и "SFX" (обе в Master) создаются при старте; громкости живут в
 ## user://audio_cfg.json. Любое отсутствующее имя/файл — тихий пропуск, игра
-## не падает (guarded ResourceLoader.exists + кэш потоков).
+## не падает (guarded ResourceLoader.exists + кэш потоков). Битый/рукописный
+## audio_cfg.json (t37 V-01) переживает так же молча: нечисловые значения -> дефолт,
+## шины применяются ВСЕГДА (_vol_of + явный _apply_bus_volumes в _ready).
 ## Kenney RPG-сэмплы: CC0, https://github.com/Boyquotes/kenney-rpg-audio-for-godot ;
 ## ui_*.ogg — собственный синтез (tools/gen_ui_sfx.js + ffmpeg libvorbis), original, CC0.
 
@@ -83,6 +85,9 @@ func _ready() -> void:
 	_ensure_bus("Music")
 	_ensure_bus("SFX")
 	_load_cfg()
+	# t37 V-01 (гарантия вместо finally): шины обязан дёрнуть КАЖДЫЙ старт, даже
+	# если загрузка конфига когда-нибудь оборвётся раньше — идемпотентно, копейки.
+	_apply_bus_volumes()
 	for i in SFX_POOL:
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"
@@ -238,17 +243,46 @@ func _save_cfg() -> void:
 		return
 	f.store_string(JSON.stringify({"master": master_vol, "music": music_vol, "sfx": sfx_vol}))
 
+## t37 V-01: безопасная конверсия значения audio_cfg.json. В GDScript 4 float("abra")
+## — рантайм-ошибка, и в старом коде она обрывала _load_cfg ДО _apply_bus_volumes():
+## шины оставались на заводских 0 дБ, а music/sfx из конфига не дочитывались.
+## Семантика — как GameState._numf (именно так Sfx клампит мусор в meta audio.*,
+## sfx.gd:259-272): число — оно (NaN/Inf -> дефолт), числовая строка — число, всё
+## прочее (bool/null/массив/текст) — дефолт; результат всегда в 0..1.
+func _vol_of(v: Variant, def: float) -> float:
+	var d := clampf(def, 0.0, 1.0)
+	match typeof(v):
+		TYPE_INT:
+			return clampf(float(v), 0.0, 1.0)
+		TYPE_FLOAT:
+			return d if (is_nan(float(v)) or is_inf(float(v))) else clampf(float(v), 0.0, 1.0)
+		TYPE_STRING:
+			var s := String(v)
+			if not s.is_valid_float():
+				push_warning("audio_cfg.json: «%s» не число — берём %.2f" % [s, d])
+				return d
+			return clampf(s.to_float(), 0.0, 1.0)
+		_:
+			push_warning("audio_cfg.json: значение типа %d не число — берём %.2f" % [typeof(v), d])
+			return d
+
 func _load_cfg() -> void:
+	# t37 V-01: полный сброс к дефолту (раньше master «доживал» значение прошлого
+	# чтения, если ключа в конфиге нет) — загрузка конфига детерминирована.
+	master_vol = DEF_VOL
 	music_vol = DEF_VOL
 	sfx_vol = DEF_VOL
 	if FileAccess.file_exists(CFG_PATH):
 		var f := FileAccess.open(CFG_PATH, FileAccess.READ)
 		if f != null:
-			var data: Variant = JSON.parse_string(f.get_as_text())
+			var txt := f.get_as_text()
+			f.close()
+			var data: Variant = JSON.parse_string(txt)
 			if typeof(data) == TYPE_DICTIONARY:
-				master_vol = clampf(float(data.get("master", DEF_VOL)), 0.0, 1.0)
-				music_vol = clampf(float(data.get("music", DEF_VOL)), 0.0, 1.0)
-				sfx_vol = clampf(float(data.get("sfx", DEF_VOL)), 0.0, 1.0)
+				master_vol = _vol_of(data.get("master", DEF_VOL), DEF_VOL)
+				music_vol = _vol_of(data.get("music", DEF_VOL), DEF_VOL)
+				sfx_vol = _vol_of(data.get("sfx", DEF_VOL), DEF_VOL)
+			# обрезанный при крахе/не-JSON файл: parse_string -> null -> тихий дефолт
 	_apply_bus_volumes()
 
 # --- кэш потоков: ResourceLoader.exists ДО load, повторные load дешевле ---

@@ -7,7 +7,11 @@ extends CanvasLayer
 ## в скрытом виде mouse_filter=IGNORE — «невидимое стекло» над игрой не остаётся.
 ##
 ## Громкости: три слайдера «Общая»/«Музыка»/«Эффекты» (HSlider, 0..1, шаг 0.05),
-## инициализация из GameAudio.I (master_vol/music_vol/sfx_vol; I ещё нет — DEF_VOL).
+## инициализация ИЗ ФАКТИЧЕСКИ ПРИМЕНЁННОГО к аудио-шинам (t37 V-03): шины — это то,
+## что реально слышно, поэтому меню не может показать одно, а играть другое. Раньше
+## UI читал GameAudio.I (user://audio_cfg.json), а звук диктовала meta audio.* (Sfx),
+## и при рассогласовании (испорченный/устаревший cfg) цифры расходились. Нет живого
+## аудио-узла -> Sfx.get_volume -> GameAudio.I -> DEF_VOL (прежний фолбэк).
 ## Live-применение на слух при каждом шаге: set_volumes(..., save=false) — шины
 ## мгновенно, без IO; запись user://audio_cfg.json — по отпусканию слайдера
 ## (drag_ended) и по «Сброс». GameAudio сам читает/пишет audio_cfg.json в
@@ -62,6 +66,8 @@ const CM_CLASS := "ClickMove"
 const MM_PATH := "res://scripts/minimap.gd"
 const MM_CLASS := "Minimap"
 const FRAME_PATH := "res://assets/ui/panel_frame.png"  # та же Kenney 9-slice рамка, что у окон hud
+## т37 V-03: слайдер -> аудио-шина, чей уровень он двигает (и из которой читается).
+const VOL_BUS := {"master": "Master", "music": "Music", "sfx": "SFX"}
 
 ## «Управление»: действие — клавиша. Порядок чтения = частота применения.
 ## Ключевые слова клавиш (WASD/SPACE/E/Q/J/M/F5/F9/Esc/ЛКМ/ПКМ) — эталон для
@@ -443,20 +449,43 @@ func _vol_row(vb: VBoxContainer, t: String, sl: HSlider, pct: Label) -> void:
 
 # --- громкости ---
 
-## Инициализация слайдеров из синглтона (I мог ещё не родиться — фолбэк дефолт).
-## set_value_no_signal: открытие меню не должно писать audio_cfg.json «на ровном месте».
+## Жив ли вообще хоть один владелец звука: без него шины висят на заводских 0 дБ
+## (1.0), и читать с них было бы нечестно — тогда прежний фолбэк DEF_VOL.
+func _audio_alive() -> bool:
+	return (GameAudio.I != null and is_instance_valid(GameAudio.I)) \
+		or (Sfx.I != null and is_instance_valid(Sfx.I))
+
+## т37 V-03: единый источник истины громкости = ФАКТИЧЕСКИ применённое к шинам.
+## Шины пишут ровно два места, и оба через linear_to_db(v): GameAudio
+## ._apply_bus_volumes() и Sfx._apply_buses() — значит обратное чтение dB (и мьют
+## как 0) даёт слышимое значение БЕЗ второго хранилища, с которым UI может разойтись
+## (находка t36 V-03: UI — cfg, звук — meta audio.*). Откат по порядку: шина ->
+## Sfx -> GameAudio.I -> DEF_VOL (аудио ещё не родилось).
+func _applied_volume(kind: String) -> float:
+	var idx := AudioServer.get_bus_index(String(VOL_BUS.get(kind, "Master")))
+	if idx >= 0 and _audio_alive():
+		if AudioServer.is_bus_mute(idx):
+			return 0.0
+		return clampf(db_to_linear(AudioServer.get_bus_volume_db(idx)), 0.0, 1.0)
+	if Sfx.I != null and is_instance_valid(Sfx.I):
+		return Sfx.get_volume(kind)
+	if GameAudio.I != null and is_instance_valid(GameAudio.I):
+		match kind:
+			"master":
+				return GameAudio.I.master_vol
+			"music":
+				return GameAudio.I.music_vol
+			"sfx":
+				return GameAudio.I.sfx_vol
+	return GameAudio.DEF_VOL
+
+## Инициализация слайдеров тем, что звучит (см. _applied_volume). Открытие меню не
+## должно писать audio_cfg.json «на ровном месте» — только set_value_no_signal.
 ## Значения вне сетки шага (сейв старой версии/чужой конфиг) округляются к 0.05.
 func _sync_audio() -> void:
-	var mv := GameAudio.DEF_VOL
-	var sv := GameAudio.DEF_VOL
-	var tv := GameAudio.DEF_VOL
-	if GameAudio.I != null:
-		mv = GameAudio.I.master_vol
-		sv = GameAudio.I.music_vol
-		tv = GameAudio.I.sfx_vol
-	master_slider.set_value_no_signal(snappedf(mv, 0.05))
-	mus_slider.set_value_no_signal(snappedf(sv, 0.05))
-	sfx_slider.set_value_no_signal(snappedf(tv, 0.05))
+	master_slider.set_value_no_signal(snappedf(_applied_volume("master"), 0.05))
+	mus_slider.set_value_no_signal(snappedf(_applied_volume("music"), 0.05))
+	sfx_slider.set_value_no_signal(snappedf(_applied_volume("sfx"), 0.05))
 	_sync_pct_labels()
 
 func _sync_pct_labels() -> void:

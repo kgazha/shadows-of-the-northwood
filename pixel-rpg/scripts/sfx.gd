@@ -21,7 +21,10 @@ extends Node
 ##    При старте meta перезаписывает user://audio_cfg.json (мета вечна), запись
 ##    cfg на драг слайдера остаётся как было (пин qa_s2).
 
-const POOL := 8                 # плееров в пуле (аллокаций на выстрел — ноль)
+# t37 V-02: мёртвая const POOL := 8 УДАЛЕНА (находка t36: нигде не читалась, а
+# комментарий обещал пул из 8 при фактическом пуле из 15). Пул плееров и
+# голосовых слотов = число ключей каталога (SfxCatalog.KEYS.size(), щас 15) —
+# единственное место, где он аллоцируется (см. _ready): аллокаций на выстрел ноль.
 const MAX_VOICES := 6           # контракт: не более ~6 одновременных голосов
 const DEFAULT_THROTTLE_MS := 40
 const KEY_THROTTLE := {         # окно троттла под характер события
@@ -67,6 +70,8 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	_streams = SfxCatalog.build_all()
 	_gen_ms = Time.get_ticks_msec() - t0
+	# Пул = один плеер + один голосовой слот на ключ каталога (15): все аллокации
+	# здесь, в кадре не рождается ничего (см. также удалённую const POOL выше).
 	for i in SfxCatalog.KEYS.size():
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"

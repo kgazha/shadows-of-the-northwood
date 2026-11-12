@@ -8,8 +8,13 @@ extends "res://mb_base.gd"
 ## тишину при бездействии, шины Master/SFX/Music, громкости immediate + персист
 ## meta audio.* (переживает вайп круга и «перезапуск» узла) и разводку хуков
 ## по исходникам (замена, а не удвоение звука).
+## t37 (фаза K, находки t36): робастность — грязный audio_cfg.json не роняет
+## загрузку и не ломает шины (V-01), громкость имеет ОДИН источник истины —
+## фактически применённый к шинам (V-03), пул голосов = ключи каталога, а не
+## мёртвая константа (V-02).
 
 const RATE := 22050             # канон каталога (sfx_catalog.gd)
+const CFG_PATH := "user://audio_cfg.json"   # то же поле, что пишет/читает game_audio.gd
 const HIGH_HZ := 4000.0         # порог «стеклянности»: выше — только тихие музыкальные частички
 const HIGH_MAX := 0.15          # доля энергии >4кГц в ключе (замер каталога 0.119; калибровка — квадрат ниже)
 const SQ_MIN := 0.25            # контрольный квадрат 2кГц обязан быть ярче этого
@@ -32,6 +37,7 @@ func _ready() -> void:
 	await h_restart()
 	i_wiring()
 	j_wipe()
+	await k_robust()
 	done()
 
 # ---------------------------------------------------------------------------
@@ -244,6 +250,120 @@ func j_wipe() -> void:
 	check("J: вайп круга по-прежнему чистит q./rs. (чужой неймспейс не сломан)",
 		not GameState.flags.has("q.junk") and not GameState.flags.has("rs.junk"))
 
+# --- K: t37 робастность звука (находки t36 V-01/V-02/V-03) ---------------------
+
+## K1 (V-01): user://audio_cfg.json правят руками/режет крах — нечисловые значения
+## не имели права ронять _load_cfg ДО _apply_bus_volumes(). K2 (V-03): у громкости не
+## должно быть двух хранилищ — слайдер обязан показывать ТО, ЧТО ЗВУЧИТ (шины).
+## Фазы A..J стенд жил без GameAudio.I (Sfx-хост на root пишет шины напрямую) — это
+## и есть конфигурация, в которой старый UI врал: он читал GameAudio.I, а звук
+## диктовала meta audio.*. Порядок K0 -> K1 важен: сначала правда без GameAudio,
+## потом старт GameAudio с грязным конфигом.
+func k_robust() -> void:
+	# ── K0: единый источник истины (V-03) ────────────────────────────────────
+	check("K: GameAudio.I действительно ещё нет (Sfx-хост соло, как в фазах A..J)",
+		GameAudio.I == null)
+	# «слышимое» — то, что реально стоит на шинах; меню обязано показывать его.
+	var aud_m := _bus_lin("Master")
+	var aud_u := _bus_lin("Music")
+	var aud_s := _bus_lin("SFX")
+	check("K: на шинах пережитая громкость 0.40/0.60/0.25 (мера слышимого зафиксирована)",
+		absf(aud_m - 0.4) < 0.011 and absf(aud_u - 0.6) < 0.011 and absf(aud_s - 0.25) < 0.011)
+	var sm = SettingsMenu.new()      # не типизируем: поля меню читаем динамически (как qa_s2)
+	add_child(sm)
+	await get_tree().process_frame
+	sm.call("_sync_audio")
+	check("K: V-03 слайдеры = шины с точностью сетки шага 0.05 (master/music/sfx)",
+		absf(float(sm.master_slider.value) - snappedf(aud_m, 0.05)) < 0.0001 \
+		and absf(float(sm.mus_slider.value) - snappedf(aud_u, 0.05)) < 0.0001 \
+		and absf(float(sm.sfx_slider.value) - snappedf(aud_s, 0.05)) < 0.0001)
+	check("K: V-03 без GameAudio.I слайдеры НЕ показали дефолт 80% при звуке 40/60/25",
+		absf(float(sm.master_slider.value) - GameAudio.DEF_VOL) > 0.05 \
+		and absf(float(sm.mus_slider.value) - GameAudio.DEF_VOL) > 0.05 \
+		and absf(float(sm.sfx_slider.value) - GameAudio.DEF_VOL) > 0.05)
+	check("K: V-03 проценты меню совпадают с шинами (40/60/25)",
+		String(sm.master_pct.text) == "40%" and String(sm.mus_pct.text) == "60%" \
+		and String(sm.sfx_pct.text) == "25%")
+	# ── K1: грязный cfg (V-01) ───────────────────────────────────────────────
+	_write_cfg("{\"master\":\"abra\",\"music\":0.5,\"sfx\":\"kaboom\"}")
+	var ga := GameAudio.new()
+	add_child(ga)
+	await get_tree().process_frame
+	check("K: V-01 грязный cfg не уронил загрузку — GameAudio жив и стал синглтоном",
+		is_instance_valid(ga) and GameAudio.I == ga)
+	check("K: V-01 нечисловой master -> DEF_VOL (старый float(«abra») тут и падал)",
+		absf(ga.master_vol - GameAudio.DEF_VOL) < 0.001)
+	check("K: V-01 нечисловой sfx -> DEF_VOL, а читаемый music=0.5 всё же дочитан",
+		absf(ga.sfx_vol - GameAudio.DEF_VOL) < 0.001 and absf(ga.music_vol - 0.5) < 0.001)
+	check("K: V-01 шины всё равно применены (Master = DEF_VOL, а не заводские 0 дБ)",
+		absf(AudioServer.get_bus_volume_db(AudioServer.get_bus_index("Master")) \
+			- linear_to_db(GameAudio.DEF_VOL)) < 0.01)
+	check("K: V-01 шина Music доехала до 0.5 из обломанного cfg",
+		absf(AudioServer.get_bus_volume_db(AudioServer.get_bus_index("Music")) \
+			- linear_to_db(0.5)) < 0.01)
+	# safe-конверсия в лоб — ровно те значения, на которых спотыкался float()
+	check("K: V-01 _vol_of: строка-мусор -> дефолт, числовая строка -> число",
+		absf(ga._vol_of("abra", GameAudio.DEF_VOL) - GameAudio.DEF_VOL) < 0.001 \
+		and absf(ga._vol_of("0.25", GameAudio.DEF_VOL) - 0.25) < 0.001)
+	check("K: V-01 _vol_of: bool/null/массив/NaN/Inf -> дефолт, 42.0 -> кламп 1.0",
+		absf(ga._vol_of(true, GameAudio.DEF_VOL) - GameAudio.DEF_VOL) < 0.001 \
+		and absf(ga._vol_of(null, GameAudio.DEF_VOL) - GameAudio.DEF_VOL) < 0.001 \
+		and absf(ga._vol_of([0.5], GameAudio.DEF_VOL) - GameAudio.DEF_VOL) < 0.001 \
+		and absf(ga._vol_of(NAN, GameAudio.DEF_VOL) - GameAudio.DEF_VOL) < 0.001 \
+		and absf(ga._vol_of(INF, GameAudio.DEF_VOL) - GameAudio.DEF_VOL) < 0.001 \
+		and absf(ga._vol_of(42.0, GameAudio.DEF_VOL) - 1.0) < 0.001)
+	# ── K2: старт GameAudio не должен рассинхронить меню и звук (V-03) ────────
+	sm.call("_sync_audio")
+	check("K: V-03 после старта GameAudio меню = шины (0.80/0.50/0.80), расхождения нет",
+		absf(float(sm.master_slider.value) - 0.8) < 0.011 \
+		and absf(float(sm.mus_slider.value) - 0.5) < 0.011 \
+		and absf(float(sm.sfx_slider.value) - 0.8) < 0.011)
+	sm.master_slider.value = 0.65          # штатный путь: value_changed -> _apply
+	sm.call("_save_now")                   # drag_ended: cfg + meta + шины
+	sm.call("_sync_audio")
+	check("K: V-03 после записи громкости сошлись все три: меню 0.65 = шина = meta",
+		absf(float(sm.master_slider.value) - 0.65) < 0.011 and absf(_bus_lin("Master") - 0.65) < 0.011 \
+		and absf(float(GameState.flags.get("audio.master", -1.0)) - 0.65) < 0.011)
+	check("K: V-03 и audio_cfg.json тоже 0.65 (cfg больше не «второе мнение»)",
+		absf(_cfg_num("master") - 0.65) < 0.011)
+	# ── K3: нормальные конфигы читаются как раньше ───────────────────────────
+	_write_cfg("{\"master\":0.7,\"music\":0.6,\"sfx\":0.5}")
+	ga.call("_load_cfg")
+	check("K: чистый cfg читается точно (0.70/0.60/0.50)",
+		absf(ga.master_vol - 0.7) < 0.001 and absf(ga.music_vol - 0.6) < 0.001 \
+		and absf(ga.sfx_vol - 0.5) < 0.001)
+	_write_cfg("{\"master\":0.9,\"music\":")        # обрезанный при крахе хвост
+	ga.call("_load_cfg")
+	check("K: обрезанный cfg -> дефолты без ошибки (ветка parse-null жива)",
+		absf(ga.master_vol - GameAudio.DEF_VOL) < 0.001 and absf(ga.music_vol - GameAudio.DEF_VOL) < 0.001)
+	_write_cfg("")
+	ga.call("_load_cfg")
+	check("K: пустой cfg -> дефолты, шины на дефолте (не 0 дБ и не прошлый разброс)",
+		absf(ga.sfx_vol - GameAudio.DEF_VOL) < 0.001 \
+		and absf(_bus_lin("SFX") - GameAudio.DEF_VOL) < 0.011)
+	# ── K4: анти-регресс по исходникам (чтоб находки не вернулись молча) ─────
+	var sg := _src("res://scripts/sfx.gd")
+	# Ищем ИМЕННО объявление, а не вхождение подстроки: пояснение «const POOL удалена»
+	# в комментарии обязано остаться и текстом пина не считаться «возврат константы».
+	var pool_decl := false
+	for line in sg.split("\n"):
+		if String(line).strip_edges().begins_with("const POOL"):
+			pool_decl = true
+	check("K: V-02 мёртвая const POOL из sfx.gd удалена (объявления нет ни в одной строке)",
+		not pool_decl)
+	check("K: V-02 реальный размер пула документирован (по ключам каталога)",
+		sg.contains("SfxCatalog.KEYS.size()"))
+	check("K: V-02 пул голосов = число ключей каталога (15 слотов, а не обещанных 8)",
+		Sfx.I != null and Sfx.I.get_child_count() == Sfx.keys().size())
+	var gag := _src("res://scripts/game_audio.gd")
+	check("K: V-01 в game_audio.gd есть гейд is_valid_float + явная гарантия шин",
+		gag.contains("is_valid_float()") and gag.contains("_apply_bus_volumes()"))
+	var sms := _src("res://scripts/settings_menu.gd")
+	check("K: V-03 UI читает громкость с шин, а не только из cfg",
+		sms.contains("AudioServer.get_bus_volume_db") and sms.contains("_applied_volume"))
+	sm.free()
+	ga.free()
+
 # ---------------------------------------------------------------------------
 # утилиты
 
@@ -292,3 +412,36 @@ static func _high_share(s: PackedFloat32Array) -> float:
 		y2 += k * (y1 - y2)
 		el += y2 * y2
 	return clampf((e - el) / e, 0.0, 1.0)
+
+## t37: испортить/положить user://audio_cfg.json так же, как это делает игра.
+func _write_cfg(txt: String) -> void:
+	var f := FileAccess.open(CFG_PATH, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(txt)
+	f.close()
+
+## t37: «слышимое» значение шины — мьют читается нулём, остальное обратно
+## linear_to_db (именно так пишут шины GameAudio._apply_bus_volumes/Sfx._apply_buses).
+func _bus_lin(bus: String) -> float:
+	var i := AudioServer.get_bus_index(bus)
+	if i < 0:
+		return -1.0
+	if AudioServer.is_bus_mute(i):
+		return 0.0
+	return db_to_linear(AudioServer.get_bus_volume_db(i))
+
+## t37: число из audio_cfg.json (-1 — файла/ключа нет): проверить, что cfg не «второе
+## мнение», разошедшееся с шиной и meta.
+func _cfg_num(key: String) -> float:
+	if not FileAccess.file_exists(CFG_PATH):
+		return -1.0
+	var f := FileAccess.open(CFG_PATH, FileAccess.READ)
+	if f == null:
+		return -1.0
+	var txt := f.get_as_text()
+	f.close()
+	var data: Variant = JSON.parse_string(txt)
+	if typeof(data) != TYPE_DICTIONARY or not data.has(key):
+		return -1.0
+	return float(data[key])
