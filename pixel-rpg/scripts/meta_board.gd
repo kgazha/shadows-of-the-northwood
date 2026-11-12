@@ -36,6 +36,7 @@ var rows_box: VBoxContainer      # ряды талантов (пересобир
 var balance_lbl: Label
 var bless_lbl: Label
 var close_btn: Button
+var _buy_guard := false          # t32: покупка в текущем кадре уже была
 
 func _enter_tree() -> void:
 	if I == null:
@@ -226,6 +227,10 @@ func _sync_paper() -> void:
 ## Пересборка рядов и счётчиков (после открытия и каждой покупки).
 func _rebuild() -> void:
 	for c in rows_box.get_children():
+		# t32: до конца кадра ряд ещё жив в дереве и ХИТТЕСТABLE (queue_free —
+		# отложенное удаление), поэтому его кнопки гасятся СИНХРОННО: второй клик
+		# «по мёртвой» кнопке не должен ни нажиматься, ни что-то покупать.
+		_invalidate_row(c)
 		c.queue_free()
 	balance_lbl.text = "Пепел: %d" % Ash.balance()
 	var stacks := GameState.volkhv_stacks()
@@ -234,6 +239,17 @@ func _rebuild() -> void:
 	]
 	for t in TALENTS:
 		_add_row(t)
+
+## t32: мгновенная инвалидация ряда, помеченного на удаление: кнопка->disabled +
+## мышь->IGNORE рекурсивно. queue_free() исполняется только в конце кадра, и до
+## того момента старая кнопка оставалась кликабельной — отсюда двойная трата пепла.
+func _invalidate_row(c: Node) -> void:
+	if c is Button:
+		(c as Button).disabled = true
+	if c is Control:
+		(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for ch in c.get_children():
+		_invalidate_row(ch)
 
 func _add_row(t: Dictionary) -> void:
 	var id := String(t["id"])
@@ -270,7 +286,9 @@ func _add_row(t: Dictionary) -> void:
 		var cost := next_cost(r)
 		btn.text = "Ранг %d — %d пепла" % [r + 1, cost]
 		btn.disabled = Ash.balance() < cost
-		btn.pressed.connect(_on_buy.bind(id))
+		# t32: кнопка носит ранг, под которым её нарисовали, — обработчик сверяет
+		# его с фактическим и отбивает устаревшее нажатие.
+		btn.pressed.connect(_on_buy.bind(id, r))
 	btn.custom_minimum_size = Vector2(96, 0)
 	hb.add_child(btn)
 	# t27: латентный база-баг — row НИКОГДА не добавлялся в rows_box (ни в каком
@@ -278,7 +296,24 @@ func _add_row(t: Dictionary) -> void:
 	# строки P0-1 («eff-текст каждой строки») невыполним в принципе.
 	rows_box.add_child(row)
 
-func _on_buy(id: String) -> void:
+## Покупка по клику. t32 — три слоя защиты от двойной траты Пепла (дыра: строки
+## гасятся queue_free() и до конца кадра остаются в дереве кликабельными, два
+## сигнала pressed проходили валидацию дважды -> ранг +2 и −7 пепла за ранг 1):
+##  1) rendered_rank — ранг, под которым кнопка отрисована: СИНХРОННАЯ сверка с
+##     фактическим рангом отбивает нажатие устаревшей кнопки в любой момент;
+##  2) _buy_guard — не более одной покупки на кадр: повторный сигнал (та же или
+##     другая строка, программный emit) в этом же кадре игнорируется; флаг снимает
+##     отложенный вызов в конце кадра, поэтому штатные клики в разных кадрах
+##     работают как прежде;
+##  3) _invalidate_row() в _rebuild() гасит старые кнопки сразу (disabled/IGNORE),
+##     так что «мёртвая» строка физически не кликается до конца кадра.
+func _on_buy(id: String, rendered_rank: int = -1) -> void:
+	if _buy_guard:
+		return  # покупка в этом кадре уже обработана
+	if rendered_rank >= 0 and rank_of(id) != rendered_rank:
+		return  # кнопка устарела: ряд пересобран, ранг уже другой
+	_buy_guard = true
+	_release_buy_guard.call_deferred()
 	var tname := id
 	for t in TALENTS:
 		if String(t["id"]) == id:
@@ -292,6 +327,12 @@ func _on_buy(id: String) -> void:
 	# экран смерти под доской показывает баланс — освежить, если открыт
 	if RunSummary.I != null and RunSummary.is_open():
 		RunSummary.I._refresh()
+
+## t32: снять «покупка в этом кадре была». Отложенный вызов исполняется в конце
+## текущего кадра (после раздачи всех событий ввода), поэтому следующий кадр —
+## снова одна легитимная покупка, а все нажатия текущего кадра уже отсеяны.
+func _release_buy_guard() -> void:
+	_buy_guard = false
 
 func _on_close() -> void:
 	close_panel()

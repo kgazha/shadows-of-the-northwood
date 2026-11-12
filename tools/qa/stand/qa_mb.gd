@@ -238,6 +238,115 @@ func r6_death_screen() -> void:
 		var got := "" if eff == null else eff.text
 		check("t27: eff-строка '%s' непустая и форматирована ('%s')" % [String(t["id"]), want],
 			eff != null and got != "" and got == want)
+	# --- t32: двойная трата Пепла (находка artist-hud из t29) ---
+	# Ряды гасятся queue_free() и остаются в дереве ХИТТЕСТABLE до конца кадра,
+	# поэтому два «pressed» одной кнопки в одном физическом кадре проходили обе
+	# валидации: ранг +2 и −7 пепла за покупку ранга 1 (цена 2). Каждый шаг ниже
+	# стартует с чистого состояния (ранг 0, баланс 20) — иначе состояние перетекает
+	# из шага в шаг и проверка становится вакуумной (на сломанном коде шаг 2
+	# проходил лишь потому, что первый шаг уже упёрся в кап).
+	var d_id: String = String(MetaBoard.TALENTS[0]["id"])
+	var d_id2: String = String(MetaBoard.TALENTS[1]["id"])
+	var d_ash_saved := Ash.balance()
+	var d_row: PanelContainer = brows[0] as PanelContainer
+	var d_btn: Button = null
+	if d_row != null and d_row.get_child_count() > 0:
+		var dhb: Node = d_row.get_child(0)
+		if dhb.get_child_count() > 1:
+			d_btn = dhb.get_child(1) as Button
+	check("t32: кнопка покупки ряда «%s» найдена и активна" % d_id, d_btn != null and not d_btn.disabled)
+
+	# шаги 1/2: ровно одна покупка на кадр (двойной клик по ещё живой строке)
+	for step in ["pressed.emit()", "_on_buy()"]:
+		GameState.flags["meta.ash"] = 20
+		GameState.flags[MetaBoard.KEY_PREFIX + d_id] = 0
+		rs.board._rebuild()
+		var d_r0 := MetaBoard.rank_of(d_id)
+		var d_a0 := Ash.balance()
+		var d_c0 := MetaBoard.next_cost(d_r0)
+		if step == "pressed.emit()":
+			# два сигнала ОДНОЙ кнопки в одном кадре — так выглядит двойной клик
+			# по строке, которая ещё не уничтожена (queue_free в конце кадра)
+			d_btn.pressed.emit()
+			d_btn.pressed.emit()
+		else:
+			# прямой двойной вызов обработчика в одном кадре (обход хиттеста)
+			rs.board._on_buy(d_id)
+			rs.board._on_buy(d_id)
+		check("t32: %s x2 в одном кадре -> ровно один ранг +1 (факт +%d)" \
+			% [step, MetaBoard.rank_of(d_id) - d_r0], MetaBoard.rank_of(d_id) == d_r0 + 1)
+		check("t32: %s x2 в одном кадре -> ровно одно списание %d (ожидали %d, факт %d)" \
+			% [step, d_c0, d_a0 - d_c0, Ash.balance()], Ash.balance() == d_a0 - d_c0)
+		await get_tree().process_frame
+
+	# шаг 3: штатные одиночные покупки всех рангов в разных кадрах работают как
+	# прежде (защита от двойной траты не имеет права блокировать покупки)
+	GameState.flags["meta.ash"] = 20
+	GameState.flags[MetaBoard.KEY_PREFIX + d_id] = 0
+	rs.board._rebuild()
+	var d_ok := true
+	var d_trace := ""
+	for want in [1, 2, 3]:
+		var cost_w: int = MetaBoard.next_cost(MetaBoard.rank_of(d_id))
+		var ash_w: int = Ash.balance()
+		rs.board._on_buy(d_id)
+		var ok: bool = MetaBoard.rank_of(d_id) == int(want) and Ash.balance() == ash_w - cost_w
+		d_ok = d_ok and ok
+		d_trace += "r%d(-%d)->%d/%d " % [int(want), cost_w, MetaBoard.rank_of(d_id), Ash.balance()]
+		await get_tree().process_frame
+	check("t32: штатные покупки рангов 1/2/3 по одному клику не изменились (%s)" % d_trace.strip_edges(),
+		d_ok and Ash.balance() == 20 - 2 - 5 - 9)
+	# шаг 4: семантика «одна покупка на кадр» для РАЗНЫХ рядов (документирована):
+	# второй ряд в том же кадре не тратится, в следующем — покупается штатно
+	GameState.flags["meta.ash"] = 20
+	GameState.flags[MetaBoard.KEY_PREFIX + d_id] = 0
+	GameState.flags[MetaBoard.KEY_PREFIX + d_id2] = 0
+	rs.board._rebuild()
+	rs.board._on_buy(d_id)
+	rs.board._on_buy(d_id2)
+	check("t32: другой ряд в том же кадре не тратится (первый куплен, второй ждёт кадр)",
+		MetaBoard.rank_of(d_id) == 1 and MetaBoard.rank_of(d_id2) == 0 and Ash.balance() == 18)
+	await get_tree().process_frame
+	rs.board._on_buy(d_id2)
+	check("t32: в следующем кадре второй ряд покупается штатно",
+		MetaBoard.rank_of(d_id2) == 1 and Ash.balance() == 16)
+	# шаг 5: СИНХРОННАЯ валидация по фактическому рангу: обработчик знает ранг,
+	# под которым кнопка была отрисована (bind), и обязан отказать, если ранг уже
+	# уехал — независимо от того, в одном кадре клик или в другом.
+	await get_tree().process_frame
+	GameState.flags["meta.ash"] = 20
+	GameState.flags[MetaBoard.KEY_PREFIX + d_id] = 1
+	rs.board._rebuild()
+	var d_s_a := Ash.balance()
+	rs.board._on_buy(d_id, 0)   # «кнопка из-под ранга 0», а фактический ранг 1
+	check("t32: устаревшая кнопка (рисована для ранга 0 при ранге 1) отказывает, пепел цел (%d)" \
+		% d_s_a, Ash.balance() == d_s_a and MetaBoard.rank_of(d_id) == 1)
+	rs.board._on_buy(d_id, 1)   # актуальный ранг — покупка проходит
+	check("t32: кнопка с актуальным рангом покупает как прежде",
+		MetaBoard.rank_of(d_id) == 2 and Ash.balance() == d_s_a - 5)
+	# шаг 6: кап-ряд «Макс.» — кнопка дизейблена, покупка за капом отказывает
+	GameState.flags[MetaBoard.KEY_PREFIX + d_id] = MetaBoard.COSTS.size()
+	await get_tree().process_frame
+	rs.board._rebuild()
+	var d_crow: PanelContainer = null
+	for c in rs.board.rows_box.get_children():
+		if not c.is_queued_for_deletion():
+			d_crow = c as PanelContainer
+			break
+	var d_cbtn: Button = null
+	if d_crow != null and d_crow.get_child_count() > 0:
+		var chb: Node = d_crow.get_child(0)
+		if chb.get_child_count() > 1:
+			d_cbtn = chb.get_child(1) as Button
+	var d_ca := Ash.balance()
+	check("t32: кап-ряд — кнопка «Макс.» и она дизейблена (текст '%s')" \
+		% ("" if d_cbtn == null else d_cbtn.text), d_cbtn != null and d_cbtn.disabled and d_cbtn.text == "Макс.")
+	rs.board._on_buy(d_id)
+	rs.board._on_buy(d_id)
+	check("t32: двойной вызов на кап-ряде ничего не тратит (баланс %d, факт %d)" % [d_ca, Ash.balance()],
+		Ash.balance() == d_ca and MetaBoard.rank_of(d_id) == MetaBoard.COSTS.size())
+	GameState.flags["meta.ash"] = d_ash_saved
+	rs.board._rebuild()
 	var ev := InputEventAction.new()
 	ev.action = "ui_cancel"
 	ev.pressed = true
