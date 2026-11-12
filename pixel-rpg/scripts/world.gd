@@ -71,6 +71,30 @@ const ENV4_ART := {
 ## крупнее 6 — осыпь, остаётся тайловой (как «стена» деревьев у крон).
 const ENV4_STONE_MIN_CELLS := 2
 const ENV4_STONE_MAX_CELLS := 6
+## «Живая земля» и «прочерченные тропы» (волна 5): визуальный слой z=-5 — над
+## базовыми тайлами (-10) и водой (-9), ПОД сущностями/маркерами (0) и кронами
+## (5): слой не закрывает NPC, лут, цифры урона и персонажей. Мягкие разнотонные
+## патчи на «g»/«f»/«G» (мох/хвоя/листва/прогалина/трава) и сегменты тропы с
+## РАСПЛЫВЧАТЫМИ краями на «d» (маска непрозрачна до границы клетки, перо 3–4 px
+## сверх — соседние сегменты перекрываются на 2–3 px, швов нет). Паттерн
+## GroveCanopy/VillageProps: меняется только картинка; CHAR_TO_TILE, коллайдеры,
+## миникарта — бит-в-бит. Fail-safe: нет ассетов → прежний рендер.
+const GROUND_ART := [
+	"res://assets/art/ground_moss_1.png",
+	"res://assets/art/ground_moss_2.png",
+	"res://assets/art/ground_needles_1.png",
+	"res://assets/art/ground_leaves_1.png",
+	"res://assets/art/ground_clearing_1.png",
+	"res://assets/art/ground_grass_1.png",
+]
+const PATH_ART := [
+	"res://assets/art/path_worn_1.png",
+	"res://assets/art/path_needles_1.png",
+	"res://assets/art/path_pebbles_1.png",
+]
+## Плотность патчей земли: ~55% кандидатов (h % 20 < 11). Детерминировано хэшем
+## клетки, без randi — два прогона рисуют побитово идентичный слой.
+const GROUND_PAINT_DENSITY := 11
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
@@ -108,6 +132,7 @@ var _cf_props: Array = []   # [{"spr": Sprite2D, "cf": Node}] — погасши
 var _env4_props: Array = [] # [{"spr": Sprite2D, "live": Callable}] — прячем по геймплейному состоянию
 var _env4_cave_props: Node2D   # визуальный слой пропсов пещеры (z 5, как village_props)
 var _env4_ashen_props: Node2D  # визуальный слой пропсов Пепелища (z 5)
+var ground_paint: Node2D       # «живая земля» деревни (z -5): патчи + тропа (волна 5)
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -202,6 +227,7 @@ func _ready() -> void:
 	_build_ashen()
 	_build_ashen_entrance()
 	_build_env4_props()
+	_build_ground_paint()
 	atmosphere = load("res://scripts/atmosphere.gd").new()
 	add_child(atmosphere)
 	atmosphere.setup(self)
@@ -694,6 +720,83 @@ func _build_env4_props() -> void:
 		for k in missing:
 			names += String(k) + " "
 		push_warning("world: нет env4-ассетов %s— окружение волны 4 остаётся тайловым в этих местах" % names)
+
+## ---- «Живая земля» и «прочерченные тропы» (волна 5) -------------------------
+## Слой z=-5: над тайлами (-10) и водой (-9), под персонажами/маркерами (0),
+## лутом и цифрами урона, кронами/пропсами (5) — картинка земли богаче, логика
+## не тронута. Симол «d» есть ТОЛЬКО в карте деревни (пещера/Пепелище — другой
+## алфавит), поэтому слой живёт в village_zone; для остальных зон менять нечего.
+## Детерминизм: только хэш клетки (_env4_hash), randi нет — два прогона рисуют
+## побитово идентичный слой. Fail-safe: нет ассетов земли и тропы → слой не
+## создаётся вовсе (прежний рендер); нет части ассетов → слой без подслой.
+func _build_ground_paint() -> void:
+	var ground_texs: Array = []
+	for p in GROUND_ART:
+		var t := _village_art(p)
+		if t != null:
+			ground_texs.append(t)
+	var path_texs: Array = []
+	for p in PATH_ART:
+		var t := _village_art(p)
+		if t != null:
+			path_texs.append(t)
+	if ground_texs.is_empty() and path_texs.is_empty():
+		push_warning("world: нет ассетов ground_*/path_* — слой «живой земли» пропущен (прежний рендер)")
+		return
+	ground_paint = Node2D.new()
+	ground_paint.name = "GroundPaint"
+	ground_paint.z_index = -5
+	ground_paint.y_sort_enabled = false  # патчи перекрываются произвольно — порядок не важен, y-сортировка дёрнула бы стыки
+	village_zone.add_child(ground_paint)
+	# 1) Разнотонная земля: мягкий патч на ~55% клеток «g»/«f»/«G». Клетки у
+	# самой воды (Чебышёва<=1) пропускаем — перо патча не должно наползать на
+	# воду (z -9 рисуется под слоем, но закрытая водой клетка выглядела бы
+	# обрубком берега). Джиттер центра ±5 px, повороты кратно 90°, flip_h и
+	# вариант — всё из хэша; сетка клетки перестаёт читаться.
+	if not ground_texs.is_empty():
+		for y in map_h:
+			var row := String(map_rows[y])
+			for x in map_w:
+				if not (row[x] in "gfG"):
+					continue
+				if _near_char(x, y, "w"):
+					continue
+				var h := _env4_hash(x, y)
+				if h % 20 >= GROUND_PAINT_DENSITY:
+					continue
+				var spr := Sprite2D.new()
+				spr.texture = ground_texs[(h >> 4) % ground_texs.size()]
+				spr.centered = true
+				spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+				spr.flip_h = ((h >> 16) & 1) == 1
+				spr.rotation = PI * 0.5 * float((h >> 8) % 4)
+				# привязка к tile_to_world (тот же +2 по Y), джиттер — из хэша
+				spr.position = Vector2((x + 0.5) * TILE, (y + 0.5) * TILE + 2.0) \
+					+ Vector2(float((h >> 20) % 11) - 5.0, float((h >> 24) % 11) - 5.0)
+				# alpha 0.30..0.42: патч тише самого тайла (std 24) — низкая
+				# контрастность по ТЗ: разнотон земли, а не второй план сцены
+				spr.modulate = Color(1.0, 1.0, 1.0, 0.30 + 0.02 * float((h >> 28) % 7))
+				ground_paint.add_child(spr)
+	# 2) Тропа: каждый «d» — сегмент 30px с перьевыми краями. Маска непрозрачна
+	# до границы клетки и далее на ~2 px, перо 3–4 px — стык двух сегментов
+	# перекрыт, прямоугольных границ нет. 3 фактуры (утоптанная/хвоя/камешки)
+	# по хэшу; flip_h дробёт монотонность. Alpha 0.92 — тайл-«d» чуть угадывается
+	# под тропой (рельеф), миникарта его не видит (читает атлас, не спрайты).
+	if not path_texs.is_empty():
+		for y in map_h:
+			var row2 := String(map_rows[y])
+			for x in map_w:
+				if row2[x] != "d":
+					continue
+				var h2 := _env4_hash(x, y)
+				var spr2 := Sprite2D.new()
+				spr2.texture = path_texs[h2 % path_texs.size()]
+				spr2.centered = true
+				spr2.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+				spr2.flip_h = ((h2 >> 16) & 1) == 1
+				spr2.position = Vector2((x + 0.5) * TILE, (y + 0.5) * TILE + 2.0)
+				spr2.modulate = Color(1.0, 1.0, 1.0, 0.92)
+				ground_paint.add_child(spr2)
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
