@@ -228,6 +228,30 @@ const _PIXELS := {
 
 static var _icon_cache := {}
 
+## Атлас живописных иконок 192x16 (12 слотов по 16 px, порядок = NODES),
+## арт-волна 3 «Живая стилистика». Нет/битый -> процедурный узор _PIXELS.
+const ATLAS_PATH := "res://assets/talent_icons.png"
+
+static var _atlas_img: Image = null
+static var _atlas_failed := false
+
+## Загружает атлас иконок один раз; null если отсутствует/битый (с негативным кэшем).
+static func _atlas() -> Image:
+	if _atlas_img != null:
+		return _atlas_img
+	if _atlas_failed:
+		return null
+	var img: Image = null
+	if ResourceLoader.exists(ATLAS_PATH):
+		var tex: Texture2D = load(ATLAS_PATH)
+		if tex != null:
+			img = tex.get_image()
+	if img == null or img.get_height() != 16 or img.get_width() < 192:
+		_atlas_failed = true
+		return null
+	_atlas_img = img
+	return _atlas_img
+
 ## Сырое изображение иконки 8x8 RGBA8; неизвестный id -> null.
 static func icon_image(id: String) -> Image:
 	if not _PIXELS.has(id):
@@ -243,13 +267,22 @@ static func icon_image(id: String) -> Image:
 				img.set_pixel(x, y, col)
 	return img
 
-## Текстурка иконки для UI: источник 8 px растянут INTERPOLATE_NEAREST в 16 px
-## при создании (пиксель-арт остаётся квадратным; nearest из настроек проекта
-## дополняет это при отрисовке) — как skill_icons в хотбаре. Кэш по id,
+## Текстурка иконки для UI: сначала слот 16 px из живописного атласа ATLAS_PATH
+## (порядок = NODES); если атлас недоступен — процедурный источник 8 px
+## растягивается INTERPOLATE_NEAREST в 16 px (пиксель-арт остаётся квадратным;
+## nearest из настроек проекта дополняет это при отрисовке). Кэш по id,
 ## неизвестный id -> null (журнал нарисует строку без иконки).
 static func icon_texture(id: String) -> Texture2D:
 	if _icon_cache.has(id):
 		return _icon_cache[id]
+	var slot := NODES.keys().find(id)
+	if slot >= 0:
+		var a := _atlas()
+		if a != null:
+			var crop := a.get_region(Rect2i(slot * 16, 0, 16, 16))
+			var atex := ImageTexture.create_from_image(crop)
+			_icon_cache[id] = atex
+			return atex
 	var img := icon_image(id)
 	if img == null:
 		return null

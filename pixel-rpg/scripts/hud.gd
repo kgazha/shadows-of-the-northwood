@@ -310,7 +310,8 @@ func _process(delta: float) -> void:
 	_refresh_hotbar_gate()
 	_update_skill_states()
 	_update_camp_ui()
-	_update_marker(delta)
+	#_update_marker(delta)  # t19 (P0-2Б): стрелка цели переехала в мировой слой quest_marker.gd
+	# (указание капитана: на время t23 hud.gd не трогать). Больше сюда не возвращать.
 	# t18: импульс красной виньетки урона — в РЕАЛЬНОМ времени (Time.get_ticks_msec):
 	# hitstop (Engine.time_scale) не растягивает и не «замораживает» затухание.
 	if _dmg_vign != null:
@@ -608,7 +609,12 @@ func _build_skill_panel(th: Theme) -> void:
 	potion_btn.offset_bottom = -4
 	potion_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	potion_btn.tooltip_text = "Лесное зелье: +3 HP (Q или клик)"
-	if ResourceLoader.exists("res://assets/tiles.png"):
+	if ResourceLoader.exists("res://assets/item_icons.png"):
+		var hit := AtlasTexture.new()
+		hit.atlas = load("res://assets/item_icons.png")
+		hit.region = Rect2(0, 0, 16, 16) # слот 0 — трава (арт-волна 3)
+		potion_btn.icon = hit
+	elif ResourceLoader.exists("res://assets/tiles.png"):
 		var hat := AtlasTexture.new()
 		hat.atlas = load("res://assets/tiles.png")
 		hat.region = Rect2(11 * 16, 0, 16, 16)
