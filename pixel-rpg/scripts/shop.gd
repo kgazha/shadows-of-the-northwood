@@ -42,6 +42,30 @@ const ALTAR := [
 	{"id": "feet", "name": "Лёгкие ноги", "desc": "Кулдаун кувырка 0.9 → 0.75 c", "price": 8, "step": 0, "cap": 1},
 ]
 
+## t34 V-06 (реестр t30, high): полная витрина в дефолтном стиле была 240×397
+## при каноническом поле 640×360 (window 1280×720, stretch canvas_items/expand) —
+## «Закрыть (Esc)» @(205,371) целиком уходила за нижнюю границу, закрыть мышью
+## было нельзя (только Esc). Меры, обе сразу:
+## 1) КОМПАКТ-ТЕМА: штатные стейтбоксы кнопки с урезанными вертикальными
+##    content-отступами (4 -> 2, ряд 21 -> 17) + separation 3 -> 2. Полный список
+##    (шапка + 5 покупок + 2 скупки + 5 алтаря + 3 заголовка + close) = 328 px
+##    (замер probe: витрина 268 + шапка/close/поля 60), т.е. влезает в безопасное
+##    поле 352 (= 360 − 2×4) с запасом 24 px; низ close — 339 вместо 392;
+## 2) SCROLLCONTAINER вокруг витрины — СТРАХОВКА на случай роста стока или
+##    низкого окна: список уходит внутрь, а close-кнопка стоит ВНЕ скролла,
+##    значит видима без прокрутки всегда. Пока всё влезает — полосы нет и
+##    оффскрин-скан лавки даёт 0 (ни один элемент не за экраном).
+const BASE_VIEW_H := 360.0     # канон base-вьюпорта (не окно!) — поле проектирования UI
+const PANEL_W := 240.0         # ширина панели (была custom_minimum_size.x)
+const EDGE_GAP := 4.0          # воздушный зазор панели от верхней/нижней границы поля
+const COL_SEPARATION := 2      # t34 V-06: было 3
+const ROW_SEPARATION := 2      # t34 V-06: было 3
+const BTN_PAD_V := 2           # t34 V-06: вертикальный content-отступ кнопки (дефолт 4)
+
+var scroll: ScrollContainer    # t34 V-06: прокручиваемая витрина (страховка переполнения)
+var list_vb: VBoxContainer     # t34 V-06: единственный ребёнок scroll (секции витрины)
+var close_btn: Button          # t34 V-06: вне скролла => «Закрыть (Esc)» видима всегда
+
 var altar_head: Label          # заголовок секции алтаря с балансом Пепла (§4.2)
 var altar_btns := {}           # meta id -> Button алтаря
 
@@ -71,6 +95,11 @@ func _ready() -> void:
 	if ResourceLoader.exists("res://assets/ui/panel_frame.png"):
 		ui_frame_tex = load("res://assets/ui/panel_frame.png")
 	_build()
+	# t34 V-06: окно ниже канона (или другой aspect при expand) — витрина уходит
+	# в скролл, а не за нижнюю границу экрана.
+	var vp := get_viewport()
+	if vp != null and not vp.is_connected("size_changed", _fit_panel):
+		vp.size_changed.connect(_fit_panel)
 
 # --- статические обёртки: хукам не нужна проверка I в каждом вызове ---
 
@@ -95,6 +124,7 @@ static func is_open() -> bool:
 func _build() -> void:
 	var th := Theme.new()
 	UIFont.apply(th, 9)  # t27 P1-1: пиксельный шрифт с кириллицей, базовая ступень 8 -> 9
+	_compact_buttons(th)  # t34 V-06: компакт-ряды, чтобы полный список влез в поле 360
 	root = Control.new()
 	root.name = "ShopRoot"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -111,13 +141,16 @@ func _build() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(center)
 	panel = PanelContainer.new()
-	panel.custom_minimum_size = Vector2(240, 0)
+	panel.name = "ShopPanel"
 	panel.theme = th
 	if ui_frame_tex != null:
 		panel.add_theme_stylebox_override("panel", _ui_frame_style(5.0))
 	center.add_child(panel)
+	# Колонка панели (t34 V-06): неизменяемая шапка + прокручиваемая витрина +
+	# close-кнопка ВСЕГДА под витриной, а не внутри неё.
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 3)
+	vb.name = "Col"
+	vb.add_theme_constant_override("separation", COL_SEPARATION)
 	panel.add_child(vb)
 	var head := Label.new()
 	head.text = "Кузница Гриима"
@@ -129,34 +162,49 @@ func _build() -> void:
 	gold_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gold_lbl.add_theme_color_override("font_color", Color(1, 0.95, 0.6))
 	vb.add_child(gold_lbl)
-	vb.add_child(_section_label("Витрина:"))
+	scroll = ScrollContainer.new()
+	scroll.name = "ShopScroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# t34 V-06: STOP (не PASS!) — иначе клик по пустому месту витрины проваливался
+	# бы в dim и закрывал лавку; колесо мыши скроллит именно здесь.
+	scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL  # берёт весь остаток колонки
+	vb.add_child(scroll)
+	list_vb = VBoxContainer.new()
+	list_vb.name = "ShopList"
+	list_vb.add_theme_constant_override("separation", ROW_SEPARATION)
+	list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # паттерн journal.gd
+	scroll.add_child(list_vb)
+	list_vb.add_child(_section_label("Витрина:"))
 	for id in GearData.SHOP_STOCK:
 		var btn := Button.new()
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.pressed.connect(_on_buy.bind(String(id)))
-		vb.add_child(btn)
+		list_vb.add_child(btn)
 		buy_btns[String(id)] = btn
-	vb.add_child(_section_label("Скупка (сдам надетое вдвое дешевле):"))
+	list_vb.add_child(_section_label("Скупка (сдам надетое вдвое дешевле):"))
 	for slot in ["weapon", "armor"]:
 		var sbtn := Button.new()
 		sbtn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		sbtn.pressed.connect(_on_sell.bind(String(slot)))
-		vb.add_child(sbtn)
+		list_vb.add_child(sbtn)
 		sell_btns[String(slot)] = sbtn
 	# --- «Алтарь Пепла» (§4.2): вторая витрина, цены в Пепле ---
 	altar_head = _section_label("Пепельный Алтарь:")
-	vb.add_child(altar_head)
+	list_vb.add_child(altar_head)
 	for e in ALTAR:
 		var abtn := Button.new()
 		abtn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		abtn.pressed.connect(_on_ash_buy.bind(String((e as Dictionary).get("id", ""))))
-		vb.add_child(abtn)
+		list_vb.add_child(abtn)
 		altar_btns[String((e as Dictionary).get("id", ""))] = abtn
-	var close_btn := Button.new()
+	close_btn = Button.new()
+	close_btn.name = "CloseBtn"
 	close_btn.text = "Закрыть (Esc)"
 	close_btn.pressed.connect(close)
 	vb.add_child(close_btn)
 	GameState.gold_changed.connect(refresh)
+	_fit_panel()  # t34 V-06: до первого кадра панель уже в безопасном поле
 	refresh()
 
 func _section_label(text: String) -> Label:
@@ -165,6 +213,45 @@ func _section_label(text: String) -> Label:
 	lb.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	lb.add_theme_color_override("font_color", Color(0.85, 0.75, 0.6))
 	return lb
+
+## t34 V-06 (компакт-тема): берём ШТАТНЫЕ стейтбоксы кнопки (цвет/рамка/скругления
+## канона не тронуты) и режем только вертикальные content-отступы 4 -> 2:
+## ряд 21 -> 17 px. Theme.get_stylebox делает fallback в родительские и дефолтную
+## темы, а берём мы ДУБЛИКАТ — иначе поправили бы общий ресурс на весь проект.
+## Кнопки настроек/журнала живут своими темами, не затронуты.
+func _compact_buttons(th: Theme) -> void:
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		var base: StyleBox = th.get_stylebox(st, "Button")
+		if base == null:
+			continue  # темы нет — просто оставляем дефолт (ряды будут чуть выше)
+		var sb := base.duplicate() as StyleBox
+		if sb == null:
+			continue
+		sb.content_margin_top = BTN_PAD_V
+		sb.content_margin_bottom = BTN_PAD_V
+		th.set_stylebox(st, "Button", sb)
+
+## t34 V-06: панель никогда не выше безопасного поля. Считаем по min-size'ам
+## (синхронно, до первого кадра): «полная» высота = витрина + шапка + close +
+## поля панели; если она влезает — скролл получает ровно высоту содержимого
+## (полосы нет, оффскрина нет); если нет — скролл сжимается до остатка, а
+## close-кнопка остаётся снизу колонки видимой без прокрутки.
+func _fit_panel() -> void:
+	if panel == null or scroll == null or list_vb == null or close_btn == null:
+		return
+	var field_h := BASE_VIEW_H
+	var vp := get_viewport()
+	if vp != null:
+		field_h = minf(vp.get_visible_rect().size.y, BASE_VIEW_H)  # headless-окно 640×640 -> канон 360
+	var max_h: float = maxf(96.0, field_h - EDGE_GAP * 2.0)
+	panel.custom_minimum_size = Vector2(PANEL_W, 0)  # сброс: ниже меряем «чистый» min
+	var content := list_vb.get_combined_minimum_size().y
+	scroll.custom_minimum_size = Vector2(0, content)  # временно: сколько хочет витрина
+	var natural := panel.get_combined_minimum_size().y
+	var chrome := natural - content  # шапка + close + separation + поля панели
+	var target := minf(natural, max_h)
+	panel.custom_minimum_size = Vector2(PANEL_W, target)
+	scroll.custom_minimum_size = Vector2(0, maxf(0.0, target - chrome))
 
 ## Тёмная деревянная рамка для PanelContainer (тот же ассет и приёмы, что в hud.gd).
 func _ui_frame_style(content: float) -> StyleBoxTexture:
@@ -192,6 +279,9 @@ func _set_open(v: bool) -> void:
 		_mouse_pass = false
 		if v:
 			_set_mouse_pass(false)  # t29 B-02: при открытии мышь снова вся наша
+			_fit_panel()            # t34 V-06: актуальное поле на момент открытия
+			if scroll != null:
+				scroll.scroll_vertical = 0  # лавка всегда открывается с начала витрины
 		GameAudio.sfx("ui_confirm" if v else "ui_click")
 		if v:
 			_acquire_lock()
@@ -204,14 +294,18 @@ func _set_open(v: bool) -> void:
 ## «окно работает» не должна перехватывать мышь, но раньше полноэкранный dim
 ## (STOP) и кнопки продолжали есть клики: диалог смерти под вуалью нельзя было
 ## пролистать мышью вообще. Здесь мышь отдаётся целиком: dim/корень/панель/кнопки
-## -> IGNORE (остальные Control и так IGNORE), клики уходят миру -> hud.advance().
+## и скролл витрины -> IGNORE (остальные Control и так IGNORE), клики уходят
+## миру -> hud.advance().
 func _set_mouse_pass(passthrough: bool) -> void:
 	if root == null:
 		return
 	_apply_pass(root, passthrough)
 
 func _apply_pass(c: Control, passthrough: bool) -> void:
-	if c == root or c == dim or c == panel or c is Button:
+	# t34 V-06: ScrollContainer — такой же «едок» мыши, как кнопки (mouse_filter
+	# STOP), поэтому обязан участвовать в отдаче: иначе под чужим окном полоса
+	# скролла витрины глушила бы клики по диалогу/смерти (регресс B-02).
+	if c == root or c == dim or c == panel or c is Button or c is ScrollContainer:
 		var want := Control.MOUSE_FILTER_IGNORE if passthrough else Control.MOUSE_FILTER_STOP
 		if c.mouse_filter != want:
 			c.mouse_filter = want

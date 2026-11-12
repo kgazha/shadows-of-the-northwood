@@ -2,6 +2,9 @@ extends Node
 ## QA-харнесс s1: Shop (покупка/отказ/идемпотентность/sell), GearData (damage/absorb),
 ## save v3 roundtrip (run_seed), legacy v1 миграция, битые поля сейва.
 
+const CANON := Vector2(640, 360)  # t34 V-06: канон base-вьюпорта (window 1280×720, zoom 2)
+const SAFE_H := 352.0             # t34 V-06: 360 − 2×EDGE_GAP(4) — поле, обязан влезать панель
+
 var fails := {"n": 0}
 var toasts: Array = []
 var shop: Shop
@@ -34,7 +37,7 @@ func _ready() -> void:
 	GameState.toast.connect(func(t: String) -> void: toasts.append(t))
 	shop = Shop.new()
 	add_child(shop)
-	_run()
+	await _run()  # t34 V-06: T18 меряет макет — нужды реальные кадры (layout)
 	print("SUMMARY fails=%d" % fails["n"])
 	get_tree().quit(0)
 
@@ -244,4 +247,169 @@ func _run() -> void:
 	ck(has_toast("Продавать нечего"), "T17 unknown id unsellable")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_morkheim.json"))
+
+	# --- T18 (t34 V-06): витрина целиком в каноническом поле 640×360 ---
+	# Пин НЕ зависит от окна стенда: в headless окно 640×640 (headless-сервер не
+	# применяет window overrides), а панель центрирует CenterContainer, поэтому
+	# берём канонический сдвиг dy = (360 − h)/2 − y_панели и проверяем уже им
+	# сдвинутые прямоугольники. Это ровно то, что игрок видит в 1280×720 zoom 2.
+	reset_state(250)
+	Shop.open()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	ck(shop.scroll != null and shop.list_vb != null and shop.close_btn != null,
+		"T18 витрина обёрнута в ScrollContainer, close отдельной строкой")
+	var pr: Rect2 = shop.panel.get_global_rect()
+	var dy: float = (CANON.y - pr.size.y) * 0.5 - pr.position.y
+	# Замер на стенде (headless, тот же код темы/шрифта): панель 328 px, низ
+	# close 339 при поле 360 (было: панель 397, низ close 392 — целиком за экраном).
+	ck(pr.size.y <= SAFE_H + 0.5, "T18 панель <= безопасного поля 352", "h=%.1f rect=%s" % [pr.size.y, pr])
+	var cr: Rect2 = shop.close_btn.get_global_rect()
+	ck(cr.position.y + dy >= 0.0 and cr.end.y + dy <= CANON.y,
+		"T18 close-кнопка полностью в viewport", "canon y=[%.1f..%.1f]" % [cr.position.y + dy, cr.end.y + dy])
+	ck(not shop.scroll.is_ancestor_of(shop.close_btn),
+		"T18 close вне скролла => видима без прокрутки")
+	ck(shop.scroll.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"T18 скролл ест мышь (пустое место витрины не закрывает лавку)", "mf=%d" % shop.scroll.mouse_filter)
+	# «мышью попасть можно»: центр close в канонических координатах не под скроллом
+	var hit: Vector2 = Vector2((cr.position + cr.end) * 0.5)
+	ck(cr.has_point(hit) and not shop.scroll.get_global_rect().has_point(hit)
+		and shop.close_btn.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"T18 по центру close можно кликнуть (не перекрыта скроллом)", "hit=%s close=%s" % [hit, cr])
+	# Оффскрин-скан лавки (правило t30: size>=2, площадь < 95% поля, толерант 1px).
+	ck(_offscreen_count(dy) == 0, "T18 UI shop: offscreen==0", _offscreen_list(dy))
+
+	# Страховка переполнения: «витрина выросла» (260 px запас) — панель НЕ растёт
+	# ниже поля, скролл появляется, close остаётся в поле, колесо мыши скроллит.
+	var spacer := Control.new()
+	spacer.name = "T18Spacer"
+	spacer.custom_minimum_size = Vector2(0, 260)
+	shop.list_vb.add_child(spacer)
+	shop._fit_panel()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var pr2: Rect2 = shop.panel.get_global_rect()
+	var dy2: float = (CANON.y - pr2.size.y) * 0.5 - pr2.position.y
+	var cr2: Rect2 = shop.close_btn.get_global_rect()
+	ck(pr2.size.y <= SAFE_H + 0.5, "T18 страховка: панель не распухла выше поля", "h=%.1f" % pr2.size.y)
+	ck(cr2.position.y + dy2 >= 0.0 and cr2.end.y + dy2 <= CANON.y,
+		"T18 страховка: close по-прежнему целиком в viewport", "canon y=[%.1f..%.1f]" % [cr2.position.y + dy2, cr2.end.y + dy2])
+	var bar := shop.scroll.get_v_scroll_bar()
+	ck(bar.max_value > 0.0, "T18 страховка: полоса прокрутки появилась", "max=%.1f" % bar.max_value)
+	var wheel := InputEventMouseButton.new()
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	wheel.pressed = true
+	wheel.factor = 1.0
+	wheel.position = shop.scroll.get_global_rect().get_center()
+	wheel.global_position = wheel.position
+	# Godot 4: Control.push_input больше нет, а Viewport.push_input возвращает void.
+	# ВАЖНО: координаты отдаём КАК ЛОКАЛЬНЫЕ для вьюпорта (local_coords=true) —
+	# иначе событие трактуется как оконное и пересчитывается canvas-трансформом,
+	# а в headless окно 64×64 при поле 640: пиккинг уходил бы в никуда.
+	get_viewport().push_input(wheel, true)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	ck(shop.scroll.scroll_vertical > 0.0,
+		"T18 колесо мыши прокручивает витрину (скролл рабочий)", "val=%.1f" % shop.scroll.scroll_vertical)
+	ck(shop.list_vb.position.y < 0.0,
+		"T18 прокрутка реально сдвигает содержимое витрины", "list_y=%.1f" % shop.list_vb.position.y)
+	shop.scroll.scroll_vertical = 0
+	await get_tree().process_frame
+	# t29 B-02 не сломана: под чужим окном лавка отдаёт мышь целиком — и новый
+	# скролл в том числе (иначе полоса витрины глушила бы клики по диалогу смерти).
+	var held := shop._holds_lock
+	shop._holds_lock = false  # «лок принадлежит не нам» — эквивалент чужого окна сверху
+	await get_tree().process_frame
+	ck(shop.scroll.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"T18 B-02: скролл отдаёт мышь под чужим окном", "mf=%d" % shop.scroll.mouse_filter)
+	shop._holds_lock = held
+	await get_tree().process_frame
+	ck(shop.scroll.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"T18 после ухода чужого окна скролл снова ловит мышь", "mf=%d" % shop.scroll.mouse_filter)
+	spacer.queue_free()
+	await get_tree().process_frame
+	shop._fit_panel()
+	await get_tree().process_frame
+	ck(shop.scroll.scroll_vertical <= 0.5,
+		"T18 после возвращения нормальной витрины скролл обнулился", "val=%.1f" % shop.scroll.scroll_vertical)
+	var dy3: float = (CANON.y - shop.panel.get_global_rect().size.y) * 0.5 - shop.panel.get_global_rect().position.y
+	ck(_offscreen_count(dy3) == 0, "T18 UI shop: offscreen==0 после цикла переполнения", _offscreen_list(dy3))
+	# Хиттест НАСТОЯЩИМ курсором: заводим hover реальным движением мыши в центр
+	# «Закрыть (Esc)» — под курсором должна оказаться именно кнопка, а не скролл
+	# и не витрина (иначе клик по «видимой, но закрытой» кнопке — тот же V-06).
+	# Координаты отдаём как локальные вьюпорту: в headless окно 64×64 при поле 640,
+	# «оконные» координаты canvas-трансформ уводит в никуда.
+	# Честно: сам клик (mouse button) headless-сервером до Controls не доходит —
+	# ограничение движка, зафиксированное ещё в t29; реальный ЛКМ доказан
+	# ОКОННЫМ прогоном 1280×720 (см. поставку t34: скриншот + трейс до/после).
+	var cp: Vector2 = shop.close_btn.get_global_rect().get_center()
+	var mo := InputEventMouseMotion.new()
+	mo.position = cp
+	mo.global_position = cp
+	get_viewport().push_input(mo, true)
+	await get_tree().process_frame
+	ck(shop.close_btn.is_hovered() and not shop.scroll.get_global_rect().has_point(cp),
+		"T18 центр close открыт курсору: под мышью сама кнопка",
+		"hovered=%s cp=%s close=%s" % [shop.close_btn.is_hovered(), cp, shop.close_btn.get_global_rect()])
+	Shop.close()
+	ck(not Shop.is_open() and not bool(GameState.input_locked),
+		"T18 лавка закрывается как раньше (Esc/кнопка, лок снят)",
+		"open=%s locked=%s" % [Shop.is_open(), GameState.input_locked])
+	# Открытие/закрытие по-прежнему работает как раньше (контракт t29 B-02 жив),
+	# и лавка всегда открывается с начала витрины.
+	Shop.open()
+	await get_tree().process_frame
+	ck(Shop.is_open() and bool(GameState.input_locked) and shop.scroll.scroll_vertical == 0.0,
+		"T18 повторное открытие: лок взят, витрина с начала",
+		"open=%s locked=%s val=%.1f" % [Shop.is_open(), GameState.input_locked, shop.scroll.scroll_vertical])
+	Shop.close()
+	ck(not Shop.is_open() and not bool(GameState.input_locked),
+		"T18 закрытие после повторного открытия (лок снят)",
+		"open=%s locked=%s" % [Shop.is_open(), GameState.input_locked])
+
 	print("S1 DONE")
+
+
+## t34 V-06: сколько элементов лавки висит за каноническим полем 640×360.
+## dy — сдвиг «панель отцентрована в поле 360» (в headless окно другое, см. T18).
+func _offscreen_count(dy: float) -> int:
+	var n := 0
+	var stack: Array = [shop.root]
+	while not stack.is_empty():
+		var c = stack.pop_back()
+		for ch in (c as Node).get_children():
+			if ch is Control:
+				stack.append(ch)
+		var ca := c as Control
+		if ca == null or not ca.is_visible_in_tree():
+			continue
+		var r: Rect2 = ca.get_global_rect()
+		r = Rect2(r.position + Vector2(0, dy), r.size)
+		if r.size.x < 2.0 or r.size.y < 2.0:
+			continue
+		if r.get_area() >= CANON.x * CANON.y * 0.95:
+			continue  # полноэкранные dim/center/root — не «элемент за экраном»
+		if r.position.x < -1.0 or r.position.y < -1.0 or r.end.x > CANON.x + 1.0 or r.end.y > CANON.y + 1.0:
+			n += 1
+	return n
+
+
+## Те же элементы списком — для деталей FAIL'а.
+func _offscreen_list(dy: float) -> String:
+	var out: Array = []
+	var stack: Array = [shop.root]
+	while not stack.is_empty():
+		var c = stack.pop_back()
+		for ch in (c as Node).get_children():
+			if ch is Control:
+				stack.append(ch)
+		var ca := c as Control
+		if ca == null or not ca.is_visible_in_tree():
+			continue
+		var r: Rect2 = ca.get_global_rect()
+		r = Rect2(r.position + Vector2(0, dy), r.size)
+		if r.size.x < 2.0 or r.size.y < 2.0 or r.get_area() >= CANON.x * CANON.y * 0.95:
+			continue
+		if r.position.x < -1.0 or r.position.y < -1.0 or r.end.x > CANON.x + 1.0 or r.end.y > CANON.y + 1.0:
+			out.append("%s@%s" % [ca.name, r])
+	return "off=[%s]" % ", ".join(out)
