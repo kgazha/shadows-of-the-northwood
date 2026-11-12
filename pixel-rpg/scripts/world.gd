@@ -66,6 +66,17 @@ const ENV4_ART := {
 	"stones": "res://assets/art/env4_stones.png",
 	"boulder": "res://assets/art/env4_boulder.png",
 }
+## Т15/Т15b «миниатюрная картина»: алтарь и портал — текстуры полного разрешения
+## исходника (полный альфа-кроп 1024-оригиналов, Т15b; вариант 3× 153/210 сохранён
+## в scratch_cm/t15_shots/keep_3x). ЭКРАННЫЙ размер остаётся каноническим:
+## scale = H-канон / ФАКТИЧЕСКАЯ высота текстуры (не захардкожен), на эти же
+## спрайты ставится TEXTURE_FILTER_LINEAR_WITH_MIPMAPS (в .import этих
+## двух файлов mipmaps/generate=true). Проектный default_texture_filter=0 (nearest)
+## не тронут; остальные пропы — scale 1.0 и прежний LINEAR.
+const ENV4_CANON_H := {
+	"res://assets/art/env4_altar.png": 51.0,
+	"res://assets/art/env4_portal.png": 70.0,
+}
 ## Камни «r»: кластер 2..6 клеток — «валуны мха»; одинокий в стороне от воды —
 ## одинокий валун («r» у воды — колодец village_props, не трогаем). Кластер
 ## крупнее 6 — осыпь, остаётся тайловой (как «стена» деревьев у крон).
@@ -611,14 +622,25 @@ func _env4_tex(key: String) -> Texture2D:
 
 ## Та же раскладка, что у _add_prop (центр по bbox клеток, низ — на нижней
 ## границе с +2 как у tile_to_world), но родитель — слой своей зоны.
+## Т15/Т15b: для путей из ENV4_CANON_H экранный размер жёстко канонический —
+## scale = канон / фактическая высота текстуры (Т15b — полное разрешение);
+## фильтр LINEAR_WITH_MIPMAPS (даунсэмпл «миниатюрной картины» с трилинейкой и
+## мипами), остальные — прежний LINEAR.
 func _env4_place(parent: Node2D, tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i) -> Sprite2D:
 	var spr := Sprite2D.new()
 	spr.texture = tex
 	spr.centered = true
-	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	var path := String(tex.resource_path)
+	var s := 1.0
+	if ENV4_CANON_H.has(path):
+		s = float(ENV4_CANON_H[path]) / float(maxi(1, tex.get_height()))
+		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	else:
+		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	spr.scale = Vector2(s, s)
 	spr.flip_h = (_env4_hash(seed_c.x, seed_c.y) >> 16) & 1 == 1
 	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
-		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * 0.5)
+		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * s * 0.5)
 	parent.add_child(spr)
 	return spr
 

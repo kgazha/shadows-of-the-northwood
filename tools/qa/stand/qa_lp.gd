@@ -16,8 +16,10 @@ extends Node2D
 ##  T6  детерминизм: два мира на сиде 42 — бит-в-бит сетки и дампы слоёв
 ##      живого пола (текстура/позиция/альфа/поворот); alpha ∈ [0.30,0.42];
 ##      fail-safe: пустой набор ассетов -> слой не создаётся.
-##  T7  SCALE_CANON на рантайме: altar 51, portal 70, boulder 26, stones 32 px,
-##      масштаб спрайтов 1.0.
+##  T7  SCALE_CANON на рантайме: ЭКРАННЫЕ altar 51, portal 70, boulder 26, stones
+##      32 px (Т15/Т15b: алтарь/портал — текстуры >=3× экранных (полный кроп
+##      1024-исходника) со scale-компенсацией от фактической высоты,
+##      LINEAR_WITH_MIPMAPS и mips/generate=true; прочие пропы scale 1.0).
 ##  T8  физ-проба: в центре КАЖДОЙ проходимой клетки обеих зон нет статических
 ##      коллайдеров (сетка <-> коллайдеры после перестройки согласованы).
 ##  T9  soak 2x5 сек (пещера+Пепелище, враги сняты): герой не застревает в
@@ -362,13 +364,23 @@ func _t2(cave_raw: Dictionary) -> void:
 					print("   зал алтаря (", t, "): клетка (", dx, ",", dy, ")=", c)
 				if dy < t.y and CAVE_DIG.find(c) >= 0:
 					top_ok = false
-	# ширина алтаря/камней ≤ 5*16
+	# ширина алтаря/камней ≤ 5*16 — ЭКРАННАЯ (Т15/Т15b: алтарь в текстуре высокого
+	# разрешения живёт со scale-компенсацией, в зал проверяется картинка на экране, не пиксели файла)
 	var altar_tex: Texture2D = load(String(WS.ENV4_ART["altar"]))
 	var stones_tex: Texture2D = load(String(WS.ENV4_ART["stones"]))
 	chk(halls_ok, "T2: залы алтарей 5x6 без dig-символов (алтарей %d)" % altar_n)
 	chk(top_ok, "T2: верхние ряды залов (выше клетки алтаря) без стен")
-	chk(altar_tex.get_width() <= 5 * 16, "T2: ширина алтаря %d ≤ 80" % altar_tex.get_width())
-	chk(stones_tex.get_width() <= 5 * 16, "T2: ширина камней %d ≤ 80" % stones_tex.get_width())
+	var aw := int(ceil(_eff_w(altar_tex)))
+	var sw := int(ceil(_eff_w(stones_tex)))
+	chk(aw <= 5 * 16, "T2: экранная ширина алтаря %d ≤ 80" % aw)
+	chk(sw <= 5 * 16, "T2: экранная ширина камней %d ≤ 80" % sw)
+
+## Экранная ширина пропа: текстуры из ENV4_CANON_H масштабируются в канон.
+func _eff_w(tex: Texture2D) -> float:
+	var canon: float = float(WS.ENV4_CANON_H.get(String(tex.resource_path), 0.0))
+	if canon > 0.0:
+		return float(tex.get_width()) * canon / float(tex.get_height())
+	return float(tex.get_width())
 
 # ------------------------------------------------------------------ T3
 
@@ -447,7 +459,8 @@ func _t4(ashen_raw: Dictionary) -> void:
 				print("   зал портала: (", dx, ",", dy, ")=", _ch(rows, dx, dy))
 	chk(hall_ok, "T4: зал портала 5x6 без dig-символов")
 	var portal_tex: Texture2D = load(String(WS.ENV4_ART["portal"]))
-	chk(portal_tex.get_width() <= 5 * 16, "T4: ширина портала %d ≤ 80" % portal_tex.get_width())
+	var pw := int(ceil(_eff_w(portal_tex)))  # Т15/Т15b: экранная ширина (текст высокого разр. + scale)
+	chk(pw <= 5 * 16, "T4: экранная ширина портала %d ≤ 80" % pw)
 	# POI Пепелища: spawn/портал/сундук/ведьма (meta генераторного dict — reshape
 	# его не двигает; ashen_zone dict не хранит)
 	var m: Dictionary = meta
@@ -528,15 +541,24 @@ func _t6(snap1: String) -> void:
 # ------------------------------------------------------------------ T7
 
 func _t7() -> void:
+	# Т15/Т15b «миниатюрная картина»: алтарь/портал — текстуры высокого
+	# разрешения (>=3× экранных), ЭКРАННЫЕ высоты по-прежнему канон 51/70
+	# (scale-компенсация в _env4_place от фактической высоты),
+	# фильтр LINEAR_WITH_MIPMAPS и мипы в импорте; прочие пропы — как жили
+	# (scale 1.0, LINEAR). Проектный default_texture_filter=0 не тронут.
 	var altar: Texture2D = load(String(WS.ENV4_ART["altar"]))
 	var portal: Texture2D = load(String(WS.ENV4_ART["portal"]))
 	var boulder: Texture2D = load(String(WS.ENV4_ART["boulder"]))
 	var stones: Texture2D = load(String(WS.ENV4_ART["stones"]))
-	chk(altar.get_height() == 51, "T7: altar drawn_h=51")
-	chk(portal.get_height() == 70, "T7: portal drawn_h=70")
+	chk(altar.get_height() >= 3 * 51, "T7: altar texture_h=%d ≥ 3×экранной (51)" % altar.get_height())
+	chk(portal.get_height() >= 3 * 70, "T7: portal texture_h=%d ≥ 3×экранной (70)" % portal.get_height())
 	chk(boulder.get_height() == 26, "T7: boulder drawn_h=26")
 	chk(stones.get_height() == 32, "T7: stones drawn_h=32")
-	var scale_ok := true
+	var eff_ok := true    # экранная высота 51/70 на живых спрайтах
+	var filt_ok := true   # LINEAR_WITH_MIPMAPS на этих двух
+	var plain_ok := true  # остальные: scale 1.0 и прежний LINEAR
+	var n_altar := 0
+	var n_portal := 0
 	for layer_name: String in ["Env4CaveProps", "Env4AshenProps"]:
 		for zone: Node2D in [world.cave_zone, world.ashen_zone]:
 			var l = zone.get_node_or_null(NodePath(layer_name))
@@ -544,9 +566,86 @@ func _t7() -> void:
 				continue
 			for c in l.get_children():
 				var spr := c as Sprite2D
-				if spr != null and spr.scale != Vector2.ONE:
-					scale_ok = false
-	chk(scale_ok, "T7: пропы слоя env4 без масштаба (масштаб 1.0)")
+				if spr == null or spr.texture == null:
+					continue
+				var p := String(spr.texture.resource_path)
+				if p.ends_with("env4_altar.png"):
+					n_altar += 1
+					if absf(float(spr.texture.get_height()) * spr.scale.y - 51.0) > 0.05:
+						eff_ok = false
+					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS:
+						filt_ok = false
+				elif p.ends_with("env4_portal.png"):
+					n_portal += 1
+					if absf(float(spr.texture.get_height()) * spr.scale.y - 70.0) > 0.05:
+						eff_ok = false
+					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS:
+						filt_ok = false
+				else:
+					if spr.scale != Vector2.ONE or spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
+						plain_ok = false
+	chk(n_altar >= 5 and eff_ok, "T7: экранные алтари (5 шт.) — высота 51 px, scale скомпенсирован")
+	chk(n_portal >= 1, "T7: портал в сцене (%d)" % n_portal)
+	chk(filt_ok, "T7: спрайты алтаря/портала — TEXTURE_FILTER_LINEAR_WITH_MIPMAPS")
+	chk(plain_ok, "T7: прочие пропы env4 не тронуты (scale 1.0, LINEAR)")
+	var ai: Array = _ctex_mip_info(String(WS.ENV4_ART["altar"]))
+	var pi: Array = _ctex_mip_info(String(WS.ENV4_ART["portal"]))
+	var bi: Array = _ctex_mip_info(String(WS.ENV4_ART["boulder"]))
+	var am: int = int(ai[2]) if ai.size() == 3 else -1
+	var pm: int = int(pi[2]) if pi.size() == 3 else -1
+	var bm: int = int(bi[2]) if bi.size() == 3 else -1
+	# полная мип-цепочка: полных дополнительных уровней floor(log2(max_side));
+	# для канона 3× это уже >=7 (как в t15), для полного разрешения — больше
+	var need_a: int = int(floor(log(float(maxi(altar.get_width(), altar.get_height()))) / log(2.0)))
+	var need_p: int = int(floor(log(float(maxi(portal.get_width(), portal.get_height()))) / log(2.0)))
+	var mip_ok: bool = ai.size() == 3 and pi.size() == 3 and bi.size() == 3 and \
+		int(ai[0]) == altar.get_width() and int(ai[1]) == altar.get_height() and \
+		int(pi[0]) == portal.get_width() and int(pi[1]) == portal.get_height() and \
+		am >= need_a and pm >= need_p and bm == 0
+	chk(mip_ok, "T7: мип-цепочка полная в .ctex (altar доп.мипов=%d≥%d, portal=%d≥%d, boulder-контроль=%d)" % [am, need_a, pm, need_p, bm])
+	var imp_ok := true
+	for key: String in ["altar", "portal"]:
+		var ipath := String(WS.ENV4_ART[key]) + ".import"
+		var f := FileAccess.open(ipath, FileAccess.READ)
+		if f == null:
+			imp_ok = false
+			print("   QA_LP: не читается %s" % ipath)
+			continue
+		var t := f.get_as_text()
+		f.close()
+		if not t.contains("mipmaps/generate=true"):
+			imp_ok = false
+			print("   QA_LP: в %s нет mipmaps/generate=true" % ipath)
+	chk(imp_ok, "T7: .import алтаря/портала — mipmaps/generate=true")
+	var dflt: int = int(ProjectSettings.get_setting(
+		"rendering/textures/canvas_textures/default_texture_filter"))
+	chk(dflt == 0, "T7: проектный default_texture_filter=0 (nearest) не изменён")
+
+# Читает из заголовка импортированного .ctex (CompressedTexture2D, Godot 4.7.2):
+# LE uint32 [@8]=ширина, [@12]=высота, [@44]=число ДОПОЛНИТЕЛЬНЫХ мип-уровней
+# (0 — мипов нет). Возвращает [w, h, extra_mips] или [] при неудаче.
+# Самовалидация парсера у вызывающего: w/h должны совпасть с текстурой.
+func _ctex_mip_info(tex_path: String) -> Array:
+	var dir := DirAccess.open("res://.godot/imported")
+	if dir == null:
+		return []
+	var base: String = tex_path.get_file()
+	for f in dir.get_files():
+		var fn := String(f)
+		if not fn.begins_with(base + "-") or not fn.ends_with(".ctex"):
+			continue
+		var fa := FileAccess.open("res://.godot/imported/" + fn, FileAccess.READ)
+		if fa == null:
+			return []
+		var b := fa.get_buffer(48)
+		fa.close()
+		if b.size() < 48:
+			return []
+		var w: int = int(b[8]) | (int(b[9]) << 8) | (int(b[10]) << 16) | (int(b[11]) << 24)
+		var h: int = int(b[12]) | (int(b[13]) << 8) | (int(b[14]) << 16) | (int(b[15]) << 24)
+		var m: int = int(b[44]) | (int(b[45]) << 8) | (int(b[46]) << 16) | (int(b[47]) << 24)
+		return [w, h, m]
+	return []
 
 # ------------------------------------------------------------------ T8
 
