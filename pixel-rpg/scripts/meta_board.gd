@@ -1,0 +1,272 @@
+class_name MetaBoard
+extends CanvasLayer
+## t20 P0-3: «Пепельная доска» — мета-доска талантов за Пепел (пепел переживает
+## смерть: сохраняется 60–70% заработанного, см. game_state.gd::start_new_run).
+## Вход — ТОЛЬКО с экрана смерти (кнопка «Доска пепла» в RunSummary): покупка
+## между забегами, эффекты применяются к новому забегу (хуки: _wipe_circle/recalc
+## _max_hp/player speed/loot gold). 4 таланта × 3 ранга, цены [2,5,9] пепла.
+##
+## Ввод: доска НЕ владеет input_locked — лок держит RunSummary (доска стоит
+## поверх неё, layer=7). Esc маршрутизирует RunSummary: сначала закрыть доску,
+## затем «Вспыхнуть заново». Закрытая доска мышь и клавиши не ест (паттерн
+## RunSummary/Journal).
+##
+## Ранги — int 0..3 в GameState.flags["meta.mb.<id>"] (вечный мета-слой, rs-вайп
+## не трогает). Покупка — через единый канал Ash.spend (списание+сейв).
+
+static var I: MetaBoard          # синглтон; назначает сам себя в _enter_tree
+
+const KEY_PREFIX := "meta.mb."
+## Цены рангов 1/2/3 в Пепле (порог входа низкий: 1 смерть круга ≈ 2 угля).
+const COSTS := [2, 5, 9]
+## Таблица талантов: vals — числовой эффект ранга 1/2/3 (единственный источник
+## чисел и для хуков (GameState.mb_value), и для UI).
+const TALENTS := [
+	{"id": "first_coal",   "name": "Первые угли",     "vals": [15, 30, 50], "fmt": "+%d зол. в начале забега"},
+	{"id": "coal_heart",   "name": "Углевое сердце",  "vals": [4, 8, 12],   "fmt": "+%d к макс. HP"},
+	{"id": "ash_step",     "name": "Пепельная поступь", "vals": [4, 8, 12],  "fmt": "+%d% к скорости хода"},
+	{"id": "deep_pockets", "name": "Глубокие карманы", "vals": [8, 16, 24],  "fmt": "+%d% золота с мобов"},
+]
+
+var root: Control                # полноэкранный корень; visible = «открыта»
+var dim: ColorRect
+var panel: PanelContainer
+var rows_box: VBoxContainer      # ряды талантов (пересобираются)
+var balance_lbl: Label
+var bless_lbl: Label
+var close_btn: Button
+
+func _enter_tree() -> void:
+	if I == null:
+		I = self
+
+func _exit_tree() -> void:
+	if I == self:
+		I = null
+
+func _ready() -> void:
+	layer = 7  # поверх RunSummary (6), ниже фейда переходов (10)
+	_build()
+
+# --- статические обёртки (паттерн RunSummary) ---
+
+static func open() -> void:
+	if I == null or I.root == null:
+		return
+	I._set_open(true)
+
+static func close_panel() -> void:
+	if I == null or I.root == null:
+		return
+	I._set_open(false)
+
+static func is_open() -> bool:
+	return I != null and I.root != null and I.root.visible
+
+# --- данные (статические, читают GameState.flags) ---
+
+## Ранг таланта (0..3) — через единую точку GameState.mb_rank.
+static func rank_of(id: String) -> int:
+	return GameState.mb_rank(id)
+
+## Эффект ранга (0 при ранге 0) — ЕДИНСТВЕННАЯ таблица чисел для хуков игры.
+static func value_at_rank(rank: int, id: String) -> int:
+	for t in TALENTS:
+		if String(t["id"]) == id:
+			var vals: Array = t["vals"]
+			if rank <= 0 or rank > vals.size():
+				return 0
+			return int(vals[rank - 1])
+	return 0
+
+## Цена следующего ранга (ранг 0->2, 1->5, 2->9); после капа — -1.
+static func next_cost(rank: int) -> int:
+	if rank < 0 or rank >= COSTS.size():
+		return -1
+	return int(COSTS[rank])
+
+## Купить следующий ранг: известность id -> кап ранга -> Ash.spend -> флаг -> сейв.
+## Возвращает true, если покупка состоялась. Неизвестный id — отказ (деньги не тратятся).
+static func buy(id: String) -> bool:
+	var known := false
+	for t in TALENTS:
+		if String(t["id"]) == id:
+			known = true
+	if not known:
+		return false
+	var r := rank_of(id)
+	if r >= COSTS.size():
+		return false
+	var cost := next_cost(r)
+	if cost <= 0 or not Ash.spend(cost):  # spend сам проверяет баланс и сохраняет
+		return false
+	GameState.flags[KEY_PREFIX + id] = r + 1
+	GameState.save_game()
+	return true
+
+# --- построение панели (паттерн RunSummary: PaperEdge + panel_frame) ---
+
+func _build() -> void:
+	var th := Theme.new()
+	th.default_font_size = 8
+	root = Control.new()
+	root.name = "MetaBoardRoot"
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.visible = false
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
+	dim = ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(center)
+	panel = PanelContainer.new()
+	panel.custom_minimum_size = Vector2(252, 0)
+	panel.theme = th
+	if ResourceLoader.exists("res://assets/ui/panel_frame.png"):
+		panel.add_theme_stylebox_override("panel", _ui_frame_style(26.0))
+	center.add_child(panel)
+	# бумажная кромка пергамента — общий компонент t20 (scripts/paper_edge.gd,
+	# ex-внутренний класс Journal; те же марджины, что в журнале)
+	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
+		var paper := PaperEdge.new()
+		paper.tex = load("res://assets/ui/decor_paper_edge.png")
+		paper.src_margin = 95.0
+		paper.dst_margin = 24.0
+		paper.set_anchors_preset(Control.PRESET_FULL_RECT)
+		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		panel.add_child(paper)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 4)
+	panel.add_child(vb)
+	var head := Label.new()
+	head.text = "Пепельная доска"
+	head.add_theme_font_size_override("font_size", 10)
+	head.add_theme_color_override("font_color", Color(0.85, 0.55, 0.25))
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(head)
+	# строка баланса: иконка пепла (атлас item_icons, слот 3 = утверждённый
+	# вариант ash_v2 — вердикт пользователя) + счётчик
+	var bal_row := HBoxContainer.new()
+	bal_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	bal_row.add_theme_constant_override("separation", 4)
+	vb.add_child(bal_row)
+	var ash_icon := TextureRect.new()
+	ash_icon.texture = AshIcon.make()
+	ash_icon.custom_minimum_size = Vector2(16, 16)
+	ash_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ash_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ash_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bal_row.add_child(ash_icon)
+	balance_lbl = Label.new()
+	balance_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.6))
+	bal_row.add_child(balance_lbl)
+	rows_box = VBoxContainer.new()
+	rows_box.add_theme_constant_override("separation", 3)
+	vb.add_child(rows_box)
+	bless_lbl = Label.new()
+	bless_lbl.add_theme_color_override("font_color", Color(0.65, 0.8, 0.7))
+	vb.add_child(bless_lbl)
+	close_btn = Button.new()
+	close_btn.text = "Закрыть (Esc)"
+	close_btn.pressed.connect(_on_close)
+	vb.add_child(close_btn)
+
+## Тёмная деревянная рамка (тот же ассет, что Shop/RunSummary).
+func _ui_frame_style(content: float) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = load("res://assets/ui/panel_frame.png")
+	sb.region_rect = Rect2(0, 0, 32, 32)
+	sb.texture_margin_left = 4
+	sb.texture_margin_top = 4
+	sb.texture_margin_right = 4
+	sb.texture_margin_bottom = 4
+	sb.content_margin_left = content
+	sb.content_margin_top = content
+	sb.content_margin_right = content
+	sb.content_margin_bottom = content
+	return sb
+
+# --- открытие/пересборка ---
+
+func _set_open(v: bool) -> void:
+	if root.visible == v:
+		return
+	root.visible = v
+	root.mouse_filter = Control.MOUSE_FILTER_STOP if v else Control.MOUSE_FILTER_IGNORE
+	GameAudio.sfx("ui_confirm" if v else "ui_click")
+	if v:
+		_rebuild()
+
+## Пересборка рядов и счётчиков (после открытия и каждой покупки).
+func _rebuild() -> void:
+	for c in rows_box.get_children():
+		c.queue_free()
+	balance_lbl.text = "Пепел: %d" % Ash.balance()
+	var stacks := GameState.volkhv_stacks()
+	bless_lbl.text = "Благословение волхвы: +%d%% урона (%d смерт.)" % [
+		int(round(GameState.BLESS_PER_DEATH * 100.0 * float(stacks))), stacks,
+	]
+	for t in TALENTS:
+		_add_row(t)
+
+func _add_row(t: Dictionary) -> void:
+	var id := String(t["id"])
+	var r := rank_of(id)
+	var row := PanelContainer.new()
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 6)
+	row.add_child(hb)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb.add_child(col)
+	var name_lbl := Label.new()
+	# точки ранга: ● куплен, ○ свободен (3 гнезда)
+	var dots := ""
+	for i in COSTS.size():
+		dots += "●" if i < r else "○"
+	name_lbl.text = "%s  %s" % [String(t["name"]), dots]
+	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.87, 0.75))
+	col.add_child(name_lbl)
+	var eff := Label.new()
+	eff.add_theme_font_size_override("font_size", 7)
+	eff.add_theme_color_override("font_color", Color(0.7, 0.66, 0.58))
+	if r < COSTS.size():
+		eff.text = String(t["fmt"]) % int((t["vals"] as Array)[r])
+	else:
+		eff.text = "Максимум"
+	col.add_child(eff)
+	var btn := Button.new()
+	if r >= COSTS.size():
+		btn.text = "Макс."
+		btn.disabled = true
+	else:
+		var cost := next_cost(r)
+		btn.text = "Ранг %d — %d пепла" % [r + 1, cost]
+		btn.disabled = Ash.balance() < cost
+		btn.pressed.connect(_on_buy.bind(id))
+	btn.custom_minimum_size = Vector2(96, 0)
+	hb.add_child(btn)
+
+func _on_buy(id: String) -> void:
+	var tname := id
+	for t in TALENTS:
+		if String(t["id"]) == id:
+			tname = String(t["name"])
+	if buy(id):
+		GameAudio.sfx("coin")
+		GameState.toast.emit("Доска пепла: «%s» — ранг %d." % [tname, MetaBoard.rank_of(id)])
+	else:
+		GameAudio.sfx("ui_deny")
+	_rebuild()
+	# экран смерти под доской показывает баланс — освежить, если открыт
+	if RunSummary.I != null and RunSummary.is_open():
+		RunSummary.I._refresh()
+
+func _on_close() -> void:
+	close_panel()

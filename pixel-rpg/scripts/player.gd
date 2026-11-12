@@ -223,6 +223,9 @@ func _physics_process(delta: float) -> void:
 	# Талант «Скороход» (stride, CONTRACT_TALENTS §3): скорость хода +5% за ранг
 	# (рывок кувырка — своя константа ROLL_SPEED, талантом не ускоряется).
 	velocity = mv * float(class_data().speed) * (1.0 + 0.05 * GameState.tal_rank("stride"))
+	# t20 «Пепельная поступь» мета-доски (meta.mb.ash_step): +4/8/12% к скорости
+	# хода за ранг. Поверх «Скорохода» (пер × проценты складываются мультипликативно).
+	velocity *= 1.0 + 0.01 * float(GameState.mb_value("ash_step"))
 	if velocity != Vector2.ZERO:
 		_set_facing_from(velocity)
 		_play_walk()
@@ -398,9 +401,11 @@ func facing_dir() -> Vector2:
 func facing_offset() -> Vector2:
 	return facing_dir() * 12.0
 
-## Урон по конкретному врагу с учётом «Метки охотника».
+## Урон по конкретному врагу с учётом «Метки охотника» и благословения волхвы
+## (t20 P0-3: +2% за смерть круга, кап +20% — GameState.volkhv_bless_mult;
+## единая точка умножения урона героя: все атаки/скиллы идут через dmg_vs).
 func dmg_vs(e: Node, mult: float) -> int:
-	var d := float(GameState.damage) * mult
+	var d := float(GameState.damage) * mult * GameState.volkhv_bless_mult()
 	if e == mark_target and mark_t > 0.0:
 		d *= 1.5
 	return int(round(d))
@@ -771,7 +776,10 @@ func _firestorm_tick() -> void:
 
 # --- получение урона ---
 
-func take_damage(n: int) -> void:
+## src — kind атакующего ("slime"/"brute"/…), опционально (t20 P0-3): на
+## фатальном ударе пишется в rs.src — экран смерти показывает «пал от: …».
+## QA-вызовы с одним аргументом (без src) безопасны: пустая строка.
+func take_damage(n: int, src := "") -> void:
 	if hurt_cd > 0.0 or roll_t > 0.0 or GameState.hp <= 0:
 		return  # кувырок = i-frames: сквозь удары и снаряды
 	hurt_cd = 0.8
@@ -789,5 +797,8 @@ func take_damage(n: int) -> void:
 	else:
 		Juice.shake(1.6, 0.14)
 	if GameState.hp <= 0:
+		# t20 P0-3: память об убийце для экрана смерти (RS «пал от: …»).
+		if src != "":
+			GameState.flags["rs.src"] = src
 		cancel_orders()
 		world.on_player_death()

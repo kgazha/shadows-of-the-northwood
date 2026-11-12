@@ -287,7 +287,7 @@ func _physics_process(delta: float) -> void:
 		velocity = wander_dir * speed * 0.4
 		move_and_slide()
 		if global_position.distance_to(player.global_position) < hit_dist:
-			player.take_damage(dmg)
+			player.take_damage(dmg, "brute")  # t20: kind убийцы для экрана смерти
 		return
 	if rush_t > 0.0:
 		rush_t -= delta
@@ -314,7 +314,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_push_from_hero()  # до проверки урона: оценка боя идёт на равновесном контакте, как при живой стене
 	if global_position.distance_to(player.global_position) < hit_dist:
-		player.take_damage(dmg)
+		player.take_damage(dmg, "brute")  # t20: kind убийцы для экрана смерти
 
 ## t19: геометрия lethal-зоны = полигон телеграфа (один источник истины: и картинка,
 ## и удар резолвятся этим полигоном — тест qa_gb сверяет сетку проб с strike_contains).
@@ -348,7 +348,7 @@ func _strike() -> void:
 	recover_t = STRIKE_RECOVER  # и после попадания тоже: окно, чтобы добить не отвечающего
 	var player: CharacterBody2D = world.player
 	if player != null and is_instance_valid(player) and strike_contains(player.global_position):
-		player.take_damage(dmg)
+		player.take_damage(dmg, "brute")  # t20: kind убийцы для экрана смерти
 
 ## «Стенка без пиления» (дребезг экрана вплотную): герой (слой 1) убран из маски —
 ## два CharacterBody2D при упоре друг в друга пилят каждый кадр в противофазе, а
@@ -413,7 +413,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	# Ай-фреймы героя гасят повторные ожоги — сдвоенного урона не будет.
 	if (affix_mask & AFFIX_SMOLDER) != 0 and world.player != null \
 			and global_position.distance_to(world.player.global_position) <= SMOLDER_REACH:
-		world.player.take_damage(SMOLDER_DMG)
+		world.player.take_damage(SMOLDER_DMG, "brute")  # t20: kind убийцы
 	if hp <= 0:
 		dying = true
 		remove_from_group("enemy")  # мёртвый моб больше не бьёт и не целивается

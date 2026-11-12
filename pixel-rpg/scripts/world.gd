@@ -1419,9 +1419,13 @@ func _build_fade() -> void:
 	fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cl.add_child(fade_rect)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if player == null:
 		return
+	# t20 P0-3: время забега для экрана смерти (rs.t, сек). Копится, пока мир
+	# живёт (в т.ч. при открытом журнале/магазине — «время экспедиции», не чистое
+	# время ввода); диалог смерти замораживает мир до снимка итогов — счёт честный.
+	GameState.flags["rs.t"] = GameState._num(GameState.flags.get("rs.t", 0), 0) + delta
 	var i := near.size() - 1
 	while i >= 0:
 		if not is_instance_valid(near[i]):
@@ -1704,6 +1708,8 @@ func apply_zone(to_cave: bool, teleport: bool = true) -> void:
 func apply_area(area: String, teleport: bool = true) -> void:
 	var prev := active_area
 	active_area = area
+	# t20 P0-3: зона гибели для экрана смерти — обновляем при каждой смене области.
+	GameState.flags["rs.zone"] = area
 	var to_cave := area == "cave"
 	GameState.in_cave = to_cave
 	village_zone.visible = area == "village"

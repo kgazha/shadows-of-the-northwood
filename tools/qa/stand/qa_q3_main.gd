@@ -245,9 +245,9 @@ func _group_D() -> void:
 	var bad_ns: Array = []
 	for k in GameState.flags:
 		var s := String(k)
-		if not (s.begins_with("q.") or s.begins_with("ach.") or s.begins_with("meta.") or s.begins_with("ng.") or s.begins_with("ashen.") or s.begins_with("daily.") or s.begins_with("hint.") or s.begins_with("tal.") or s == "ach_brand"):
+		if not (s.begins_with("q.") or s.begins_with("ach.") or s.begins_with("meta.") or s.begins_with("ng.") or s.begins_with("ashen.") or s.begins_with("daily.") or s.begins_with("hint.") or s.begins_with("tal.") or s.begins_with("rs.") or s == "ach_brand"):
 			bad_ns.append(s)
-	chk(g, "flags namespaces q./ach./meta./ng./ashen./daily./hint./tal./ach_brand", bad_ns.is_empty(), str(bad_ns))
+	chk(g, "flags namespaces q./ach./meta./ng./ashen./daily./hint./tal./rs./ach_brand", bad_ns.is_empty(), str(bad_ns))
 	var offenders: Array = []
 	for k in GameState.flags:
 		if String(k).begins_with("ach.ach"):

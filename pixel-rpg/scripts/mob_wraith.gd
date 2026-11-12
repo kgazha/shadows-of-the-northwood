@@ -186,7 +186,7 @@ func _tick_materialize(delta: float, player: CharacterBody2D) -> void:
 	move_and_slide()
 	_push_from_hero()  # только «в теле»: эфирное прошлое тело героя не трогает и не пилит
 	if to_p.length() < HIT_DIST:
-		player.take_damage(2)
+		player.take_damage(2, "wraith")  # t20: kind убийцы для экрана смерти
 	if mat_t <= 0.0:
 		_enter_ethereal()
 		dash_cd = DASH_CD_MIN + randf_range(0.0, DASH_CD_JITTER)

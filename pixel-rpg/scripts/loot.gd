@@ -10,6 +10,11 @@ extends RefCounted
 ## эффект просто пропускается (headless-QA, бо́сс после queue_free и т. п.).
 static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null) -> void:
 	Achv.on_mob_death(kind)  # ачивка «Первая кровь» (§2 #1, achv.gd)
+	# t20 P0-3: счётчик убийств по типам для экрана смерти (rs.k.<kind>).
+	# ДО сверки с таблицей лута: моб умер — засчитываем даже без таблицы
+	# (QA-симуляции qa_bt/qa_s4/qa_s6 зовут с синтетическими kind — безвредно,
+	# rs.* стирается каждый забег в _wipe_circle).
+	GameState.flags["rs.k." + kind] = GameState._num(GameState.flags.get("rs.k." + kind, 0), 0) + 1
 	var table: Variant = GearData.LOOT.get(kind, [])
 	if typeof(table) != TYPE_ARRAY or table.is_empty():
 		push_warning("Loot: неизвестный вид моба: %s" % kind)
@@ -35,6 +40,9 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 		return
 	# «Жадность» алтаря Пепла: +25% золота (поверх будущих ng_gold_mult — они встанут ниже).
 	gold = int(round(gold * (1.0 + 0.25 * int(GameState.flags.get("meta.greed", 0)))))
+	# t20 «Глубокие карманы» мета-доски (meta.mb.deep_pockets): +8/16/24% золота
+	# мобов за ранг — последняя надбавка перед выдачей (поверх волны/угорь/жадность).
+	gold = int(round(gold * (1.0 + 0.01 * float(GameState.mb_value("deep_pockets")))))
 	GameState.add_gold(gold)
 	GameAudio.sfx("coin")
 	GameState.toast.emit("+%d зол." % gold)

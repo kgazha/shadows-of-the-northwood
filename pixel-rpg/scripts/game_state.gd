@@ -314,9 +314,10 @@ func add_xp(n: int) -> void:
 
 # --- классы (спринт 2) ---
 
-## Пересчёт макс. HP: класс + 2 за каждый уровень + 4 за амулет + 4 за «Благословение» алтаря.
+## Пересчёт макс. HP: класс + 2 за каждый уровень + 4 за амулет + 4 за «Благословение» алтаря
+## + t20 «Углевое сердце» мета-доски (meta.mb.coal_heart): +4 HP за ранг (кап 3 → +12).
 func recalc_max_hp() -> void:
-	max_hp = int(Classes.class_data(class_id).hp) + 2 * (level - 1) + (4 if has_amulet else 0) + 4 * int(flags.get("meta.bless", 0))
+	max_hp = int(Classes.class_data(class_id).hp) + 2 * (level - 1) + (4 if has_amulet else 0) + 4 * int(flags.get("meta.bless", 0)) + mb_value("coal_heart")
 	if hp > max_hp:
 		hp = max_hp
 	stats_changed.emit()
@@ -559,6 +560,42 @@ func dmg_bonus(w: int) -> int:
 func ng_gold_mult(w: int) -> float:
 	return 1.0 + 0.4 * float(w)
 
+# --- t20 P0-3: мета-прогресс смерти (пепел/благословение волхвы) ---
+##
+## Ретеншн пепла: при смерти забега сохраняется 60–70% пепла, ЗАРАБОТАННОГО
+## в этом забеге (rs.earned, надбавка в Ash.add), а не весь баланс: вечный
+## meta.ash из прошлых кругов/ачивок/алтаря не сгорает — канон §0 «мета-слой
+## вечен» сохраняется, а паника «смерть съела всю копилку» снимается.
+## Формула: balance -= earned - floor(earned * ASH_KEEP_RATE).
+## ASH_KEEP_RATE ∈ [ASH_KEEP_MIN, ASH_KEEP_MAX] — стенд qa_mb R3 на e∈{10,20,50,100,1000}.
+const ASH_KEEP_RATE := 0.65
+const ASH_KEEP_MIN := 0.60
+const ASH_KEEP_MAX := 0.70
+
+## Благословение волхвы: +2% урона за КАЖДУЮ смерть текущего круга, кап — 10
+## смертей (+20%). Счётчик meta.vd: +1 в start_new_run(), сброс 0 в
+## start_ng_plus() (новый круг — благословение выгорает, волхва благословляет заново).
+## Не путать с meta.bless — «Благословение» алтаря Пепла (+4 HP/ранг, t-ранняя система).
+const BLESS_PER_DEATH := 0.02
+const BLESS_CAP_DEATHS := 10
+
+## Число учтённых смертей круга (до капа) — множитель урона hero.
+func volkhv_stacks() -> int:
+	return clampi(_num(flags.get("meta.vd", 0), 0), 0, BLESS_CAP_DEATHS)
+
+## Множитель урона героя от благословения волхвы (1.0 .. 1.0+0.02*10).
+func volkhv_bless_mult() -> float:
+	return 1.0 + BLESS_PER_DEATH * float(volkhv_stacks())
+
+## Ранг таланта мета-доски пепла (0..3); ключ "meta.mb.<id>", вайп НЕ трогает
+## (мета-слой вечен). Единственная точка чтения для всех hooks (game_state/player/loot).
+func mb_rank(id: String) -> int:
+	return clampi(_num(flags.get("meta.mb." + id, 0), 0), 0, 3)
+
+## Числовой эффект ранга: 0 / vals[0] / vals[1] / vals[2] по таблице MetaBoard.
+func mb_value(id: String) -> int:
+	return MetaBoard.value_at_rank(mb_rank(id), id)
+
 ## Начать новый круг (§1.1–1.2). P1: вызывается программно (триггер в диалоге
 ## Старейшины — P2, не здесь). Переносится: золото, шестерня, класс/уровни/статы,
 ## амулет, achv.*, meta.*, daily.*, ng.*; сбрасывается мир и сюжет (§1.2).
@@ -567,6 +604,9 @@ func ng_gold_mult(w: int) -> float:
 func start_ng_plus() -> int:
 	var w := mini(ng_wave() + 1, NG_WAVE_CAP)
 	flags["ng.wave"] = w
+	# t20 P0-3: «Благословение волхвы» считается по смертям ТЕКУЩЕГО круга —
+	# новый круг обнуляет счётчик (волхва благословляет заново с чистого листа).
+	flags["meta.vd"] = 0
 	# Вайп-набор — общий хелпер _wipe_circle() (CONTRACT_RUNLOOP §1.3). Герой
 	# (уровень/опыт/шмот) НЕ обнуляется — «ушёл домой с триумфом» (R6-антибаг:
 	# обнуление героя принадлежит только смертельному входу start_new_run()).
@@ -613,6 +653,10 @@ func _wipe_circle() -> void:
 	slime_kills_circle = 0
 	# алтарный «Кошелёк» (meta.purse, кап 2): +50 золота за ранг к старту круга.
 	gold += 50 * int(flags.get("meta.purse", 0))
+	# t20 «Первые угли» мета-доски (meta.mb.first_coal): стартовое золото забега
+	# +15/+30/+50 за ранг. Рядом с «Кошельком»: R3 qa_run (gold == 50×purse)
+	# остаётся тождеством при ранге 0 (значение 0).
+	gold += mb_value("first_coal")
 	# квестовые/диалоговые флаги (q.*, q.got.*, q.last.*) и Пепелище (ashen.*:
 	# ведьма/сундук/интро) — перепроходятся каждый круг (канон-решение оркестратора:
 	# Пепла с ведьмы не течёт, зона пересоздаётся живой);
@@ -624,7 +668,9 @@ func _wipe_circle() -> void:
 	var wipe_keys: Array = []
 	for k in flags:
 		var ks := String(k)
-		if ks.begins_with("q.") or ks.begins_with("ashen.") or ks.begins_with("ng.boss_") or ks.begins_with("tal."):
+		# t20: rs.* — статистика забега (время/киллы/заработанный пепло/зона/
+		# убийца) для экрана смерти; живёт ровно один забег, стирается здесь же.
+		if ks.begins_with("q.") or ks.begins_with("ashen.") or ks.begins_with("ng.boss_") or ks.begins_with("tal.") or ks.begins_with("rs."):
 			wipe_keys.append(k)
 	for k in wipe_keys:
 		flags.erase(k)
@@ -643,6 +689,19 @@ func start_new_run() -> void:
 	# 1) Учёт смерти ДО вайпа (§1.5): вечный счётчик ach.n.deaths + ачивки
 	# «Угас и вспыхнул» (>=5) / «Неугасимый» (>=15) (achv.gd::on_death, ADDENDUM 1.0).
 	Achv.on_death()
+	# 1a) t20 P0-3: ретеншн пепла — ДО вайпа, пока жив счётчик rs.earned.
+	# Сохраняется floor(earned × 0.65) заработанного в этом забеге (т.е. сгорает
+	# earned - keep); вечный remainder баланса не трогается. Сгорание ограничено
+	# сверху текущим балансом (траты забега могли увести balance < earned).
+	var earned := _num(flags.get("rs.earned", 0), 0)
+	if earned > 0:
+		var keep := int(floor(float(earned) * ASH_KEEP_RATE))
+		var burn: int = mini(earned - keep, int(flags.get(Ash.KEY, 0)))
+		if burn > 0:
+			flags[Ash.KEY] = int(flags.get(Ash.KEY, 0)) - burn
+	# 1b) t20 P0-3: «Благословение волхвы» — смерть текущего круга засчитывается
+	# сюда же; новый забег стартует уже с множителем урона (player.dmg_vs).
+	flags["meta.vd"] = _num(flags.get("meta.vd", 0), 0) + 1
 	# 2) Всё нажитое в забеге сгорает. gold = 0 ДО вайпа: «Кошелёк» внутри
 	# _wipe_circle положит сверху ровно 50 × meta.purse (R3: золото == 50×purse,
 	# а не «остаток + надбавка» как у победного входа).

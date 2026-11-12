@@ -131,7 +131,10 @@ class PStub extends CharacterBody2D:
 		sh.size = Vector2(10, 8)
 		cs.shape = sh
 		add_child(cs)
-	func take_damage(n: int) -> void:
+	# t20 P0-3: сигнатура зеркалит player.take_damage(n, src="") — мобы теперь
+	# передают kind убийцы вторым (опциональным) аргументом; стабы принимают его
+	# молча, существующие стенды (qa_bt/qa_gb/…) не ломаются.
+	func take_damage(n: int, _src := "") -> void:
 		dmg_log.append(n)
 	func cast_skill(_i: int) -> void:
 		pass

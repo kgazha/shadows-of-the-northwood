@@ -151,7 +151,7 @@ func _physics_process(delta: float) -> void:
 	if d < LEASH:
 		velocity = (player.global_position - global_position).normalized() * SPEED_CHASE
 		if d < HIT_DIST:
-			player.take_damage(1)
+			player.take_damage(1, "swarmling")  # t20: kind убийцы для экрана смерти
 			bit_t = 0.25
 	else:
 		wander_t -= delta

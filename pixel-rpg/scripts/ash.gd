@@ -15,6 +15,12 @@ static func add(n: int) -> void:
 	if n <= 0:
 		return
 	GameState.flags[KEY] = balance() + n
+	# t20 P0-3: счётчик пепла, ЗАРАБОТАННОГО в текущем забеге (rs.earned).
+	# Ретеншн при смерти (game_state.gd::start_new_run) сохраняет 60–70% ИМЕННО
+	# его, а не всего баланса — вечный баланс meta.ash (канон §0 «мета-слой
+	# вечен») от чужих источников (ачивки прошлых кругов, алтарь, NG+) не горит.
+	# Ключ со префиксом rs.* — «статистика забега», стирается в _wipe_circle().
+	GameState.flags["rs.earned"] = GameState._num(GameState.flags.get("rs.earned", 0), 0) + n
 
 static func spend(n: int) -> bool:
 	n = int(n)

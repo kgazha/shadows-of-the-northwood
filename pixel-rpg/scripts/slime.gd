@@ -122,7 +122,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_push_from_hero()
 	if d < HIT_DIST:
-		world.player.take_damage(dmg)
+		world.player.take_damage(dmg, "slime")  # t20: kind убийцы для экрана смерти
 
 ## «Стенка без пиления» (дребезг экрана вплотную к врагу): герой со слоем 1 убран
 ## из маски моба — иначе два CharacterBody2D при упоре друг в друга каждый кадр

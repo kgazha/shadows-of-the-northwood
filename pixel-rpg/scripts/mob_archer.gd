@@ -332,5 +332,5 @@ class Arrow extends Area2D:
 		# маска 1|2: сюда долетает только герой (слой 1) или преграда — как в
 		# projectile.gd (фикс T9): во всё, что не цель, стрела гаснет
 		if b == target and b.has_method("take_damage"):
-			b.take_damage(dmg)  # кадры неуязвимости героя (hurt_cd/кувырок) — на его стороне
+			b.take_damage(dmg, "archer")  # кадры неуязвимости героя (hurt_cd/кувырок) — на его стороне; t20: kind убийцы
 		queue_free()
