@@ -35,6 +35,7 @@ var shot_cd := 1.2            # первый выстрел не мгновен�
 var tele_t := 0.0             # >0 — идёт подготовка выстрела
 var tele_dir := Vector2.RIGHT # направление, зафиксированное в начале телеграфа
 var facing := "down"
+var gen_art := false  # t17: ген-ассет (flip по facing, LINEAR_WITH_MIPMAPS)
 var home := Vector2.ZERO
 var wander_t := 0.0
 var wander_dir := Vector2.ZERO
@@ -57,8 +58,12 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	anim = AnimatedSprite2D.new()
 	var fr := SpriteFrames.new()
 	fr.remove_animation("default")
-	if ResourceLoader.exists("res://assets/mobs_archer.png"):
-		var tex := load("res://assets/mobs_archer.png")
+	if ResourceLoader.exists("res://assets/art/mob_archer.png") \
+			or ResourceLoader.exists("res://assets/mobs_archer.png"):
+		# t17: ген-ассет (art_gen archer v2) приоритетом над пиксельным листом.
+		var gen := ResourceLoader.exists("res://assets/art/mob_archer.png")
+		gen_art = gen
+		var tex: Texture2D = load("res://assets/art/mob_archer.png") if gen else load("res://assets/mobs_archer.png")
 		var rows := {"down": 0, "left": 1, "right": 2, "up": 3}
 		for dir_name: String in rows.keys():
 			var row: int = int(rows[dir_name])
@@ -68,15 +73,27 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 				fr.set_animation_loop(an, bool(kind[2]))
 				if bool(kind[2]):
 					fr.set_animation_speed(an, float(kind[3]))
-				for col: int in kind[1]:
-					var at := AtlasTexture.new()
-					at.atlas = tex
-					at.region = Rect2(col * 16, row * 16, 16, 16)
-					fr.add_frame(an, at, 0.0)
+				if gen:
+					fr.add_frame(an, tex, 0.0)  # однокадровый канон-набор (резерв под аним-проход)
+				else:
+					for col: int in kind[1]:
+						var at := AtlasTexture.new()
+						at.atlas = tex
+						at.region = Rect2(col * 16, row * 16, 16, 16)
+						fr.add_frame(an, at, 0.0)
 		anim.sprite_frames = fr
 		add_child(anim)
-		anim.scale = Vector2.ONE * VISUAL_SCALE
-		anim.position = Vector2(0, -3.5)
+		if gen:
+			# tight-кроп: s=24/tex_h; линия ног 8.5 (замер старых кадров, ffb=0)
+			# → pos.y = 8.5 − 12; тень следует по низу кропа
+			var gs := 24.0 / float(tex.get_height())
+			anim.scale = Vector2.ONE * gs
+			anim.position = Vector2(0, 8.5 - 12.0)
+			anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+			anim.flip_h = facing == "left"
+		else:
+			anim.scale = Vector2.ONE * VISUAL_SCALE
+			anim.position = Vector2(0, -3.5)
 		anim.play("idle_down")
 	else:
 		push_warning("Нет ассета: assets/mobs_archer.png — у лучника цветная заглушка")
@@ -235,6 +252,8 @@ func _anim_move(shooting: bool) -> void:
 	var an := "%s_%s" % [want, facing]
 	if anim.animation != an:
 		anim.play(an)
+	if gen_art:
+		anim.flip_h = facing == "left"  # арт смотрит вправо
 
 func _anim_walk() -> void:
 	_anim_move(false)

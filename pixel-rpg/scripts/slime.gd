@@ -54,15 +54,28 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	fr.add_animation("walk")
 	fr.set_animation_loop("walk", true)
 	fr.set_animation_speed("walk", 3.0)
-	var tex := load("res://assets/slime.png")
-	for col in [0, 1]:
-		var at := AtlasTexture.new()
-		at.atlas = tex
-		at.region = Rect2(col * 16, 0, 16, 16)
-		fr.add_frame("walk", at, 0.0)
-	anim.sprite_frames = fr
-	anim.scale = Vector2.ONE * VISUAL_SCALE
-	anim.position = Vector2(0, -1.875)  # якорь по стопам: +5*(1−1.375)
+	if ResourceLoader.exists("res://assets/art/mob_slime.png"):
+		# t17: сгенерированный слизень (art_gen slime v2, полная глубина). Tight-кроп
+		# из 1024-оригинала: стопы = нижний край текстуры; экран 22 px — масштабом
+		# s=22/tex_h; линия ног — средняя из двух bob-линий старых кадров
+		# (6.375/7.75) → pos.y = 7.0625 − 11. Тень (atmosphere) цепляется по низу сама.
+		var gtex := load("res://assets/art/mob_slime.png")
+		fr.add_frame("walk", gtex, 0.0)
+		anim.sprite_frames = fr
+		var gs := 22.0 / float(gtex.get_height())
+		anim.scale = Vector2.ONE * gs
+		anim.position = Vector2(0, -3.9375)
+		anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	else:
+		var tex := load("res://assets/slime.png")
+		for col in [0, 1]:
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = Rect2(col * 16, 0, 16, 16)
+			fr.add_frame("walk", at, 0.0)
+		anim.sprite_frames = fr
+		anim.scale = Vector2.ONE * VISUAL_SCALE
+		anim.position = Vector2(0, -1.875)  # якорь по стопам: +5*(1−1.375)
 	add_child(anim)
 	anim.play("walk")
 

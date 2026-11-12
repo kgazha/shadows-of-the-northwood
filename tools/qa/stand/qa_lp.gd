@@ -26,6 +26,10 @@ extends Node2D
 ##      стенах (>30 кадров в блокирующей клетке), не вылетает за карту.
 ##  T10 миникарта: размер сетки-подложки = размер текущей зоны (динамический
 ##      пересчёт, не пиксель — пиксельные сигнатуры сверяет qa_mm).
+##  T11 t17 «живая стилистика»: герой и бестиарий — ген-ассеты (полный кроп
+##      1024-оригинала, RGBA8 >256 цветов, без квантизации), MD5-пины,
+##      LINEAR_WITH_MIPMAPS + полная мип-цепочка, ЭКРАННЫЕ высоты/линии стоп
+##      по канону t12 на живых объектах; Тенеплёт (wraith) не интегрирован.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -82,6 +86,7 @@ func _ready() -> void:
 	await _t8()
 	await _t9()
 	_t10()
+	_t11()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -760,3 +765,207 @@ func _t10() -> void:
 	var ah: int = world.ashen_grid.map_h
 	chk((gw == cw and gh == chh) or (gw == aw and gh == ah),
 		"T10: подложка %dx%d = актуальная зона (cave %dx%d, ashen %dx%d)" % [gw, gh, cw, chh, aw, ah])
+
+# ------------------------------------------------------------------ T11
+
+# t17 «Живая стилистика»: герой (idle/walk/attack) и бестиарий (slime,
+# swarmling, archer, rotspawn t1–t3, гром, ведьма) — полные tight alpha-кропы
+# 1024-оригиналов art_gen БЕЗ квантизации (RGBA8, >256 цветов). Пиплайн кроя
+# (scratch_cm/t17_cut_actors.py) пинит MD5 1024-источников своими assert'ами;
+# здесь пиним MD5 привезённых PNG (цепочка «источник→кроп» замывается ими),
+# а при доступности art_gen (прогон не только в battery-стейдже) сверяем и
+# MD5 источников. Экранные высоты и линии стоп — канон t12 VISUAL_SCALE,
+# линии замерены эмпирически по старым спрайтам: tight-кроп => контент-стопы
+# на нижней строке текстуры => anim.position.y = foot − canon/2.
+# Тенеплёт (wraith) в игру НЕ интегрирован (решение пользователя).
+const T11_ART := [
+	{"n": "hero_idle.png", "src": "hero/hero_idle_v2.png",
+	 "sm": "0edcc9365ee110497261c355803e1fa5", "am": "28c43254198b7b5a5a4ee898636b912e",
+	 "w": 513, "h": 1460},
+	{"n": "hero_walk.png", "src": "hero/hero_walk_v2.png",
+	 "sm": "3f2f987e55723f61c240af2954d6c046", "am": "7670e1c89bbe3f209a47bb701f4162fd",
+	 "w": 762, "h": 1374},
+	{"n": "hero_attack.png", "src": "hero/hero_attack_v2.png",
+	 "sm": "5800b97db70698428d3f8bbe0c35ae9c", "am": "39486e46acb80b8ca9e62976fb772f72",
+	 "w": 904, "h": 1283},
+	{"n": "mob_slime.png", "src": "monsters/slime_v2.png",
+	 "sm": "d1a0e568180bfeafbf4416f56d456f85", "am": "855e4d9ae83bb918d01ac1e90801f82b",
+	 "w": 566, "h": 528},
+	{"n": "mob_swarmling.png", "src": "monsters/swarmling_v1.png",
+	 "sm": "4c1851723013fa3e0920a27dba22ef67", "am": "908be54128e450423991e6e2c832e7b1",
+	 "w": 698, "h": 356},
+	{"n": "mob_archer.png", "src": "monsters/archer_v2.png",
+	 "sm": "8a0e31c7cd396d4711d6130d26dc7133", "am": "de4563c0f71bd335bfa2065afab996f2",
+	 "w": 438, "h": 979},
+	{"n": "mob_rotspawn.png", "src": "monsters/rotspawn_v2.png",
+	 "sm": "e328cce23cd94340da01ecec26b3299c", "am": "e25521cb98cdb693aa77c1bc24084e74",
+	 "w": 686, "h": 872},
+	{"n": "mob_grom.png", "src": "monsters/grom_v2.png",
+	 "sm": "7c61ec9c937e8a871024899fcc2b0394", "am": "32c8d9fa970a752ff57517a8f9efcdb4",
+	 "w": 812, "h": 773},
+	{"n": "mob_witch.png", "src": "monsters/witch_v2.png",
+	 "sm": "4d262d411a3153ac497d448d87db7033", "am": "208385b8eed7c91b5ab5b0be51537a1a",
+	 "w": 497, "h": 974},
+]
+
+func _t11_md5(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var hc := HashingContext.new()
+	if hc.start(HashingContext.HASH_MD5) != OK:
+		f.close()
+		return ""
+	hc.update(f.get_buffer(f.get_length()))
+	f.close()
+	return hc.finish().hex_encode()
+
+func _t11() -> void:
+	# --- 1. статика ассетов: MD5 / глубина цвета / импорт / мипы ---
+	var ag_base: String = ProjectSettings.globalize_path("res://") + "../art_gen/"
+	for a: Dictionary in T11_ART:
+		var rp := "res://assets/art/" + String(a["n"])
+		var m_ok: bool = _t11_md5(rp) == String(a["am"])
+		var has_src: bool = FileAccess.file_exists(ag_base + String(a["src"]))
+		if has_src:
+			m_ok = m_ok and _t11_md5(ag_base + String(a["src"])) == String(a["sm"])
+		chk(m_ok, "T11: %s — MD5 канон%s" % [a["n"], " (+1024-источник)" if has_src else ""])
+	for a: Dictionary in T11_ART:
+		var rp := "res://assets/art/" + String(a["n"])
+		var tex := load(rp) as Texture2D
+		var ok_tex: bool = tex != null and tex.get_width() == int(a["w"]) and tex.get_height() == int(a["h"])
+		var imp_ok := true
+		var f := FileAccess.open(rp + ".import", FileAccess.READ)
+		if f == null:
+			imp_ok = false
+		else:
+			var t := f.get_as_text()
+			f.close()
+			imp_ok = t.contains("mipmaps/generate=true")
+		var ci: Array = _ctex_mip_info(rp)
+		var need: int = int(floor(log(float(maxi(int(a["w"]), int(a["h"])))) / log(2.0)))
+		var mip_ok: bool = ci.size() == 3 and int(ci[0]) == int(a["w"]) and int(ci[1]) == int(a["h"]) and int(ci[2]) >= need
+		chk(ok_tex and imp_ok and mip_ok,
+			"T11: %s — %dx%d, mipmaps/generate=true, мип-цепочка полная (доп.=%d≥%d)" % [
+				a["n"], a["w"], a["h"], int(ci[2]) if ci.size() == 3 else -1, need])
+	for a: Dictionary in T11_ART:
+		var f := FileAccess.open("res://assets/art/" + String(a["n"]), FileAccess.READ)
+		var ok := false
+		var ncol := 0
+		var capped := false
+		if f != null:
+			var img := Image.new()
+			if img.load_png_from_buffer(f.get_buffer(f.get_length())) == OK \
+					and img.get_format() == Image.FORMAT_RGBA8:
+				# подсчёт уникальных RGBA8-палитр по сырым байтам (get_used_colors()
+				# в Godot 4 нет); скан обрывается на 4096 — 8-битной квантизации
+				# хватило бы 256, порог 4096 подтверждает полную глубину с запасом
+				var d := img.get_data()
+				var seen := {}
+				var i := 0
+				while i + 3 < d.size() and seen.size() <= 4096:
+					seen[d[i] | (d[i + 1] << 8) | (d[i + 2] << 16) | (d[i + 3] << 24)] = true
+					i += 4
+				ncol = seen.size()
+				capped = i + 3 < d.size()
+				ok = ncol > 256
+			f.close()
+		chk(ok, "T11: %s — RGBA8, %s цветов (полная глубина, без квантизации)" % [
+			a["n"], ("%d+" % ncol) if capped else ("%d" % ncol)])
+	# --- 2. живой герой: канон 32, линия стоп 5.0, анимы, flip ---
+	var p = world.player
+	var hero_ok: bool = p != null and bool(p.gen_art) and p.anim != null
+	chk(hero_ok, "T11: герой на ген-арте (gen_art)")
+	if hero_ok:
+		var pa: AnimatedSprite2D = p.anim
+		var idle: Texture2D = pa.sprite_frames.get_frame_texture("down", 0)
+		chk(idle != null and String(idle.resource_path).ends_with("hero_idle.png"),
+			"T11: герой — hero_idle.png в рабочих анимах")
+		var drawn_h: float = float(idle.get_height()) * pa.scale.x
+		var foot_h: float = pa.position.y + drawn_h / 2.0
+		chk(absf(drawn_h - 32.0) <= 0.05 and absf(foot_h - 5.0) <= 0.01,
+			"T11: герой drawn=%.3f (канон 32), стопы=%.3f (линия 5.0)" % [drawn_h, foot_h])
+		chk(pa.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS,
+			"T11: герой — TEXTURE_FILTER_LINEAR_WITH_MIPMAPS")
+		var names_ok := true
+		for an: String in ["down", "up", "left", "right", "walk_down", "walk_up", "walk_left", "walk_right", "attack"]:
+			if not pa.sprite_frames.has_animation(an) or pa.sprite_frames.get_frame_count(an) != 1:
+				names_ok = false
+		var walk_tex: Texture2D = pa.sprite_frames.get_frame_texture("walk_down", 0) if pa.sprite_frames.has_animation("walk_down") else null
+		var atk_tex: Texture2D = pa.sprite_frames.get_frame_texture("attack", 0) if pa.sprite_frames.has_animation("attack") else null
+		chk(names_ok and walk_tex != null and String(walk_tex.resource_path).ends_with("hero_walk.png") \
+				and atk_tex != null and String(atk_tex.resource_path).ends_with("hero_attack.png"),
+			"T11: герой — 9 аним по 1 кадру, walk/attack на своих листах (резерв аним-прохода)")
+		var facing0: String = String(p.facing)
+		p.facing = "left"
+		p._sync_gen_flip()
+		var fl: bool = pa.flip_h
+		p.facing = "right"
+		p._sync_gen_flip()
+		var fr_: bool = pa.flip_h
+		p.facing = facing0
+		p._sync_gen_flip()
+		chk(fl and not fr_, "T11: герой — flip_h по facing (арт смотрит вправо)")
+	else:
+		chk(false, "T11: герой — hero_idle.png в рабочих анимах (нет ген-арта)")
+		chk(false, "T11: герой — канон 32 / линия стоп 5.0 (нет ген-арта)")
+		chk(false, "T11: герой — LINEAR_WITH_MIPMAPS (нет ген-арта)")
+		chk(false, "T11: герой — 9 аним по 1 кадру (нет ген-арта)")
+		chk(false, "T11: герой — flip_h по facing (нет ген-арта)")
+	# --- 3. живой бестиарий: setup-спавн вдали, проверки по месту, free ---
+	_t11_mob("слизень", "res://scripts/slime.gd", "mob_slime.png", 22.0, 7.0625, {})
+	_t11_mob("мглокрыс", "res://scripts/mob_swarmling.gd", "mob_swarmling.png", 24.0, 7.5, {})
+	_t11_mob("лучник", "res://scripts/mob_archer.gd", "mob_archer.png", 24.0, 8.5, {})
+	# brute.gd: var boss := true по умолчанию — ярусных мобов world.gd переводит
+	# в boss=false до setup; здесь воспроизводим канонический порядок
+	_t11_mob("гнидень ярус1", "res://scripts/brute.gd", "mob_rotspawn.png", 29.0, 8.50178125, {"boss": false, "tier": 1})
+	_t11_mob("гнидень ярус2", "res://scripts/brute.gd", "mob_rotspawn.png", 35.0, 10.26000625, {"boss": false, "tier": 2})
+	_t11_mob("гнидень ярус3", "res://scripts/brute.gd", "mob_rotspawn.png", 42.0, 12.3125, {"boss": false, "tier": 3})
+	_t11_mob("Гром", "res://scripts/brute.gd", "mob_grom.png", 52.0, 15.2440476, {"boss": true})
+	_t11_mob("Ведьма Пепелища", "res://scripts/mob_boss2.gd", "mob_witch.png", 51.0, 13.91375, {})
+	# --- 4. Тенеплёт не интегрирован ---
+	var wraith_art := ""
+	var d := DirAccess.open("res://assets/art")
+	if d != null:
+		for fn in d.get_files():
+			if String(fn).to_lower().contains("wraith"):
+				wraith_art += String(fn) + " "
+	chk(wraith_art == "", "T11: в assets/art нет ассетов Тенеплёта (wraith не интегрирован)")
+	var wraith_ref := ""
+	for sp: String in ["res://scripts/world.gd", "res://scripts/ashen_zone.gd", "res://scripts/dungeon_zone.gd"]:
+		var f2 := FileAccess.open(sp, FileAccess.READ)
+		if f2 != null:
+			if f2.get_as_text().contains("mob_wraith"):
+				wraith_ref += sp.get_file() + " "
+			f2.close()
+	chk(wraith_ref == "", "T11: зоны не ссылаются на mob_wraith (Тенеплёт не спавнится)")
+
+func _t11_mob(tag: String, script_path: String, tex_name: String, canon: float, foot: float, cfg: Dictionary) -> void:
+	# спавн по каноническому пути (new -> add_child -> setup), далеко от героя;
+	# проверки синхронные (setup строит anim сразу), free() — до физ-кадра
+	var m = load(script_path).new()
+	for k: String in cfg:
+		m.set(k, cfg[k])
+	add_child(m)
+	m.setup(world, Vector2i(400, 400))
+	var ok := true
+	var a: AnimatedSprite2D = m.get("anim")
+	var tex: Texture2D = null
+	if a == null or not bool(m.get("gen_art")):
+		ok = false
+	else:
+		# проверяем фактическую играющий аним: slime/brute — "walk",
+		# swarmling/archer — "idle_down" (у своих листов свои наборы имён)
+		var an := String(a.animation)
+		tex = a.sprite_frames.get_frame_texture(an, 0) if a.sprite_frames.has_animation(an) else null
+		ok = tex != null and String(tex.resource_path).ends_with(tex_name) \
+			and a.sprite_frames.get_frame_count(an) == 1 \
+			and absf(float(tex.get_height()) * a.scale.x - canon) <= 0.05 \
+			and absf(a.position.y + canon / 2.0 - foot) <= 0.01 \
+			and a.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if not ok:
+		print("   QA_LP: %s — провал ген-проверки (anim=%s)" % [tag, a])
+	var dh := (float(tex.get_height()) * a.scale.x) if (a != null and tex != null) else -1.0
+	var fh := (a.position.y + canon / 2.0) if a != null else -1.0
+	chk(ok, "T11: %s — %s, drawn=%.3f (канон %.1f), стопы=%.5f" % [tag, tex_name, dh, canon, fh])
+	m.free()

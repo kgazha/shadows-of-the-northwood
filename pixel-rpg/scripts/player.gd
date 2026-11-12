@@ -24,6 +24,21 @@ const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP �
 # на прежней линии, тень (atmosphere меряет низ кадров) следует за спрайтом сама.
 const VISUAL_SCALE := 2.0
 const ANIM_HOME := Vector2(0, -5.0)
+# t17: сгенерированный герой (art_gen hero v2, полная глубина цвета, без
+# квантизации). Тот же канон, что у пропсов env4: берём tight-кроп из
+# 1024-оригинала, экранная высота — scale'ом: s = 32/tex_h. Контент-стопы
+# кропа = нижний край текстуры, якорь — та же линия ног +5 (замер t17):
+# pos.y = +5 − 16 = −11. idle — статичный кадр; walk/attack регистрируются
+# в том же наборе (однокадровые) — их подхватит будущий анимационный проход.
+const GEN_HERO_IDLE := "res://assets/art/hero_idle.png"
+const GEN_HERO_WALK := "res://assets/art/hero_walk.png"
+const GEN_HERO_ATTACK := "res://assets/art/hero_attack.png"
+const GEN_CANON_H := 32.0
+const GEN_FOOT_LINE := 5.0
+
+var gen_art := false
+var anim_home := ANIM_HOME
+var head_y := -17.0  # линия макушки (искры/цифры поднимаем вместе с головой)
 
 var anim: AnimatedSprite2D
 var facing := "down"
@@ -77,19 +92,21 @@ func _ready() -> void:
 	# макушка ~-17.5, искры/цифры подняты вместе с головой)
 	GameState.regen_hp_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			Fx.heal(global_position + Vector2(0, -24), world))
+			Fx.heal(global_position + Vector2(0, head_y - 7.0), world))
 	GameState.regen_mana_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			_spark(global_position + Vector2(0, -24), Color(0.4, 0.65, 1.0, 0.9), 5.0))
+			_spark(global_position + Vector2(0, head_y - 7.0), Color(0.4, 0.65, 1.0, 0.9), 5.0))
 	GameState.leveled_up.connect(func(_l: int) -> void:
 		if is_instance_valid(self):
-			Fx.level_up(global_position + Vector2(0, -22), world))
+			Fx.level_up(global_position + Vector2(0, head_y - 5.0), world))
 
 func class_data() -> Dictionary:
 	return Classes.class_data(GameState.class_id)
 
 ## Вызвать после выбора/смены класса и загрузки сейва: перекрасить героя.
 func apply_class() -> void:
+	if _build_gen_frames():
+		return  # t17: сгенерированный герой — единый для всех классов
 	var path := String(class_data().sprites)
 	var tex: Texture2D = null
 	if ResourceLoader.exists(path):
@@ -99,6 +116,35 @@ func apply_class() -> void:
 		tex = load("res://assets/player.png")
 	if tex != null:
 		_build_frames(tex)
+
+## t17: набор hero_idle (+зарезервированные walk/attack) в те же имена анимаций.
+func _build_gen_frames() -> bool:
+	if not ResourceLoader.exists(GEN_HERO_IDLE):
+		return false
+	var idle := load(GEN_HERO_IDLE) as Texture2D
+	var fr := SpriteFrames.new()
+	fr.remove_animation("default")
+	for dir_name in ["down", "left", "right", "up"]:
+		_add_gen_anim(fr, dir_name, idle)  # покой = статичный канон-кадр
+		if ResourceLoader.exists(GEN_HERO_WALK):
+			_add_gen_anim(fr, "walk_" + dir_name, load(GEN_HERO_WALK))
+	if ResourceLoader.exists(GEN_HERO_ATTACK):
+		_add_gen_anim(fr, "attack", load(GEN_HERO_ATTACK))  # резерв аним-прохода
+	anim.sprite_frames = fr
+	var s := GEN_CANON_H / float(idle.get_height())
+	anim.scale = Vector2.ONE * s
+	anim_home = Vector2(0, GEN_FOOT_LINE - GEN_CANON_H / 2.0)
+	anim.position = anim_home
+	anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	gen_art = true
+	head_y = anim_home.y - GEN_CANON_H / 2.0  # макушка = верх tight-кропа
+	return true
+
+func _add_gen_anim(fr: SpriteFrames, name: String, tex: Texture2D) -> void:
+	fr.add_animation(name)
+	fr.set_animation_loop(name, true)
+	fr.set_animation_speed(name, 8.0)
+	fr.add_frame(name, tex, 0.0)
 
 func _build_frames(tex: Texture2D) -> void:
 	var fr := SpriteFrames.new()
@@ -155,7 +201,7 @@ func _physics_process(delta: float) -> void:
 		roll_t = maxf(0.0, roll_t - delta)
 		velocity = roll_dir * ROLL_SPEED
 		_set_facing_from(roll_dir)
-		anim.play(facing)
+		_play_walk()
 		if roll_t == 0.0:
 			anim.modulate.a = 1.0
 		move_and_slide()
@@ -174,7 +220,7 @@ func _physics_process(delta: float) -> void:
 	velocity = mv * float(class_data().speed) * (1.0 + 0.05 * GameState.tal_rank("stride"))
 	if velocity != Vector2.ZERO:
 		_set_facing_from(velocity)
-		anim.play(facing)
+		_play_walk()
 		_step_tick(delta)
 	else:
 		_step_t = 0.0  # встал — следующий шаг зазвучит сразу, не «доедет» по таймеру
@@ -237,6 +283,20 @@ func _set_facing_from(v: Vector2) -> void:
 		facing = "right" if v.x > 0 else "left"
 	else:
 		facing = "down" if v.y > 0 else "up"
+	_sync_gen_flip()
+
+## Ход: с ген-артом играем однокадровые walk_* (будущий аним-проход добавит
+## кадры — логика вызова уже готова); без него — прежнее поведение.
+func _play_walk() -> void:
+	var an := "walk_" + facing
+	if gen_art and anim.sprite_frames.has_animation(an):
+		anim.play(an)
+	else:
+		anim.play(facing)
+
+func _sync_gen_flip() -> void:
+	if gen_art:
+		anim.flip_h = facing == "left"  # арт смотрит вправо
 
 ## Шаг: два сэмпла попеременно, лёгкий разброс темпа и высоты — не «швейная машинка».
 func _step_tick(delta: float) -> void:
@@ -289,6 +349,7 @@ func face_to(p: Vector2) -> void:
 		facing = "right" if d.x > 0 else "left"
 	else:
 		facing = "down" if d.y > 0 else "up"
+	_sync_gen_flip()
 
 func facing_dir() -> Vector2:
 	match facing:
@@ -327,11 +388,12 @@ func do_attack() -> void:
 func _lunge_fx(dir: Vector2, dist: float) -> void:
 	if _atk_fx_t != null and _atk_fx_t.is_valid():
 		_atk_fx_t.kill()
-	# волна 5: «домой» спрайт возвращается не в ноль, а в ANIM_HOME (якорь ног)
-	anim.position = ANIM_HOME
+	# волна 5: «домой» спрайт возвращается не в ноль, а в якорь ног (anim_home:
+	# −5 для пиксельных листов, −11 для tight-кропа t17)
+	anim.position = anim_home
 	_atk_fx_t = create_tween()
-	_atk_fx_t.tween_property(anim, "position", ANIM_HOME + dir * dist, 0.06)
-	_atk_fx_t.tween_property(anim, "position", ANIM_HOME, 0.13)\
+	_atk_fx_t.tween_property(anim, "position", anim_home + dir * dist, 0.06)
+	_atk_fx_t.tween_property(anim, "position", anim_home, 0.13)\
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 ## Дуга замаха: серповидный «всплеск» клинка, проворачивается по дуге и гаснет.
@@ -595,7 +657,7 @@ func _boar_dash(t: Node2D) -> void:
 	boar_dust = 0
 	boar_t = BOAR_DASH_TIME
 	_set_facing_from(dir)
-	anim.play(facing)
+	_play_walk()
 	anim.modulate.a = 0.75  # как кувырок: полупрозрачность скорости на время полёта
 	Fx.dust(from, world)
 

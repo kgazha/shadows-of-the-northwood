@@ -37,14 +37,27 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	base_tint = TINT_WITCH
 	home_tile = tile
 	super.setup(p_world, tile)
-	if anim != null:
+	if anim != null and not gen_art:
 		# SCALE_CANON: Ведьма Пепелища = 1.6H = 51 px (32px-кадр × 1.59375).
 		# s_old — прежний базис «главнее отпрысков» (+12%), от него считается
 		# якорь по контент-стопу +11: стопы Ведьмы остаются там, где стояли.
+		# (t17: на ген-ассете якорь уже посчитан в brute.setup через виртуалы.)
 		var s_old := 1.12
 		var s := 51.0 / 32.0
 		anim.scale = Vector2.ONE * s
 		anim.position = Vector2(0, 11.0 * (s_old - s))
+
+# t17: ген-ассет Ведьмы (art_gen witch v2) — тот же канон 51 px, что ниже
+# отпрысков Грома; линия ног старой Ведьмы на brute.png = 13.91375
+# (12·1.59375 + 11·(1.12−1.59375), замер по старому кадру).
+func gen_tex_path() -> String:
+	return "res://assets/art/mob_witch.png"
+
+func gen_canon_h() -> float:
+	return 51.0
+
+func gen_foot_old() -> float:
+	return 13.91375
 
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:

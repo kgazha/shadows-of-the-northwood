@@ -29,6 +29,15 @@ const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
 ## центра кадра: якорь = +11*(s_old−s_new) держит ноги на прежней линии, тень
 ## следует сама. Лесной босс — 52 px («босс 51+»): s_old = 52/42.
 const VISUAL_SCALE := 1.3125
+# t17: ген-бестиарий (art_gen rotspawn/grom v2, полная глубина). Как пропсы env4:
+# tight-кроп, стопы = нижний край текстуры, экранная высота канона достигается
+# масштабом s = canon/tex_h; pos.y = прежняя линия ног − canon/2 — стопы стоят
+# там же, где стояли на brute.png (линии измерены по старым 32px-кадрам:
+# foot = 12·s − |11·(s_old−s)| при t12-формуле → 12.3125·s_old).
+const GEN_ROTSPAWN := "res://assets/art/mob_rotspawn.png"
+const GEN_GROM := "res://assets/art/mob_grom.png"
+const GEN_CANON := {1: 29.0, 2: 35.0, 3: 42.0}          # ярусы t12 (H px)
+const GEN_FOOT_OLD := {1: 8.50178125, 2: 10.26000625, 3: 12.3125, 0: 15.2440476}  # 0 = босс
 ## Ярусы мобов: чем глубже, тем жирнее, злее и быстрее (xp — за убийство).
 const TIERS := {
 	1: {"hp": 6, "dmg": 1, "speed": 24.0, "xp": 6, "cd": 0.0, "scale": 0.6905},
@@ -67,6 +76,8 @@ var hit_dist := HIT_DIST_BOSS
 var boss_leash := 0.0      # >0 — радиус агрессии босса (Ведьма: сторожит арену);
 # 0 — историческое поведение Грома: преследовать героя с любой дистанции
 var anim: AnimatedSprite2D
+var gen_art := false   # t17: собран на ген-ассете (tight-кроп, LINEAR_WITH_MIPMAPS)
+var gen_canon := 0.0   # экранная высота ген-ассета, px
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
 var freeze_t := 0.0
@@ -138,7 +149,21 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	fr.add_animation("walk")
 	fr.set_animation_loop("walk", true)
 	fr.set_animation_speed("walk", 2.5)
-	if ResourceLoader.exists("res://assets/brute.png"):
+	if ResourceLoader.exists(gen_tex_path()):
+		# t17: ген-ассет — однокадровый «walk» (резерв под будущий аним-проход),
+		# якорь по стопам см. GEN_* выше
+		var gtex := load(gen_tex_path())
+		fr.add_frame("walk", gtex, 0.0)
+		anim.sprite_frames = fr
+		add_child(anim)
+		anim.play("walk")
+		gen_art = true
+		gen_canon = gen_canon_h()
+		var gs := gen_canon / float(gtex.get_height())
+		anim.scale = Vector2.ONE * gs
+		anim.position = Vector2(0, gen_foot_old() - gen_canon / 2.0)
+		anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	elif ResourceLoader.exists("res://assets/brute.png"):
 		var tex := load("res://assets/brute.png")
 		for col in [0, 1]:
 			var at := AtlasTexture.new()
@@ -267,7 +292,20 @@ func _push_from_hero() -> void:
 func _head_spawn_y() -> float:
 	if anim == null or not is_instance_valid(anim):
 		return -14.0
+	if gen_art:
+		# tight-кроп: макушка = верх текстуры = pos.y − canon/2
+		return anim.position.y - gen_canon * 0.5 - 4.0
 	return anim.position.y - 10.0 * anim.scale.x - 4.0
+
+# --- виртуалы ген-арта (Ведьма переопределяет в mob_boss2.gd) ---
+func gen_tex_path() -> String:
+	return GEN_GROM if boss else GEN_ROTSPAWN
+
+func gen_canon_h() -> float:
+	return 52.0 if boss else float(GEN_CANON[tier])
+
+func gen_foot_old() -> float:
+	return float(GEN_FOOT_OLD[0]) if boss else float(GEN_FOOT_OLD[tier])
 
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:
