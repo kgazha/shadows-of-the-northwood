@@ -61,27 +61,30 @@ func _ready() -> void:
 	add_child(_root)
 	_panel = PanelContainer.new()
 	_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_panel.offset_left = -160
-	_panel.offset_right = 160
-	_panel.offset_top = -110
-	_panel.offset_bottom = 110
+	# t24: окно больше (было 320x220; юзер: «текст залезает на рамки, окно больше»)
+	# нижний край 318 < хотбара (320) — клики скиллов при открытом журнале живы
+	_panel.offset_left = -200
+	_panel.offset_right = 200
+	_panel.offset_top = -138
+	_panel.offset_bottom = 138
 	if _frame_tex != null:
-		_panel.add_theme_stylebox_override("panel", _ui_frame_style(6.0))
+		# контент-марджин 28: за рисуемой бумажной кромкой 24 + отдушина 4 (аутлайн текста 3)
+		_panel.add_theme_stylebox_override("panel", _ui_frame_style(28.0))
 	# волна 3 «Живая стилистика»: бумажная кромка пергамента по краю окна —
-	# наложенный 9-patch ПЕРВЫМ ребёнком PanelContainer: рисуется под контентом,
-	# все дети панели и так получают один и тот же full-rect, min_size = 0,
-	# поэтому позиции текста/списков не сдвигаются ни на пиксель
+	# ПЕРВЫМ ребёнком PanelContainer (под контентом); t24: вместо NinePatchRect
+	# (256-текстура, марджин 1:1 -> кромка даунскейлена 4x и растянута анизотропно,
+	# юзер: «размытый и сильно растянутый фон») — PaperEdge: масштабированный
+	# 9-patch с независимыми src/dst марджинами от нативной 999-текстуры.
+	# Позиции текста/списков не сдвигаются: это фон, mouse IGNORE.
 	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		var paper := NinePatchRect.new()
+		var paper := PaperEdge.new()
 		paper.name = "PaperEdge"
-		paper.texture = load("res://assets/ui/decor_paper_edge.png")
-		paper.patch_margin_left = 24.0
-		paper.patch_margin_top = 24.0
-		paper.patch_margin_right = 24.0
-		paper.patch_margin_bottom = 24.0
+		paper.tex = load("res://assets/ui/decor_paper_edge.png")
+		paper.src_margin = 95.0  # реальный край рамки: на срезе alpha=0 (t24_measure)
+		paper.dst_margin = 24.0
 		paper.set_anchors_preset(Control.PRESET_FULL_RECT)
 		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		_panel.add_child(paper)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 3)
@@ -106,7 +109,7 @@ func _ready() -> void:
 		tabs.add_child(tb)
 		_tab_btns.append(tb)
 	_scroll = ScrollContainer.new()
-	_scroll.custom_minimum_size = Vector2(296, 160)
+	_scroll.custom_minimum_size = Vector2(344, 164)  # t24: 400-2*28; min панели ровно 400x276
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	vb.add_child(_scroll)
 	_list = VBoxContainer.new()
@@ -265,7 +268,7 @@ func _rebuild() -> void:
 		_list.add_child(t)
 		var d := _mk_label(String(e.get("desc", "")), 7, Color(0.85, 0.8, 0.7, 0.7))
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		d.custom_minimum_size = Vector2(280, 0)
+		d.custom_minimum_size = Vector2(330, 0)  # t24: +12 min ширины скролла < 344 (иначе панель распухнет)
 		_list.add_child(d)
 		for raw_tg in e.get("targets", []):
 			var tg: Dictionary = raw_tg
@@ -331,7 +334,7 @@ func _rebuild_achv() -> void:
 		var d := _mk_label(String(c.get("desc", "")), 7,
 			Color(0.85, 0.8, 0.7, 0.7) if unlocked else Color(0.85, 0.8, 0.7, 0.4))
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		d.custom_minimum_size = Vector2(280, 0)
+		d.custom_minimum_size = Vector2(330, 0)  # t24: +12 min ширины скролла < 344 (иначе панель распухнет)
 		_ach_list.add_child(d)
 		var spec := String(c.get("counter", ""))
 		if spec != "":
@@ -402,6 +405,7 @@ func _rebuild_talents() -> void:
 			b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 			b.text = "%s %d/%d" % [String(nd.get("name", id)), r, mx]
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # t24: длинное имя — перенос, не наезд на рамку
 			b.focus_mode = Control.FOCUS_NONE  # клавиатурный фокус не воруем
 			b.add_theme_font_size_override("font_size", 8)
 			b.add_theme_color_override("font_color", btn_col)
@@ -412,7 +416,7 @@ func _rebuild_talents() -> void:
 			var d := _mk_label("— " + String(nd.get("desc", "")), 7,
 				Color(0.85, 0.8, 0.7, 0.7) if avail else Color(0.85, 0.8, 0.7, 0.4))
 			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			d.custom_minimum_size = Vector2(88, 0)
+			d.custom_minimum_size = Vector2(100, 0)  # t24: колонка (344-2*6)/3 ≈ 110
 			col.add_child(d)
 
 # --- мелкие хелперы стиля (в тон hud.gd) ---
@@ -450,3 +454,40 @@ func _ui_frame_style(content: float) -> StyleBoxTexture:
 	sb.content_margin_right = content
 	sb.content_margin_bottom = content
 	return sb
+
+## t24: «масштабируемый 9-patch» бумажной кромки. NinePatchRect не годился:
+## его марджины рисуются 1:1 нативному размеру текстуры (256-текстура = кромка
+## уже даунскейллена 4x из 1024-оригинала и на окне 2x ещё и растянута ~2.6x
+## по горизонтальным рёбрам — «размытый/растянутый» фон). Здесь источник —
+## нативная 999² текстура, срез строго по границе hole (alpha=0, t24_measure),
+## углы — равномерным скеем, рёбра — только даунскейл (1.15–1.98 texel/win px).
+## Центр не рисуем вовсе: он transparent и под ним stylebox панели.
+class PaperEdge:
+	extends Control
+	var tex: Texture2D
+	var src_margin := 95.0
+	var dst_margin := 24.0
+
+	func _draw() -> void:
+		if tex == null:
+			return
+		var s := tex.get_size()
+		var sm: float = minf(src_margin, minf(s.x, s.y) * 0.5 - 1.0)
+		var dm: float = minf(dst_margin, minf(size.x, size.y) * 0.5 - 1.0)
+		if sm <= 0.0 or dm <= 0.0 or size.x < 2.0 * dm or size.y < 2.0 * dm:
+			return
+		var iw: float = s.x - 2.0 * sm
+		var ih: float = s.y - 2.0 * sm
+		# углы — из нативных уголков, равномерный скей (без анаморфоза)
+		draw_texture_rect_region(tex, Rect2(0, 0, dm, dm), Rect2(0, 0, sm, sm))
+		draw_texture_rect_region(tex, Rect2(size.x - dm, 0, dm, dm), Rect2(s.x - sm, 0, sm, sm))
+		draw_texture_rect_region(tex, Rect2(0, size.y - dm, dm, dm), Rect2(0, s.y - sm, sm, sm))
+		draw_texture_rect_region(tex, Rect2(size.x - dm, size.y - dm, dm, dm),
+			Rect2(s.x - sm, s.y - sm, sm, sm))
+		# рёбра — единственной координатой вдоль ленты; оба фактора <=1 (даунскейл)
+		var ew: float = size.x - 2.0 * dm
+		var eh: float = size.y - 2.0 * dm
+		draw_texture_rect_region(tex, Rect2(dm, 0, ew, dm), Rect2(sm, 0, iw, sm))
+		draw_texture_rect_region(tex, Rect2(dm, size.y - dm, ew, dm), Rect2(sm, s.y - sm, iw, sm))
+		draw_texture_rect_region(tex, Rect2(0, dm, dm, eh), Rect2(0, sm, sm, ih))
+		draw_texture_rect_region(tex, Rect2(size.x - dm, dm, dm, eh), Rect2(s.x - sm, sm, sm, ih))
