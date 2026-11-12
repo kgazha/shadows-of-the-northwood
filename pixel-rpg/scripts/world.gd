@@ -148,6 +148,8 @@ const YS_CYCLE := 4800.0         # шаг «этажей» зон == CAVE_OFFSET
 const YS_ACTOR_BIAS := 10        # визуальная стопа актёра ниже центра ноды (герой ~11, NPC ~10, мобы ~8)
 const YS_CANOPY_DIM_AT := 0.5    # крона «растворяется», когда закрывает >= 50% бокса героя (крона над героем)
 const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нависании (паттерн Glimpse/T3)
+const YS_PROP_DIM_AT := 0.4      # t41: мелкий проп деревни димится, когда накрывает >= 40% бокса героя
+                                 # (порог ниже крон: пропы мелкие, цель — hero visibility на тяжёлых тайлах)
 const YS_HUD_Z := 4000           # цифры урона поверх любой глубины: локальная y зон ≤ 480 << 4000 ≤ 4096
 ## Плотность живого пола пещер: ~70% floor-клеток (h % 20 < 14) — подземелью
 ## нужна связная «дышащая» поверхность, а не островки.
@@ -192,6 +194,7 @@ var _env4_cave_props: Node2D   # визуальный слой пропсов п
 var _env4_ashen_props: Node2D  # визуальный слой пропсов Пепелища (z 5)
 var ground_paint: Node2D       # «живая земля» деревни (z -5): патчи + тропа (волна 5)
 var _ys_canopies: Array = []   # Sprite2D крон GroveCanopy — overhead-дим по герою (V-01/V-07)
+var _ys_props_dim: Array = []  # t41: Sprite2D мелких пропов деревни (_add_prop) — дим-контракт по герою
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -579,6 +582,7 @@ func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vecto
 		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * k * 0.5)
 	village_props.add_child(spr)
 	_ys_prop(spr)  # V-01: глубина по стопе, а не «слой поверх всех»
+	_ys_props_dim.append(spr)  # t41: проп под дим-контракт «не тонь в герое»
 	return spr
 
 ## Слой пропсов деревни (узел z_index=5, но дети — абсолютная глубина по стопе,
@@ -1619,7 +1623,9 @@ func _build_fade() -> void:
 ## мобы (группа "enemy", включая боссов и отпрысков) и NPC ("ys_actor").
 ## Кроны (overhead) гаснут до YS_CANOPY_DIM_ALPHA, пока накрывают >= 50% бокса
 ## героя И рисуются над ним (герой северее стопы кроны); южнее стопы герой сам
-## поверх кроны. Цифры урона поднимаются над всей z-шкалой зон. Только порядок
+## поверх кроны. t41: тот же overhead-дим для мелких пропов деревни с порогом
+## YS_PROP_DIM_AT (40%) — знак/костёр/колодец не должны «съедать» героя.
+## Цифры урона поднимаются над всей z-шкалой зон. Только порядок
 ## отрисовки: физика, коллайдеры, координаты не трогаются.
 func _ys_update(delta: float) -> void:
 	var hz := int(round(fposmod(player.global_position.y, YS_CYCLE))) + YS_ACTOR_BIAS
@@ -1648,6 +1654,22 @@ func _ys_update(delta: float) -> void:
 				target = YS_CANOPY_DIM_ALPHA
 		var a := spr.modulate.a
 		# плавное растворение; в покое (вдали) — ровно 1.0, без «хвоста» лерпа
+		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
+		spr.modulate.a = a
+	# t41: тот же контракт для мелких пропов деревни (signpost/костёр/колодец/изба…),
+	# порог ниже (YS_PROP_DIM_AT): пропы мелкие, но на тяжёлых тайлах закрывали до
+	# 78% героя. Южнее героя (spr.z <= hz) проп и так под ним — дим не нужен, 1.0.
+	for p in _ys_props_dim:
+		var spr := p as Sprite2D
+		if spr == null or not is_instance_valid(spr) or spr.texture == null:
+			continue
+		var target := 1.0
+		if spr.z_index > hz:  # проп нарисован над героем (герой севернее стопы пропа)
+			var sz := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height())) * spr.get_global_transform().get_scale().abs()
+			var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
+			if cr.intersects(hr) and cr.intersection(hr).get_area() / maxf(hr.get_area(), 1.0) >= YS_PROP_DIM_AT:
+				target = YS_CANOPY_DIM_ALPHA
+		var a := spr.modulate.a
 		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
 		spr.modulate.a = a
 

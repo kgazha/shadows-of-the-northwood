@@ -28,6 +28,9 @@ extends Node2D
 ##     герой южнее ПОВЕРХ, севернее ПОД; крона над «стоящим в роще» героем
 ##     димится к alpha 0.5 и возвращается в 1.0 (в покое — ровно 1.0); NPC в
 ##     динамической шкале. Порядок отрисовки — геометрия/коллайдеры не трогаются.
+##  9. t41 дим-контракт мелких пропов (знак/костёр/колодец): проп над героем при
+##     накрытии >= 40% бокса димится к 0.5±0.08; южнее стопы — ровно 1.0 и герой
+##     поверх (паттерн кроны inv8.4, порог YS_PROP_DIM_AT).
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -135,6 +138,7 @@ func _ready() -> void:
 	_inv5()
 	_inv7()
 	await _inv8()
+	await _inv9()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -518,3 +522,55 @@ func _inv7() -> void:
 			chk(false, "inv7: моб %s (%d,%d) недостижим из spawn" % [nm, x, y])
 		else:
 			chk(true, "inv7: старт моба %s (%d,%d) проходим и достижим" % [nm, x, y])
+
+# ---------------------------------------------------------------- инв. 9 (t41)
+## Дим-контракт мелких пропов деревни (паттерн кроны, inv8.4): встал севернее
+## пропа так, что он накрывает >= 40% бокса героя (YS_PROP_DIM_AT) — проп димится
+## к 0.5±0.08 и нарисован над героем; встал южнее стопы — ровно 1.0 и герой
+## поверх. Знак/костёр/колодец — три классовых пропа из VillageProps.
+func _inv9() -> void:
+	var w: Node2D = game_world
+	if w == null or w.get("player") == null or w.get("village_props") == null:
+		chk(false, "inv9: мир не построен (нет VillageProps)")
+		return
+	var pl: Node2D = w.get("player")
+	# физика героя выключена: микротолкания коллайдеров не сдвигают позу между кадрами
+	pl.process_mode = Node.PROCESS_MODE_DISABLED
+	var targets := [
+		[["village_signpost.png"], "знак"],
+		[["village_campfire.png"], "костёр"],
+		[["village_well_1.png", "village_well_2.png"], "колодец"],
+	]
+	for tg in targets:
+		var sfxs: Array = tg[0]
+		var tag: String = String(tg[1])
+		var spr: Sprite2D = null
+		for sfx in sfxs:
+			var cand := _biggest_sprite(w.get("village_props"), String(sfx))
+			if cand != null and (spr == null or _spr_rect(cand).get_area() > _spr_rect(spr).get_area()):
+				spr = cand
+		if spr == null:
+			chk(false, "inv9: проп «%s» не найден" % tag)
+			continue
+		var r := _spr_rect(spr)
+		# герой центром чуть севернее нижней грани пропа: проп южнее (z больше)
+		# и накрывает >= 40% канонного бокса 16x32
+		pl.global_position = Vector2(r.get_center().x, r.end.y - 12.0)
+		await _frames(50)
+		var cov := rect2_overlap_ratio_proxy(r, Rect2(pl.global_position + Vector2(-8.0, -21.0), Vector2(16.0, 32.0)))
+		chk(spr.z_index > pl.z_index and cov >= 0.40,
+			"inv9: «%s» над героем (z %d>%d) и накрытие %.0f%%>=40%%" % [tag, spr.z_index, pl.z_index, 100.0 * cov])
+		chk(absf(spr.modulate.a - 0.5) < 0.08,
+			"inv9: «%s» димится к 0.5 при >=40%% (alpha=%.3f)" % [tag, spr.modulate.a])
+		# южнее стопы: проп под героем — дим выключен, alpha ровно 1.0
+		pl.global_position = Vector2(r.get_center().x, r.end.y + 22.0)
+		await _frames(50)
+		chk(is_equal_approx(spr.modulate.a, 1.0) and pl.z_index > spr.z_index,
+			"inv9: южнее «%s» alpha=1.0 и герой поверх (alpha=%.3f)" % [tag, spr.modulate.a])
+	pl.process_mode = Node.PROCESS_MODE_INHERIT
+
+## Пересечение двух rect, доля от площади rect b (для гейта >=40% в inv9).
+func rect2_overlap_ratio_proxy(r: Rect2, b: Rect2) -> float:
+	if not r.intersects(b):
+		return 0.0
+	return r.intersection(b).get_area() / maxf(b.get_area(), 1.0)
