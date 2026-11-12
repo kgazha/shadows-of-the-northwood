@@ -7,8 +7,11 @@ extends Node2D
 ## data/map_ashen.json (файл остаётся на диске документацией/эталонной картой).
 ## Тайлы assets/ashen_tiles.png (регион index*16,
 ## 0, 16, 16), стены, портал выхода, сундук награды, травы, моб-наполнение:
-## 3 лучника, стая мглокрысов из 4, 4 тенеплёта и мини-босс «Ведьма Пепелища»
-## (scripts/mob_boss2.gd) — состав эммитит генератор (ASHEN_MOBS), реестры/волны
+## 3 лучника, стая мглокрысов из 4 и мини-босс «Ведьма Пепелища»
+## (scripts/mob_boss2.gd). Тенеплёты T13 выведены из геймплея (вердикт
+## пользователя): генератор по-прежнему эммитит их координаты в mobs{wraiths}
+## (схема dict и детерминизм сидов не тронуты), но зона их НЕ спавнит;
+## скрипт-резерв и арт остаются в репозитории. Реестры/волны
 ## мобов — без изменений. Персист — GameState.flags: "ashen.boss" = "dead",
 ## "ashen.chest" = "taken" (cave_state/boss_defeated НЕ трогаем — у пещеры свой путь).
 ## Тинты мобов — через self_modulate: скрипты мобов перекрашивают modulate каждый
@@ -31,8 +34,8 @@ const ASHEN_BLOCK_SHAPES := {
 }
 ## Тинты «пепельного» наполнения (атмосферная перекраска существующих листов).
 const TINT_ARCHER := Color(0.74, 0.76, 0.88)   # пепельный лучник: холодная зола
-const TINT_WRAITH := Color(1.0, 0.62, 0.45)    # угольный тенеплёт: тлеющий уголь
 const TINT_RAT := Color(0.86, 0.74, 0.66)      # саженный мглокрыс
+# TINT_WRAITH убран вместе со спавном тенеплётов (T13); тинт-резерв — в истории git.
 
 var world: Node2D
 var map_rows: Array = []
@@ -179,7 +182,8 @@ func _spawn_entities(meta: Dictionary) -> void:
 			var herb = it_script.new()
 			add_child(herb)
 			herb.setup(world, "herb", Vector2i(int(h[0]), int(h[1])))
-	# наполнение: лучники, стая, тенеплёты (перекрашенные существующие листы)
+	# наполнение: лучники, стая (тенеплёты T13 не спавнятся — резерв;
+	# mobs.get("wraiths") генератора остаётся неиспользованными данными)
 	var archer_script := load("res://scripts/mob_archer.gd")
 	var mobs: Dictionary = meta.get("mobs", {})
 	for a: Array in mobs.get("archers", []):
@@ -198,13 +202,6 @@ func _spawn_entities(meta: Dictionary) -> void:
 				add_child(rt)
 				rt.setup(world, Vector2i(int(s[0]), int(s[1])))
 				rt.self_modulate = TINT_RAT
-	var wraith_script := load("res://scripts/mob_wraith.gd")
-	for wcoord: Array in mobs.get("wraiths", []):
-		if wcoord.size() == 2:
-			var wr = wraith_script.new()
-			add_child(wr)
-			wr.setup(world, Vector2i(int(wcoord[0]), int(wcoord[1])))
-			wr.self_modulate = TINT_WRAITH
 	# мини-босс: «Ведьма Пепелища» — живёт до смерти, персист по флагу
 	if str(GameState.flags.get("ashen.boss", "")) != "dead" and boss_tile.x >= 0:
 		var witch = load("res://scripts/mob_boss2.gd").new()

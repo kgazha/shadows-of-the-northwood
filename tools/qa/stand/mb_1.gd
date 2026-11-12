@@ -17,7 +17,7 @@ func section_spawn() -> void:
 	var wraiths: Array = find_mob(world.dungeon_zone, "mob_wraith")
 	check("S1: 2 лучника заспавнены", archers.size() == 2)
 	check("S1: стая из 4 мглокрыс", rats.size() == 4)
-	check("S1: 2 тенеплёта (босс жив)", wraiths.size() == 2)
+	check("S1: тенеплётов в пещере нет — T13 убран из геймплея (резерв)", wraiths.is_empty())
 	var want_arch: Array = [Vector2i(4, 26), Vector2i(44, 26)]
 	for i in range(mini(archers.size(), 2)):
 		var a: Node2D = archers[i]
@@ -30,11 +30,8 @@ func section_spawn() -> void:
 		check("S1: крыса на тайле %s" % str(t2), want_rats.has(t2))
 		check("S1: тайл крысы %s проходим" % str(t2), village_tile_walkable(t2))
 		check("S1: крыса swarm_id=glade_west", String(r.swarm_id) == "glade_west")
-	for wr in wraiths:
-		var t3 := tile_of((wr as Node2D).position)
-		# T4: тенеплёты от генератора (ниши у босса), факт seed 42 / wave 0.
-		check("S1: тенеплёт на тайле пещеры %s" % str(t3), t3 == Vector2i(15, 7) or t3 == Vector2i(16, 7))
-		check("S1: тайл тенеплёта %s проходим" % str(t3), cave_tile_walkable(t3))
+	# T13: тенеплёты из геймплея выведены — тайловые проверки ниши босса убраны,
+	# выше остаётся только проверка «в пещере их нет».
 
 ## Кандидатная позиция стаба вокруг точки center на дистанции dist с LOS от archer.
 func place_spot(archer: Node2D, center: Vector2, dirs: Array, dist: float, want_los: bool) -> bool:

@@ -931,23 +931,9 @@ func _build_cave() -> void:
 	# коллайдер сразу, а не только после перезахода (пещера строится один раз)
 	GameState.stats_changed.connect(_sync_cave_chest)
 	_spawn_cave_mobs()
-	# Тенеплёты в нише босса (появляются только живым боссом, песочница sand_m).
-	# Клетки — из сетки вокруг якоря boss (литералы ручной карты удалены, T4):
-	# две первые проходимые «.,»-клетки ближних колец, row-major по кольцам.
-	if not GameState.boss_defeated and dungeon_zone != null and dungeon_zone.boss_node != null:
-		var wraith_script := load("res://scripts/mob_wraith.gd")
-		var bmeta: Array = dungeon_zone.loaded_map.get("boss", [])
-		if bmeta.size() == 2:
-			var bt := Vector2i(int(bmeta[0]), int(bmeta[1]))
-			var used: Array = []
-			for _i in 2:
-				var spot := _cave_free_near(bt, 1, 8, used)
-				if spot == Vector2i(-1, -1):
-					break
-				used.append(spot)
-				var wr = wraith_script.new()
-				dungeon_zone.add_child(wr)
-				wr.setup(self, spot)
+	# T13: тенеплёты в нише босса убраны из геймплея полностью (вердикт
+	# пользователя: напрягают). Скрипт-резерв и арт остаются в репозитории, но
+	# активная логика их не загружает и не создаёт — ни в пещере, ни в иных зонах.
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
 
