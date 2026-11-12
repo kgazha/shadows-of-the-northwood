@@ -17,6 +17,7 @@ func _ready() -> void:
 	await section_flee_pocket()
 	await section_dying_xp()
 	await section_lock()
+	await section_reload_registry()
 	done()
 
 func prep() -> void:
@@ -208,3 +209,86 @@ func section_lock() -> void:
 	await pump(60)
 	check("Q: freeze_t — крыса стоит", r0.global_position.distance_to(p2) < 0.5)
 	check("Q: freeze_t — синий тинт", r0.modulate.b > 0.9 and r0.modulate.r < 0.7)
+
+## t46 (F1, QA-охота-4): рекурсивный сбор всех крысоподобных мира — все классы
+## ключей реестра (glade_west, ashen_brood, witch_guard, brute_ash_*).
+func collect_swarmlings(node: Node, out: Array) -> void:
+	for c in node.get_children():
+		var sc: Script = c.get_script()
+		if sc != null and sc.resource_path.contains("mob_swarmling"):
+			out.append(c)
+		collect_swarmlings(c, out)
+
+func swarm_alive_counts() -> Dictionary:
+	var counts: Dictionary = {}
+	var all: Array = []
+	collect_swarmlings(world, all)
+	for r in all:
+		var id := String(r.get("swarm_id"))
+		counts[id] = int(counts.get(id, 0)) + 1
+	return counts
+
+## t46 RED-пин: static var SWARMS переживает reload_current_scene (death-retry/NG+,
+## world.gd:317) — осиротевшие записи прошлого круга мержатся с новым миром.
+## Семантика пробы A t45: отравить реестр паникованной записью с КЛЮЧОМ МИРОВОГО
+## пака (glade_west), разобрать дерево (тот же путь, что reload: крысы умирают с
+## миром без _leave_swarm), второй boot в том же процессе = «новый круг».
+## Канон: новый мир стартует с чистого реестра — единая очистка при старте мира.
+func section_reload_registry() -> void:
+	var poison := spawn_pack("glade_west", [Vector2i(6, 16), Vector2i(6, 18)])
+	await pump(2)
+	poison[0].hurt(99, Vector2.ZERO)   # 1/2 — штатная паника: осиротеет panicked=true
+	await pump(2)
+	check("R0: яд — запись glade_west запаникована до teardown",
+		bool(SScript.SWARMS["glade_west"].panicked) == true)
+	world.queue_free()                 # разбор дерева — путь reload_current_scene
+	await pump_raw(30)
+	await boot(save_for(0))            # «новый круг»: второй мир в том же процессе
+	await prep()
+	check("R1: после reload в SWARMS нет осиротевшего ключа старого мира (qa6)",
+		not SScript.SWARMS.has("qa6"))
+	var sw: Dictionary = SScript.SWARMS.get("glade_west", {})
+	print("EVIDENCE t46 after reload: glade_west=%s keys=%s" % [str(sw), str(SScript.SWARMS.keys())])
+	check("R2: новая стая glade_west не слилась с ghost-записью (total==2)",
+		int(sw.get("total", 0)) == 2)
+	check("R3: новая деревенская стая рождается НЕ в панике",
+		bool(sw.get("panicked", false)) == false)
+	var rats: Array = []
+	for c in world.village_zone.get_children():
+		var sc: Script = c.get_script()
+		if sc != null and sc.resource_path.contains("mob_swarmling") and String(c.get("swarm_id")) == "glade_west":
+			rats.append(c)
+	if rats.size() == 2:
+		# «статуя» из отравленной записи: velocity = flee_dir(0,0)*66 = 0 вечно;
+		# здоровый мир: герой в LEASH — погоня 54 px/s.
+		stub.global_position = (rats[0] as Node2D).global_position + Vector2(0, -30)
+		var vmax := 0.0
+		for i in range(20):
+			GameState.hp = GameState.max_hp
+			await get_tree().physics_frame
+			for r in rats:
+				if is_instance_valid(r):
+					vmax = maxf(vmax, Vector2((r as Node2D).velocity).length())
+		check("R4: новая стая не «статуя» — при герое рядом погоня ~54 px/s", vmax > 40.0)
+		rats[0].hurt(99, Vector2.ZERO)  # штатная паника новой стаи → веер выжившему
+		await pump(1)
+		var fd: Vector2 = (rats[1] as Node2D).get("flee_dir") if is_instance_valid(rats[1]) else Vector2.ZERO
+		print("EVIDENCE t46 scatter: flee_dir=%s" % str(fd))
+		check("R5: паника новой стаи штатна — flee_dir выжившего валиден (|=1)",
+			is_instance_valid(rats[1]) and absf(fd.length() - 1.0) < 0.01)
+		if is_instance_valid(rats[1]):
+			rats[1].hurt(99, Vector2.ZERO)
+		await pump(3)
+		check("R6: обе выбыли — запись стёрта (ghost-alive убывает, не бессмертен)",
+			not SScript.SWARMS.has("glade_west"))
+	# Инвариант ПОКРЫТИЯ всех классов ключей: после reload реестр содержит только
+	# ключи нового мира и по каждому total совпадает с числом живых (в новом мире
+	# никто не погибал). На баге ashen_brood раздут 2× (ghost-мердж) — единый
+	# clear всего SWARMS лечит и witch_guard, и аккумулирующиеся brute_ash_*.
+	var bal_ok := true
+	var counts: Dictionary = swarm_alive_counts()
+	for k in SScript.SWARMS.keys():
+		if int(SScript.SWARMS[k].total) != int(counts.get(String(k), 0)):
+			bal_ok = false
+	check("R7: только ключи нового мира, total==живые по всем (ashen_brood/witch_guard/brute_ash)",
+		bal_ok)

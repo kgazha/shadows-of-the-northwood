@@ -128,6 +128,20 @@ func _swarm() -> Dictionary:
 		SWARMS[swarm_id] = {"total": 0, "alive": 0, "panicked": false, "scatter": false}
 	return SWARMS[swarm_id]
 
+## t46 (F1): единая точка сброса реестра при СТАРТЕ МИРА (world._ready, до спавна
+## живого). static SWARMS живёт в процессе, а не в сцене: он переживает
+## reload_current_scene (смерть-петля/ретрай и NG+, world.gd), при котором крысы
+## умирают вместе с деревом без штатного _leave_swarm. Осиротевшие записи прошлого
+## круга мержатся с новым миром: стая рождается уже в панике с flee_dir=(0,0)
+## («статуи»), ghost-alive никогда не убывает — запись бессмертна и отравляет все
+## круги. Тот же словарь у ключей ashen_brood/witch_guard/brute_ash_* — чистим
+## ВЕСЬ реестр, а не по ключам: новый мир пересоздаёт свои записи в setup().
+## Безопасно к переходам внутри забега: телепорты (apply_area/enter_ashen) сцену
+## НЕ перезагружают — world._ready исполняется ровно один раз на экземпляр мира,
+## а при настоящем релоаде все прежние стаи уже мертвы вместе со старым деревом.
+static func reset_registry() -> void:
+	SWARMS.clear()
+
 func _physics_process(delta: float) -> void:
 	if dying:
 		return

@@ -216,6 +216,16 @@ var atmosphere             # scripts/atmosphere.gd: свет/тени/части
 var campfires: Array = []  # scripts/campfire.gd (hud читает для панели варки/полосы отдыха)
 
 func _ready() -> void:
+	# t46 (F1): ЕДИНАЯ очистка реестра стай при старте мира — ПЕРВОЙ строкой, до
+	# спавна всего живого. mob_swarmling.SWARMS — static: переживает
+	# reload_current_scene (смерть-ретрай/NG+, хук ниже); осиротевшие записи
+	# старого круга иначе мержатся с новым миром (ложная паника при рождении,
+	# «статуи» с нулевым flee_dir, бессмертный ghost-alive). Чистится ВЕСЬ словарь
+	# — это тот же реестр у ключей glade_west/ashen_brood/witch_guard/brute_ash_*;
+	# новый мир заведёт свои записи сам в setup(). Телепорты внутри забега
+	# (apply_area/enter_ashen) сцену не реломят — легитимные стаи живого круга
+	# не затрагиваются.
+	load("res://scripts/mob_swarmling.gd").reset_registry()
 	# Звук: единственный экземпляр GameAudio создаём ПЕРВЫМ — любой _ready ниже
 	# (hud, slime, campfire) уже может звать GameAudio.sfx(...) без проверки.
 	var audio := GameAudio.new()
