@@ -42,11 +42,21 @@ SUFFIXES = {
 # ========================
 
 def get_key():
+    # 1) явный env, 2) файл ключа генератора (вне репозитория), 3) credentials харнесса (исторический путь)
+    env = os.environ.get("LITELLM_KEY", "").strip()
+    if env:
+        return env
+    kf = os.path.expanduser("~/.dsh/litellm_key.txt")
+    if os.path.exists(kf):
+        k = open(kf, encoding="utf-8").read().strip()
+        if k:
+            return k
     p = os.path.expanduser("~/.dsh/.credentials.yaml")
     m = re.search(r"sk-[A-Za-z0-9_\-]+", open(p, encoding="utf-8").read())
     if not m:
-        sys.exit("Ключ sk-* не найден в " + p)
+        sys.exit("Ключ sk-* не найден: положите токен в ~/.dsh/litellm_key.txt или задайте env LITELLM_KEY")
     return m.group(0)
+
 
 def build_prompt(a):
     if a.object:
