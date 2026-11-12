@@ -53,6 +53,24 @@ const VILLAGE_ART_CAMPFIRE := "res://assets/art/village_campfire.png"
 ## не постройка; больше 64 — стена частокола, не изба (один спрайт не положим).
 const COTTAGE_MIN_CELLS := 4
 const COTTAGE_MAX_CELLS := 64
+## Окружение волны 4 («живая стилистика», одобрено в art_gen/VERDICTS.txt): ОДИН
+## спрайт над существующим якорем — деревенские валуны и камни, сундуки
+## (деревня/пещера), алтари пещеры, выходной портал Пепелища. Меняется только
+## картинка: CHAR_TO_TILE, коллайдеры, миникарта и тайловая логика — бит-в-бит;
+## под пропсом — прежние тайлы и интерактаблы. Паттерн VillageProps: fail-safe —
+## нет ассета → якорь остаётся тайловой отрисовкой.
+const ENV4_ART := {
+	"chest": "res://assets/art/env4_chest.png",
+	"altar": "res://assets/art/env4_altar.png",
+	"portal": "res://assets/art/env4_portal.png",
+	"stones": "res://assets/art/env4_stones.png",
+	"boulder": "res://assets/art/env4_boulder.png",
+}
+## Камни «r»: кластер 2..6 клеток — «валуны мха»; одинокий в стороне от воды —
+## одинокий валун («r» у воды — колодец village_props, не трогаем). Кластер
+## крупнее 6 — осыпь, остаётся тайловой (как «стена» деревьев у крон).
+const ENV4_STONE_MIN_CELLS := 2
+const ENV4_STONE_MAX_CELLS := 6
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
@@ -87,6 +105,9 @@ var _groves: Array = []     # рощи: Array[Array[Vector2i]] — 8-связн�
 var _grove_cells := {}      # клетки «t» под кронами: на базовом слое там подстилка
 var village_props: Node2D   # визуальный слой пропсов деревни (z 5, «живая» картинка)
 var _cf_props: Array = []   # [{"spr": Sprite2D, "cf": Node}] — погасший костёр прячем
+var _env4_props: Array = [] # [{"spr": Sprite2D, "live": Callable}] — прячем по геймплейному состоянию
+var _env4_cave_props: Node2D   # визуальный слой пропсов пещеры (z 5, как village_props)
+var _env4_ashen_props: Node2D  # визуальный слой пропсов Пепелища (z 5)
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -180,6 +201,7 @@ func _ready() -> void:
 	_build_cave_entrance()
 	_build_ashen()
 	_build_ashen_entrance()
+	_build_env4_props()
 	atmosphere = load("res://scripts/atmosphere.gd").new()
 	add_child(atmosphere)
 	atmosphere.setup(self)
@@ -511,6 +533,149 @@ func _build_village_props() -> void:
 		for p in missing:
 			names += String(p) + " "
 		push_warning("world: нет ассетов %s— эти пропсы деревни остаются тайловыми" % names)
+
+## ---- Окружение волны 4: валуны/камни, сундуки, алтари, портал -------------
+
+## FNV-1a по клетке: детерминированный (без randi) выбор варианта и flip_h —
+## мир воспроизводится бит-в-бит (D3), независимо от порядка создания узлов.
+func _env4_hash(x: int, y: int) -> int:
+	var h := 2166136261
+	for b in [x & 0xFF, (x >> 8) & 0xFF, y & 0xFF, (y >> 8) & 0xFF]:
+		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
+	return h
+
+func _env4_tex(key: String) -> Texture2D:
+	var p: String = ENV4_ART[key]
+	return load(p) if ResourceLoader.exists(p) else null
+
+## Та же раскладка, что у _add_prop (центр по bbox клеток, низ — на нижней
+## границе с +2 как у tile_to_world), но родитель — слой своей зоны.
+func _env4_place(parent: Node2D, tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i) -> Sprite2D:
+	var spr := Sprite2D.new()
+	spr.texture = tex
+	spr.centered = true
+	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	spr.flip_h = (_env4_hash(seed_c.x, seed_c.y) >> 16) & 1 == 1
+	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
+		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * 0.5)
+	parent.add_child(spr)
+	return spr
+
+## Пропс, прячущийся по геймплейному состоянию: live() пересчитывается на
+## каждый stats_changed — открытый сундук/исчезнувший узел снимают картинку,
+## и снова виден прежний тайл/спрайт (паттерн погасшего костра).
+func _env4_track(spr: Sprite2D, live: Callable) -> void:
+	_env4_props.append({"spr": spr, "live": live})
+	spr.visible = bool(live.call())
+
+func _sync_env4_props() -> void:
+	for p in _env4_props:
+		var spr: Sprite2D = p["spr"]
+		if is_instance_valid(spr):
+			spr.visible = bool((p["live"] as Callable).call())
+
+## Визуальные слои z_index=5 — поверх тайлов и сущностей (тот же уровень, что
+## VillageProps/GroveCanopy). Полностью fail-safe: без любого ассета его якоря
+## просто остаются тайловой отрисовкой (она не менялась). Геометрия,
+## коллайдеры, миникарта, тайловая логика — не затронуты.
+func _build_env4_props() -> void:
+	var missing: Array = []
+	# — Деревня: кластеры камней и одинокие валуны на «r» (колодцы не трогаем:
+	# это одиночные «r» впритык к воде, их рисует village_props).
+	var stones := _env4_tex("stones")
+	if stones == null:
+		missing.append("stones")
+	else:
+		for comp in _map_clusters("r", ENV4_STONE_MIN_CELLS, ENV4_STONE_MAX_CELLS):
+			var x0: int = comp[0].x
+			var x1: int = comp[0].x
+			var y0: int = comp[0].y
+			var y1: int = comp[0].y
+			for c in comp:
+				x0 = mini(x0, c.x)
+				x1 = maxi(x1, c.x)
+				y0 = mini(y0, c.y)
+				y1 = maxi(y1, c.y)
+			_add_prop(stones, x0, x1, y0, y1, Vector2i(x0, y0))
+	var boulder := _env4_tex("boulder")
+	if boulder == null:
+		missing.append("boulder")
+	else:
+		for y in map_h:
+			var row := String(map_rows[y])
+			for x in map_w:
+				if row[x] != "r" or _near_char(x, y, "r") or _near_char(x, y, "w"):
+					continue  # группа — гряда (stones), у воды — колодец
+				_add_prop(boulder, x, x, y, y, Vector2i(x, y))
+	# Деревенские сундуки: те же якоря, что у interactable.gd (meta["chests"]);
+	# прячем по открытию (обе схемы uid из D4 — зонная и легаси-координатная).
+	var chest := _env4_tex("chest")
+	if chest == null:
+		missing.append("chest")
+	else:
+		for e: Array in meta.get("chests", []):
+			var t := Vector2i(int(e[0]), int(e[1]))
+			var uid := "chest@village:%d,%d" % [t.x, t.y]
+			var uid_legacy := "chest@%d,%d" % [t.x, t.y]
+			var spr := _add_prop(chest, t.x, t.x, t.y, t.y, t)
+			_env4_track(spr, func() -> bool: return not (GameState.chest_used(uid) or GameState.chest_used(uid_legacy)))
+	# — Пещера: алтари на каждой клетке «A»; алтарный сундук на якоре
+	# dungeon_zone.chest_tile — прячем по взятию амулета (тот же предикат,
+	# по которому dungeon_zone красит тайл 11 -> 12).
+	_env4_cave_props = Node2D.new()
+	_env4_cave_props.name = "Env4CaveProps"
+	_env4_cave_props.z_index = 5
+	cave_zone.add_child(_env4_cave_props)
+	if dungeon_zone != null:
+		var altar := _env4_tex("altar")
+		if altar == null:
+			missing.append("altar")
+		else:
+			for cy in dungeon_zone.map_rows.size():
+				var crow := String(dungeon_zone.map_rows[cy])
+				for cx in crow.length():
+					if crow[cx] == "A":
+						_env4_place(_env4_cave_props, altar, cx, cx, cy, cy, Vector2i(cx, cy))
+		# Каменные «B» пещеры (тайл 8 — такая же каменная кочка) — тот же
+		# «одинокий валун»: один спрайт на клетку, коллайдеров не было и нет.
+		if boulder != null:
+			for by in dungeon_zone.map_rows.size():
+				var brow := String(dungeon_zone.map_rows[by])
+				for bx in brow.length():
+					if brow[bx] == "B":
+						_env4_place(_env4_cave_props, boulder, bx, bx, by, by, Vector2i(bx, by))
+		if chest != null and dungeon_zone.chest_tile.x >= 0:
+			var ct: Vector2i = dungeon_zone.chest_tile
+			var cspr := _env4_place(_env4_cave_props, chest, ct.x, ct.x, ct.y, ct.y, ct)
+			_env4_track(cspr, func() -> bool: return not GameState.has_amulet)
+	# — Пепелище: выходной портал (якорь — фактическая позиция portal_node,
+	# zone.tile_to_world) и сундук награды на chest_tile — прячем, когда узел
+	# забран и снят (тот же предикат, что у ashen_zone).
+	_env4_ashen_props = Node2D.new()
+	_env4_ashen_props.name = "Env4AshenProps"
+	_env4_ashen_props.z_index = 5
+	ashen_zone.add_child(_env4_ashen_props)
+	if ashen_grid != null:
+		var portal := _env4_tex("portal")
+		if portal == null:
+			missing.append("portal")
+		elif ashen_grid.portal_node != null:
+			var pp: Vector2 = ashen_grid.portal_node.position  # ((x+.5)*T, (y+.5)*T+2)
+			var pt := Vector2i(roundi((pp.x - 8.0) / TILE), roundi((pp.y - 10.0) / TILE))
+			var pspr := _env4_place(_env4_ashen_props, portal, pt.x, pt.x, pt.y, pt.y, pt)
+			_env4_track(pspr, func() -> bool: return ashen_grid != null and is_instance_valid(ashen_grid.portal_node))
+		if chest != null and ashen_grid.chest_tile.x >= 0:
+			var at: Vector2i = ashen_grid.chest_tile
+			var aspr := _env4_place(_env4_ashen_props, chest, at.x, at.x, at.y, at.y, at)
+			_env4_track(aspr, func() -> bool: return ashen_grid != null and is_instance_valid(ashen_grid.chest_node))
+	# Сундук открывают и в этой сессии: try_interact эмитит stats_changed —
+	# снимаем картинку сразу (паттерн _sync_cave_chest).
+	GameState.stats_changed.connect(_sync_env4_props)
+	if not missing.is_empty():
+		var names := ""
+		for k in missing:
+			names += String(k) + " "
+		push_warning("world: нет env4-ассетов %s— окружение волны 4 остаётся тайловым в этих местах" % names)
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
