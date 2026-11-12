@@ -923,6 +923,7 @@ func _spawn_player() -> void:
 	cam.limit_bottom = map_h * TILE
 	player.add_child(cam)
 	cam.make_current()
+	Juice.attach_camera(cam)  # t18 «сочность»: мазок-тряска пишется в cam.offset (juice.gd)
 	hint_label = Label.new()
 	# текст world-space подсказок — не «картинка», держим пиксельную чёткость
 	# (наследовать LINEAR от героя ему не надо)
@@ -932,7 +933,7 @@ func _spawn_player() -> void:
 	hint_label.position = Vector2(-45, -35)
 	hint_label.size = Vector2(90, 10)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint_label.add_theme_color_override("font_color", Color(1, 1, 0.75))
+	hint_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.35))  # t18: амбер = интерактив (канон цвета)
 	hint_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	hint_label.add_theme_constant_override("outline_size", 4)
 	hint_label.add_theme_font_size_override("font_size", 8)

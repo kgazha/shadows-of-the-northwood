@@ -14,11 +14,13 @@ extends Node2D
 const MAX_ACTIVE := 12        # жёсткий потолок живых чисел (= размер пула)
 const RISE := 14.0            # всплытие вверх, px
 const RISE_TIME := 0.5        # длительность всплытия, с (за неё же число гаснет)
-const POP_TIME := 0.1         # scale-pop 1.4 -> 1.0, с
-const POP_FROM := 1.4
+const POP_TIME := 0.12        # t18: overshoot-pop 1.3 -> (отскок) -> 1.0, с
+const POP_FROM := 1.3
 const X_JITTER := 6.0         # разброс по x, ±px
 const COLORS := {
-	"crit": Color("e8c860"),    # золото крита (жёлто-золотая палитра игры)
+	# t18 цветовая дисциплина: красный = только смертельное. Золото крита
+	# («e8c860») спорило с семантикой лута — крит переехал в алое семейство.
+	"crit": Color("ff5a46"),    # алое — критический урон (смертельное = красное)
 	"normal": Color("f0e6d2"),  # тёплая кость — обычный урон
 	"heal": Color("5da24a"),    # зелёный лечения из палитры
 	"block": Color("8f93a3"),   # сталь — метка «броня» (полное поглощение)
@@ -85,9 +87,10 @@ func _show(pos: Vector2, amount: int, kind: String) -> void:
 	lbl.visible = true
 	var tw := create_tween()
 	tw.set_parallel(true)
-	# pop 1.4->1.0 за 0.1 с; всплытие 14 px за 0.5 с; затухание — вторая половина жизни
+	# pop 1.3->1.0 за 0.12 с с overshoot-отскоком (TRANS_BACK: цифра «сядет»
+	# на место и дрогнет); всплытие 14 px за 0.5 с; затухание — вторая половина жизни
 	tw.tween_property(lbl, "scale", Vector2.ONE, POP_TIME)\
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(lbl, "global_position", start + Vector2(0, -RISE), RISE_TIME)\
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(lbl, "modulate:a", 0.0, RISE_TIME * 0.45).set_delay(RISE_TIME * 0.55)

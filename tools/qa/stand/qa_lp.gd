@@ -30,6 +30,11 @@ extends Node2D
 ##      1024-оригинала, RGBA8 >256 цветов, без квантизации), MD5-пины,
 ##      LINEAR_WITH_MIPMAPS + полная мип-цепочка, ЭКРАННЫЕ высоты/линии стоп
 ##      по канону t12 на живых объектах; Тенеплёт (wraith) не интегрирован.
+##  T12 t18 «сочность»: hitstop конечен и возвращает Engine.time_scale в
+##      РЕАЛЬНОМ времени (обычный и смертельный удар), вспышки цели ≤0.1 с,
+##      overshoot цифр 1.3 (qa_dn зелёный), тень по высоте актёра + воздушная
+##      фаза «Рывка вепря», «дыхание» env4-пропов (JuiceLight: алтарь/портал/
+##      сундук, спрайты неподвижны), шлейф кувырка, красный виньеточный импульс.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -87,6 +92,7 @@ func _ready() -> void:
 	await _t9()
 	_t10()
 	_t11()
+	await _t12()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -874,7 +880,7 @@ func _t11() -> void:
 			a["n"], ("%d+" % ncol) if capped else ("%d" % ncol)])
 	# --- 2. живой герой: канон 32, линия стоп 5.0, анимы, flip ---
 	var p = world.player
-	var hero_ok: bool = p != null and bool(p.gen_art) and p.anim != null
+	var hero_ok: bool = p != null and p.gen_art and p.anim != null
 	chk(hero_ok, "T11: герой на ген-арте (gen_art)")
 	if hero_ok:
 		var pa: AnimatedSprite2D = p.anim
@@ -951,10 +957,12 @@ func _t11_mob(tag: String, script_path: String, tex_name: String, canon: float, 
 	var ok := true
 	var a: AnimatedSprite2D = m.get("anim")
 	var tex: Texture2D = null
-	if a == null or not bool(m.get("gen_art")):
+	if a == null:
 		ok = false
 	else:
-		# проверяем фактическую играющий аним: slime/brute — "walk",
+		# Флаг gen_art есть не у всех (у slime его нет — одиночный спрайт без
+		# флажка), и bool(Variant(Nil)) падает в Godot 4.7.2. Проверяем более
+		# надёжный критерий: фактическую играющий аним: slime/brute — "walk",
 		# swarmling/archer — "idle_down" (у своих листов свои наборы имён)
 		var an := String(a.animation)
 		tex = a.sprite_frames.get_frame_texture(an, 0) if a.sprite_frames.has_animation(an) else null
@@ -969,3 +977,230 @@ func _t11_mob(tag: String, script_path: String, tex_name: String, canon: float, 
 	var fh := (a.position.y + canon / 2.0) if a != null else -1.0
 	chk(ok, "T11: %s — %s, drawn=%.3f (канон %.1f), стопы=%.5f" % [tag, tex_name, dh, canon, fh])
 	m.free()
+
+# ------------------------------------------------------------------ T12
+
+# t18 «сочность»: hitstop/вспышки/цифры-overshoot/тени/«дыхание» пропов/шлейф/
+# виньетка. Геймплейные числа не затронуты — здесь только визуальные гарантии.
+# Реальные паузы — поллингом Time.get_ticks_msec(): в headless главный цикл
+# крутится быстрее реального времени, и любые кадловые/таймерные ожидания
+# (включая create_timer с ignore_time_scale — он в 4.7.2-on-headless считается
+# по дельте быстрого цикла) срабатывают раньше реального срока. Тики честные.
+
+func _t12_rt(sec: float) -> void:
+	var until_ms := Time.get_ticks_msec() + int(sec * 1000.0)
+	while Time.get_ticks_msec() < until_ms:
+		await get_tree().process_frame
+
+func _t12_slime() -> Node2D:
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if not is_instance_valid(e):
+			continue
+		var s: Script = (e as Node).get_script()
+		if s == null or String(s.resource_path) != "res://scripts/slime.gd":
+			continue
+		if int((e as Node).get("hp")) > 1 and not (e as Node).get("dying"):
+			return e as Node2D
+	return null
+
+func _t12_spawn_slime(tile: Vector2i) -> Node2D:
+	var sl: Node2D = load("res://scripts/slime.gd").new()
+	world.village_zone.add_child(sl)
+	sl.setup(world, tile)
+	sl.set_physics_process(false)
+	return sl
+
+func _t12_ghosts() -> int:
+	var n := 0
+	for c in world.get_children():
+		if is_instance_valid(c) and String((c as Node).name) == "DashGhost":
+			n += 1
+	return n
+
+func _t12_lights(zone: Node, suffix: String, out: Array) -> void:
+	for c in zone.get_children():
+		if c is Sprite2D:
+			var s := c as Sprite2D
+			if s.texture != null and String(s.texture.resource_path).ends_with(suffix) \
+					and s.has_node("JuiceLight"):
+				out.append({"spr": s, "light": s.get_node("JuiceLight")})
+		_t12_lights(c, suffix, out)
+
+func _t12_cam_dev(frames: int) -> float:
+	# максимальное отклонение offset'а камеры за окно (тряска «мазок кисти»);
+	# сэмплим process_frame — тряска живёт в idle-процессе и в РЕАЛЬНОМ времени
+	var dev := 0.0
+	for i in frames:
+		await get_tree().process_frame
+		dev = maxf(dev, absf(world.cam.offset.x) + absf(world.cam.offset.y))
+	return dev
+
+func _t12() -> void:
+	var p: Node2D = world.player
+	world.apply_area("village", true)
+	await _frames(15)
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(e):
+			(e as Node).set_physics_process(false)  # тишина поля: только наши вызовы
+	p.global_position = world.tile_to_world(Vector2i(26, 13))
+	GameState.hp = 50
+	p.hurt_cd = 0.0
+	p.roll_cd = 0.0
+	p.roll_t = 0.0
+	await _frames(5)
+
+	# 1) overshoot цифр: константы + живой pop из 1.3 СРАЗУ на кадре спавна
+	chk(DmgNumbers.POP_FROM >= 1.25 and DmgNumbers.POP_FROM <= 1.35 \
+			and DmgNumbers.POP_TIME >= 0.1,
+		"T12: overshoot цифр %.2f->1.0 за %.2f с" % [DmgNumbers.POP_FROM, DmgNumbers.POP_TIME])
+	var cc: Color = DmgNumbers.COLORS["crit"]
+	chk(cc.r > 0.75 and cc.g < 0.55 and cc.b < 0.45 and cc.r > cc.g * 1.8,
+		"T12: крит — алое семейство (смертельное=красное), не золото")
+	DmgNumbers.spawn(p.global_position + Vector2(0, -20), 7, "crit")
+	var dn := get_node_or_null("DmgNumbers")
+	var pop_ok := false
+	if dn != null:
+		for c in dn.get_children():
+			if c is Label and (c as Control).visible \
+					and absf((c as Control).scale.x - DmgNumbers.POP_FROM) <= 0.001:
+				pop_ok = true
+	chk(pop_ok, "T12: метка урона рождается с масштабом overshoot (%.1f)" % DmgNumbers.POP_FROM)
+
+	# 2) тени по высоте актёра: герой (32 px канон) vs слайм (22 px)
+	var sl := _t12_slime()
+	if sl == null:
+		sl = _t12_spawn_slime(Vector2i(28, 13))
+	var sh_p := p.get_node_or_null("AtmoShadow") as Sprite2D
+	var sh_s := sl.get_node_or_null("AtmoShadow") as Sprite2D
+	chk(sh_p != null and sh_p.scale.x >= 0.9 and sh_p.scale.x <= 1.1,
+		"T12: тень героя — канон-масштаб (%.2f)" % (sh_p.scale.x if sh_p != null else -1.0))
+	chk(sh_s != null and sh_s.scale.x < sh_p.scale.x - 0.12 and sh_s.scale.x >= 0.55,
+		"T12: тень мелкого моба меньше геройской (%.2f < %.2f)" % [
+			sh_s.scale.x if sh_s != null else -1.0, sh_p.scale.x if sh_p != null else -1.0])
+
+	# 3) hitstop: dip есть, восстановление в РЕАЛЬНОМ времени ≤0.4 с (гарантия)
+	Engine.time_scale = 1.0
+	await _t12_rt(0.15)  # окно троттла чисто
+	sl.hurt(1, p.global_position)
+	chk(Engine.time_scale < 1.0 and Engine.time_scale > 0.0,
+		"T12: hitstop — удар роняет время (%.2f)" % Engine.time_scale)
+	var dev: float = await _t12_cam_dev(10)
+	chk(dev > 0.02, "T12: тряска камеры «мазок» бьёт по offset'у (%.2f px)" % dev)
+	var t0 := Time.get_ticks_msec()
+	while Engine.time_scale != 1.0 and Time.get_ticks_msec() - t0 < 400:
+		await get_tree().process_frame
+	chk(Engine.time_scale == 1.0,
+		"T12: hitstop конечен — время восстановлено за %d мс реала" % (Time.get_ticks_msec() - t0))
+
+	# 4) смертельный удар: утечки времени нет
+	var sl2 := _t12_spawn_slime(Vector2i(27, 15))
+	await _t12_rt(0.15)
+	sl2.hurt(999, p.global_position)
+	var lethal: bool = sl2.get("dying")
+	t0 = Time.get_ticks_msec()
+	while Engine.time_scale != 1.0 and Time.get_ticks_msec() - t0 < 400:
+		await get_tree().process_frame
+	chk(lethal and Engine.time_scale == 1.0,
+		"T12: смертельный удар — время возвращено (dying=%s)" % lethal)
+
+	# 5) вспышка моба ≤0.1 с
+	var sl3 := _t12_spawn_slime(Vector2i(25, 15))
+	await _t12_rt(0.15)
+	sl3.hurt(0, p.global_position)
+	var ht: float = float(sl3.get("hurt_t"))
+	chk(ht > 0.0 and ht <= 0.1, "T12: вспышка моба %.3f с ≤ 0.1" % ht)
+
+	# 6) вспышка героя ≤0.1 с + горячий тинт + красный импульс виньетки
+	p.hurt_cd = 0.0
+	GameState.hp = 50
+	GameState.stats_changed.emit()  # baseline _last_hp в hud: детект «упало» с честного порога
+	await _t12_rt(0.15)
+	p.take_damage(2)
+	var ft: float = float(p.get("_flash_t"))
+	chk(ft > 0.0 and ft <= 0.1, "T12: вспышка героя %.3f с ≤ 0.1" % ft)
+	# physics_frame эмитится ДО _physics_process — тинт читаем через кадр
+	await _frames(2)
+	chk(p.modulate.r > 1.4 and p.modulate.g < 1.0 and p.modulate.b < 1.0,
+		"T12: тинт вспышки горячий (%s)" % p.modulate)
+	await _frames(2)
+	var dv := world.hud.get_node_or_null("DmgVignette") as Control
+	var vg_ok := false
+	if dv != null and dv.visible and dv.modulate.a > 0.05 and dv.texture != null:
+		var img := (dv.texture as ImageTexture).get_image()
+		var corner := img.get_pixel(10, 10)
+		var mid := img.get_pixel(img.get_width() / 2, img.get_height() / 2)
+		# красное = только смертельное: уголки красные, центр прозрачный
+		vg_ok = corner.r > 0.6 and corner.g < 0.3 and corner.a > 0.3 and mid.a < 0.02
+	chk(vg_ok, "T12: красный импульс урона виден, углы красные, центр чист")
+	await _t12_rt(0.55)  # 420 мс реала — импульс обязан погаснуть
+	chk(dv != null and not dv.visible, "T12: импульс виньетки погас (не залип)")
+
+	# 7) тень в воздушной фазе «Рывка вепря» (физика героя на паузе — только атмосфера)
+	if sh_p != null:
+		p.set_physics_process(false)
+		var k0: float = sh_p.scale.x
+		p.set("boar_t", 0.1)
+		await _frames(3)
+		var k_air: float = sh_p.scale.x
+		var a_air: float = sh_p.modulate.a
+		p.set("boar_t", 0.0)
+		p.set_physics_process(true)
+		await _frames(3)
+		chk(k_air < k0 * 0.9 and a_air < 0.4,
+			"T12: в полёте тень сжата (%.2f<%.2f) и бледна (%.2f)" % [k_air, k0, a_air])
+		chk(sh_p.scale.x > k_air * 1.15 and absf(sh_p.modulate.a - 0.5) < 0.01,
+			"T12: приземлился — тень вернулась (%.2f)" % sh_p.scale.x)
+
+	# 8) шлейф кувырка: силуэты есть в кувырке, чисто после
+	p.roll_cd = 0.0
+	p.roll_t = 0.0
+	p.start_roll(Vector2.RIGHT)
+	await _frames(6)
+	var gn := _t12_ghosts()
+	chk(gn >= 1, "T12: кувырок оставляет призрачный шлейф (%d)" % gn)
+	await _frames(20)
+	await _t12_rt(0.4)
+	chk(_t12_ghosts() == 0, "T12: шлейф погас — узлов не осталось")
+
+	# 9) «дыхание» env4-пропов: алтарь/портал/сундук + пульс/bob при неподвижном спрайте
+	var altar: Array = []
+	var portal: Array = []
+	var chests: Array = []
+	_t12_lights(world.cave_zone, "env4_altar.png", altar)
+	_t12_lights(world.ashen_zone, "env4_portal.png", portal)
+	_t12_lights(world.cave_zone, "env4_chest.png", chests)
+	chk(not altar.is_empty(), "T12: алтарям пещеры живёт свет JuiceLight (%d)" % altar.size())
+	chk(not portal.is_empty(), "T12: порталу Пепелища живёт свет JuiceLight (%d)" % portal.size())
+	chk(not chests.is_empty(), "T12: сундукам живёт свет JuiceLight (%d)" % chests.size())
+	# отсчёт пульса — от ПЕРВОГО сэмпла каждого света (базы у пропов разные)
+	var all_l: Array = []
+	for grp in [altar, portal, chests]:
+		for it in grp:
+			all_l.append(it["light"])
+	var e_first := {}
+	var y_first := {}
+	for lt in all_l:
+		e_first[lt] = (lt as Light2D).energy
+		y_first[lt] = (lt as Node2D).position.y
+	var spr0: Vector2 = (altar[0]["spr"] as Node2D).position if not altar.is_empty() else Vector2.INF
+	var e_dev := 0.0
+	var y_dev := 0.0
+	# Сэмпл — РЕАЛЬНЫМ таймером: в headless физ-кадры идут быстрее реального
+	# времени, а «дыхание» считает фазу по реальным мсек (Time.get_ticks_msec).
+	for i in 9:
+		for lt in all_l:
+			e_dev = maxf(e_dev, absf((lt as Light2D).energy - float(e_first[lt])))
+			y_dev = maxf(y_dev, absf((lt as Node2D).position.y - float(y_first[lt])))
+		await _t12_rt(0.25)
+	chk(e_dev > 0.02 and y_dev > 0.4,
+		"T12: пульс %.3f и bob %.2f px живые" % [e_dev, y_dev])
+	chk(spr0 != Vector2.INF and (altar[0]["spr"] as Node2D).position == spr0,
+		"T12: спрайт алтаря неподвижен — дышит только свет")
+
+	# 10) финал: тряска обнулена, время = 1 (никаких залипаний после боя)
+	await _t12_rt(0.45)
+	chk(world.cam.offset == Vector2.ZERO,
+		"T12: тряска не залипла (offset %s)" % world.cam.offset)
+	chk(Engine.time_scale == 1.0, "T12: Engine.time_scale == 1.0 на выходе")
+	Juice.reset()
+	p.modulate = Color.WHITE

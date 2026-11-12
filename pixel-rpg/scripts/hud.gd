@@ -77,6 +77,10 @@ var skill_slots: Array = []     # словари {root, icon, cd, lvl_lbl}
 var potion_btn: Button          # зелье из трав (Q)
 var marker: Polygon2D           # стрелка к цели квеста
 var marker_t := 0.0
+var _dmg_vign: TextureRect = null   # t18: красная импульсная виньетка урона (поверх статичной)
+var _last_hp := -1                  # детект «hp упал» в refresh() без правки GameState
+var _dvg_t0 := 0                    # мс реального времени: старт импульса
+var _dvg_ms := 420                  # длительность импульса, мс (realtime — не зависит от hitstop)
 var modal: Control
 var modal_shown := false
 var class_chosen_cb := Callable()
@@ -260,7 +264,7 @@ func setup(p_world: Node2D) -> void:
 	# стрелка-указатель цели: рисуется на канвасе CanvasLayer = экранные координаты
 	marker = Polygon2D.new()
 	marker.polygon = PackedVector2Array([Vector2(9, 0), Vector2(-6, -6), Vector2(-3, 0), Vector2(-6, 6)])
-	marker.color = Color(1.0, 0.84, 0.35, 0.9)
+	marker.color = Color(1.0, 0.7, 0.26, 0.9)  # t18: амбер = интерактив/навигация (золото — только лут)
 	marker.visible = false
 	add_child(marker)
 
@@ -280,6 +284,17 @@ func setup(p_world: Node2D) -> void:
 	vign.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vign.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(vign)
+	# t18: красная импульсная виньетка урона — кладётся ПОСЛЕ статичной Vignette
+	# (рисуется поверх неё), сама статичная — не тронута (имя/текстура/порядок).
+	_dmg_vign = TextureRect.new()
+	_dmg_vign.name = "DmgVignette"
+	_dmg_vign.texture = load("res://scripts/atmosphere.gd").make_vignette_texture(
+		dres, Color(0.85, 0.07, 0.05), 200.0)
+	_dmg_vign.stretch_mode = TextureRect.STRETCH_SCALE
+	_dmg_vign.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dmg_vign.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dmg_vign.visible = false
+	add_child(_dmg_vign)
 
 func _process(delta: float) -> void:
 	if toast_t > 0.0:
@@ -296,6 +311,22 @@ func _process(delta: float) -> void:
 	_update_skill_states()
 	_update_camp_ui()
 	_update_marker(delta)
+	# t18: импульс красной виньетки урона — в РЕАЛЬНОМ времени (Time.get_ticks_msec):
+	# hitstop (Engine.time_scale) не растягивает и не «замораживает» затухание.
+	if _dmg_vign != null:
+		var now := Time.get_ticks_msec()
+		if now - _dvg_t0 < _dvg_ms:
+			var k := 1.0 - float(now - _dvg_t0) / float(_dvg_ms)
+			_dmg_vign.visible = true
+			_dmg_vign.modulate.a = k * k  # квадратичное: резкая вспышка, мягкий уход
+		elif _dmg_vign.visible:
+			_dmg_vign.visible = false
+			_dmg_vign.modulate.a = 1.0
+
+## t18: вспышка красной виньетки при уроне. Красный — только смертельное (дисциплина);
+## лечебные/интерактивные события виньетку не вызывают (только падение hp).
+func damage_vignette() -> void:
+	_dvg_t0 = Time.get_ticks_msec()
 
 ## Стрелка к цели: видна, только когда цель за краем экрана.
 func _update_marker(delta: float) -> void:
@@ -320,10 +351,14 @@ func _update_marker(delta: float) -> void:
 	var t := minf(half.x / ad.x, half.y / ad.y)
 	marker.position = center + d * t
 	marker.rotation = d.angle()
-	marker.color = Color(1.0, 0.84, 0.35, 0.75 + 0.2 * sin(marker_t * 5.0))
+	marker.color = Color(1.0, 0.7, 0.26, 0.75 + 0.2 * sin(marker_t * 5.0))  # t18: амбер (навигация к интерактиву)
 	marker.visible = true
 
 func refresh() -> void:
+	# t18: падение hp → красная импульсная виньетка (только урон; рост/загрузка — нет)
+	if _last_hp >= 0 and GameState.hp < _last_hp:
+		damage_vignette()
+	_last_hp = GameState.hp
 	var max_hp := maxi(GameState.max_hp, 1)
 	var frac := clampf(GameState.hp / float(max_hp), 0.0, 1.0)
 	hp_fill.size = Vector2(maxf(0.0, 128.0 * frac), 7)

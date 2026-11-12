@@ -197,7 +197,7 @@ func _physics_process(delta: float) -> void:
 	hurt_t = maxf(0.0, hurt_t - delta)
 	freeze_t = maxf(0.0, freeze_t - delta)
 	if hurt_t > 0.0:
-		modulate = Color(1, 0.5, 0.5)
+		modulate = Color(1.8, 0.62, 0.55)  # t18: горячая вспышка ≤0.1 с (яркость >1 — LINEAR)
 	elif freeze_t > 0.0:
 		modulate = Color(0.55, 0.75, 1.0)
 	else:
@@ -313,7 +313,9 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	GameState.entered_combat()  # контакт с врагом — реген паузится
 	DmgNumbers.spawn(global_position + Vector2(0, _head_spawn_y()), dmg_in, "normal")
 	hp -= dmg_in
-	hurt_t = 0.3
+	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
+	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
+	Juice.shake(1.2, 0.12)
 	# §D w3 «Костяная кора»: удар почти не сносит Грому с места (база — 50.0).
 	velocity = (global_position - from).normalized() * (BONEBARK_KNOCK if (affix_mask & AFFIX_BONEBARK) != 0 else 50.0)
 	# §D w1 «Тлеющая плоть»: ударивший в мили-контакт обжигается пеплом.

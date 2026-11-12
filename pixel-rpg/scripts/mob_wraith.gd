@@ -121,7 +121,7 @@ func _physics_process(delta: float) -> void:
 		_:
 			_tick_ethereal(delta, player)
 	if hurt_t > 0.0:
-		modulate = Color(1, 0.5, 0.5, modulate.a)
+		modulate = Color(1.8, 0.62, 0.55, modulate.a)  # t18: горячая вспышка ≤0.1 с
 
 ## Эфир: полупрозрачное блуждание, подпускание героя; рывок-фаза по кулдауну.
 func _tick_ethereal(delta: float, player: CharacterBody2D) -> void:
@@ -284,7 +284,9 @@ func hurt(dmg: int, from: Vector2) -> void:
 		_hurt_flash()
 		return
 	hp -= dmg
-	hurt_t = 0.3
+	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
+	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
+	Juice.shake(0.8, 0.09)
 	velocity = (global_position - from).normalized() * 40.0
 	if hp <= 0:
 		dying = true

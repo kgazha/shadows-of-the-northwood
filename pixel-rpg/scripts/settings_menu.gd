@@ -622,13 +622,13 @@ func _on_sv_import() -> void:
 func _sv_msg(text: String, ok: bool) -> void:
 	sv_msg.text = text
 	sv_msg.add_theme_color_override("font_color",
-		Color(0.6, 0.9, 0.6) if ok else Color(0.95, 0.55, 0.45))
+		Color(0.6, 0.9, 0.6) if ok else Color(0.85, 0.65, 0.4))  # t18: отказ — пыльный амбер, не «кровяной»
 
 ## Мерцание отказа: тройное падение modulate (Tween, без оверхеда в _process).
 func _sv_blink(btn: Button) -> void:
 	var tw := create_tween()
 	tw.set_loops(3)
-	tw.tween_property(btn, "modulate", Color(1.0, 0.45, 0.45), 0.07)
+	tw.tween_property(btn, "modulate", Color(1.0, 0.72, 0.3), 0.07)  # t18: отказ UI — амбер-вспышка (красный = только смертельное)
 	tw.tween_property(btn, "modulate", Color.WHITE, 0.07)
 
 # --- занятость мира (по чужим окнам не открываемся) ---

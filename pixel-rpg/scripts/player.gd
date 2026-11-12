@@ -64,6 +64,7 @@ var siphon_t := 0.0                   # «Поглощение»: лечение
 var _atk_fx_t: Tween = null           # туин «подачи тела», один на героя
 var _step_t := 0.0                    # таймер звука шага
 var _step_alt := false                # чередование двух сэмплов шага
+var _ghost_t := 0.0                   # t18: таймер паузы между «призраками» шлейфа
 
 @onready var world: Node2D = get_parent()
 
@@ -183,7 +184,9 @@ func _physics_process(delta: float) -> void:
 	for i in skill_cd.size():
 		skill_cd[i] = maxf(0.0, skill_cd[i] - delta)
 	if _flash_t > 0:
-		modulate = Color(1, 0.4, 0.4)
+		# t18 «сочность»: короткая (≤0.1 с) горячая вспышка — короче кадра моргания,
+		# яркость выше единицы (LINEAR-рендер разрешает >1) — удар «бьёт» по глазам
+		modulate = Color(1.9, 0.55, 0.5)
 	else:
 		modulate = Color.WHITE
 
@@ -202,8 +205,10 @@ func _physics_process(delta: float) -> void:
 		velocity = roll_dir * ROLL_SPEED
 		_set_facing_from(roll_dir)
 		_play_walk()
+		_ghost_tick(delta)  # t18: «призрачный» шлейф скорости
 		if roll_t == 0.0:
 			anim.modulate.a = 1.0
+			_spawn_ghost()  # последний силуэт в точке приземления
 		move_and_slide()
 		return
 
@@ -318,6 +323,38 @@ func start_roll(mv: Vector2) -> void:
 	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
 	Fx.dust(global_position + roll_dir * 4.0, world)
 	anim.modulate.a = 0.75
+	_ghost_t = 0.0
+
+## t18 «сочность»: призрачный шлейф рывка — затухающие силуэты текущего кадра.
+## Кратковременные Sprite2D в world (не в группах enemy/player, без get_hint —
+## атмосфера их игнорирует), живут 0.2 с и queue_free — узлы не копятся.
+func _ghost_tick(delta: float) -> void:
+	_ghost_t -= delta
+	if _ghost_t <= 0.0:
+		_ghost_t = 0.05
+		_spawn_ghost()
+
+func _spawn_ghost() -> void:
+	if world == null or anim == null:
+		return
+	if anim.sprite_frames == null or not anim.sprite_frames.has_animation(anim.animation) \
+			or anim.sprite_frames.get_frame_count(anim.animation) == 0:
+		return
+	var tex := anim.sprite_frames.get_frame_texture(anim.animation, anim.frame)
+	if tex == null:
+		return
+	var g := Sprite2D.new()
+	g.name = "DashGhost"
+	g.texture = tex
+	g.scale = anim.scale
+	g.flip_h = anim.flip_h
+	g.texture_filter = anim.texture_filter
+	g.self_modulate = Color(0.85, 0.9, 1.0, 0.4)  # холодный «остаточный образ»
+	world.add_child(g)
+	g.global_position = global_position + anim.position
+	var t := g.create_tween()
+	t.tween_property(g, "self_modulate:a", 0.0, 0.2)
+	t.tween_callback(g.queue_free)
 
 ## Атака в мировую точку: встать лицом и ударить/выстрелить в её сторону.
 func attack_at(p: Vector2) -> void:
@@ -534,7 +571,8 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			# вовсе (guard выше), здесь цель всегда есть и она досягаема.
 			face_to(tgt.global_position)
 			_lunge_fx(facing_dir(), 7.0)
-			_slash_fx(Color(1.0, 0.85, 0.4, 0.95))
+			# t18 цветовая дисциплина: смертельный удар — красное семейство (золото = лут)
+			_slash_fx(Color(1.0, 0.45, 0.35, 0.95))
 			melee_hit(2.0, Vector2.INF, 13.0, tgt)
 		"whirlwind":
 			_spin_fx()
@@ -617,7 +655,7 @@ func _skill_target() -> Node2D:
 ## Кулдаун и мана НЕ тратятся — скилл просто не активировался (п.6).
 func _no_target_reject() -> void:
 	GameAudio.sfx("ui_deny")
-	_spark(global_position + Vector2(0, -16), Color(1.0, 0.55, 0.45, 0.9), 5.0)
+	_spark(global_position + Vector2(0, -16), Color(1.0, 0.72, 0.3, 0.9), 5.0)  # t18: отказ = interact-фидбек, амбер (не красные «крови»)
 	GameState.toast.emit("Нет цели рядом")
 
 ## Цель «Рывка вепря»: ближайший враг в собственном радиусе (шире радиуса атаки).
@@ -659,6 +697,7 @@ func _boar_dash(t: Node2D) -> void:
 	_set_facing_from(dir)
 	_play_walk()
 	anim.modulate.a = 0.75  # как кувырок: полупрозрачность скорости на время полёта
+	_ghost_t = 0.0
 	Fx.dust(from, world)
 
 ## Кадры полёта: позиция по заранее посчитанному ray-маршруту (ease-out),
@@ -669,6 +708,7 @@ func _boar_step(delta: float) -> void:
 	var e := 1.0 - (1.0 - p) * (1.0 - p)  # квадратичный ease-out: резкий старт, посадка
 	global_position = boar_from.lerp(boar_dest, e)
 	velocity = Vector2.ZERO
+	_ghost_tick(delta)  # t18: шлейф «маха лапой» в полёте
 	if boar_dust < 2 and p >= 0.34 * float(boar_dust + 1):
 		boar_dust += 1
 		Fx.dust(global_position, world)
@@ -681,6 +721,7 @@ func _boar_step(delta: float) -> void:
 func _boar_land() -> void:
 	boar_t = 0.0
 	anim.modulate.a = 1.0
+	_spawn_ghost()  # t18: последний силуэт в точке приземления
 	var t := boar_target
 	boar_target = null
 	Fx.dust(global_position, world)
@@ -694,7 +735,7 @@ func _boar_land() -> void:
 		GameState.toast.emit("Стена помешала рывку")
 		return
 	_lunge_fx(facing_dir(), 7.0)
-	_slash_fx(Color(0.9, 0.7, 0.4, 0.95))
+	_slash_fx(Color(0.95, 0.5, 0.38, 0.95))  # t18: красное семейство (смертельный удар)
 	if t.get("freeze_t") != null:
 		t.freeze_t = BOAR_STUN_BOSS if t.is_in_group("boss") else BOAR_STUN
 	melee_hit(1.0, Vector2.INF, 13.0, t)
@@ -704,7 +745,7 @@ func _shoot_dir() -> Vector2:
 
 func _rain_marker(p: Vector2) -> void:
 	var m := ColorRect.new()
-	m.color = Color(1, 0.9, 0.3, 0.3)
+	m.color = Color(1.0, 0.35, 0.28, 0.3)  # t18: телеграф дождя — красный (смертельный), не золото
 	m.size = Vector2(60, 60)
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	world.add_child(m)
@@ -734,12 +775,19 @@ func take_damage(n: int) -> void:
 	if hurt_cd > 0.0 or roll_t > 0.0 or GameState.hp <= 0:
 		return  # кувырок = i-frames: сквозь удары и снаряды
 	hurt_cd = 0.8
-	_flash_t = 0.35
+	_flash_t = 0.09  # t18: вспышка цели ≤0.1 с (яркость компенсирована >1 tint'ом)
 	GameState.entered_combat()  # реген «замолкает» на время боя
 	var _hp0 := GameState.hp  # число урона = реально снятые HP (после брони), не входящий урон
 	GameState.hurt(n)
 	DmgNumbers.spawn(global_position + Vector2(0, -24), maxi(0, _hp0 - GameState.hp), "normal")  # SCALE_CANON: макушка ~-17.5
 	Fx.hit(global_position + Vector2(0, -6), world)
+	# t18 «сочность»: hitstop + тряска; фатальный удар — тяжелее. Восстановление
+	# time_scale гарантировано realtime-watchdog'ом juice.gd (смерть/диалог не залипают).
+	Juice.hit()
+	if GameState.hp <= 0:
+		Juice.shake(2.4, 0.22)   # фатальный удар — тяжёлый мазок
+	else:
+		Juice.shake(1.6, 0.14)
 	if GameState.hp <= 0:
 		cancel_orders()
 		world.on_player_death()

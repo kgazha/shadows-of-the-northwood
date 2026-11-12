@@ -110,7 +110,7 @@ func _physics_process(delta: float) -> void:
 	hurt_t = maxf(0.0, hurt_t - delta)
 	freeze_t = maxf(0.0, freeze_t - delta)
 	if hurt_t > 0.0:
-		modulate = Color(1, 0.5, 0.5)
+		modulate = Color(1.8, 0.62, 0.55)  # t18: горячая вспышка ≤0.1 с (телеграф-подсветка ниже — канон mb_1, не трогать)
 	elif freeze_t > 0.0:
 		modulate = Color(0.55, 0.75, 1.0)
 	elif tele_t > 0.0:
@@ -263,7 +263,9 @@ func hurt(dmg: int, from: Vector2) -> void:
 		return  # труп не получает урон: XP и quest_changed — ровно один раз
 	GameState.entered_combat()  # контакт с врагом — реген паузится
 	hp -= dmg
-	hurt_t = 0.3
+	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
+	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
+	Juice.shake(0.8, 0.09)
 	tele_t = 0.0  # полученный урон срывает подготовку выстрела
 	velocity = (global_position - from).normalized() * 60.0
 	if hp <= 0:

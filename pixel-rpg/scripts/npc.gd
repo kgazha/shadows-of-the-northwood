@@ -116,7 +116,7 @@ func _refresh_marker() -> void:
 	match _marker_state:
 		QuestsData.MARKER_TAKE:
 			_marker.text = "!"
-			_marker.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))  # «!» — золото: брать
+			_marker.add_theme_color_override("font_color", Color(1.0, 0.7, 0.26))  # t18: «!» — амбер: интерактив (золото оставлено луту)
 		QuestsData.MARKER_READY:
 			_marker.text = "?"
 			_marker.add_theme_color_override("font_color", Color(0.45, 1.0, 0.5))  # «?» — зелёный: сдавай

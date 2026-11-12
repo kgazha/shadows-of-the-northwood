@@ -61,6 +61,9 @@ var _torch_t := 0.0
 var _torches: Array = []       # {spr: Sprite2D, light: Light2D, phase: float}
 var _moss: Array = []          # {spr: Sprite2D, light: Light2D, phase: float}
 var _altar_light: Light2D = null
+var _altar_home := Vector2.ZERO    # t18: домашняя позиция света алтаря для bob (спрайт не трогаем)
+var _prop_lights: Array = []       # t18: {light, home, phase, base, amp} — пульс + bob ±1.5 px
+var _env4_lights_done := false     # t18: одноразовый сбор «дышащих» lights env4-пропов
 var _boss: Node2D = null
 var _boss_light: Light2D = null
 var _scan_t := 0.0
@@ -173,6 +176,23 @@ func _process(delta: float) -> void:
 	# алтарь: медленный пульс
 	if _altar_light != null:
 		_altar_light.energy = 0.75 + 0.25 * sin(_time() * 2.2)
+		# t18: bob света ±1.5 px — спрайт алтаря неподвижен (канон T7), «дышит» свет
+		_altar_light.position = _altar_home + Vector2(0.0, sin(_time() * 1.7) * 1.5)
+	# t18: «дыхание» env4-пропов (алтари/портал/сундуки): пульс + bob ±1.5 px.
+	# Сбор — один кадр после ready (env4-слои построены до setup атмосферы).
+	if not _env4_lights_done and world != null:
+		_env4_lights_done = true
+		_collect_env4_lights()
+	if not _prop_lights.is_empty():
+		var jt := _time()
+		for i in range(_prop_lights.size() - 1, -1, -1):
+			var pl: Dictionary = _prop_lights[i]
+			var lt: Light2D = pl["light"]
+			if lt == null or not is_instance_valid(lt):
+				_prop_lights.remove_at(i)  # проп снят (сундук забран) — свет забыли
+				continue
+			lt.energy = float(pl["base"]) + float(pl["amp"]) * sin(jt * 2.4 + float(pl["phase"]))
+			lt.position = (pl["home"] as Vector2) + Vector2(0.0, sin(jt * 1.8 + float(pl["phase"]) * 1.7) * 1.5)
 	# босс: свет «за спиной» (brute.gd не задаёт facing — считаем лицом вниз)
 	if _boss_light != null:
 		if _boss != null and is_instance_valid(_boss):
@@ -182,6 +202,51 @@ func _process(delta: float) -> void:
 			_boss_light.position = -fd * 10.0
 		else:
 			_boss_light = null
+	# t18: тень героя обновляется каждый кадр — фаза полёта «Рывка вепря» всего
+	# 0.14 с, периодического скана SCAN_PERIOD на неё не хватит
+	if world != null and world.player != null and is_instance_valid(world.player) \
+			and world.player.has_node(SHADOW_NAME):
+		_sync_shadow(world.player)
+
+# ---------- t18 «дыхание» пропов: пульс + bob света ----------
+
+## Алтарям/порталам/сундукам env4-слоёв вешаем child-Light2D «JuiceLight» с пульсом
+## энергии и bob ±1.5 px. Спрайты-пропы НЕ трогаем (тайловая геометрия, SCALE_CANON
+## T7 и live-позиции каноничны) — «оживает» только свет. Тот же JuiceLight переживает
+## смену зоны: свет child'ом спрайта, зона гаснет PROCESS_MODE_DISABLED — Light2D
+## не обрабатывается, но энергия пишется из мира; визуально зона скрыта целиком.
+func _collect_env4_lights() -> void:
+	if world == null:
+		return
+	for zone in [world.village_zone, world.cave_zone, world.ashen_zone]:
+		if zone != null:
+			_walk_env4_light(zone)
+
+func _walk_env4_light(n: Node) -> void:
+	for c in n.get_children():
+		if c is Sprite2D:
+			var s := c as Sprite2D
+			if s.texture != null and not s.has_node("JuiceLight"):
+				var cfg: Variant = _env4_light_cfg(String(s.texture.resource_path))
+				if cfg != null:
+					var l := _mk_light(cfg[0], cfg[1], cfg[2])
+					l.name = "JuiceLight"
+					s.add_child(l)
+					_prop_lights.append({"light": l, "home": Vector2.ZERO,
+						"phase": float(_hash(int(s.position.x), int(s.position.y))),
+						"base": float(cfg[1]), "amp": 0.15})
+		_walk_env4_light(c)
+
+## Цвет/мощность «дыхания» по арту: алтарь — зелёный канон пещерного алтарного
+## света, портал — сумрак Пепелища (семейство света Ведьмы), сундук — золото лута.
+func _env4_light_cfg(p: String) -> Variant:
+	if p.ends_with("env4_altar.png"):
+		return [Color(0.4, 1.0, 0.5), 0.55, 30.0]
+	if p.ends_with("env4_portal.png"):
+		return [Color(0.75, 0.55, 1.0), 0.7, 40.0]
+	if p.ends_with("env4_chest.png"):
+		return [Color(1.0, 0.84, 0.4), 0.55, 26.0]
+	return null
 
 # ---------- тени ----------
 
@@ -261,7 +326,7 @@ func _ensure_shadow(e: Node2D) -> void:
 		idx += 1
 	e.add_child(sh)
 	e.move_child(sh, idx)  # child index 0 (или прямо перед спрайтом) — тень рисуется под сущностью
-	sh.visible = _shadow_visible(e, spr)
+	_sync_shadow(e)  # t18: сразу с масштабом по высоте/воздуху (тот же путь, что скан)
 
 ## Первый «реальный» спрайт сущности: Sprite2D/AnimatedSprite2D, visible=true,
 ## с текстурой/кадрами; сам узел-тень не считается.
@@ -296,6 +361,9 @@ func _shadow_visible(e: Node2D, spr: Node2D) -> bool:
 
 ## Актуализация существующей тени: видимость по эффективной видимости спрайта,
 ## позиция — по текущему якорю (regrow, смена класса/текстуры сущности).
+## t18 «сочность»: размер блоба масштабируется VISUAL-высоте актёра (мглокрыс —
+## тонкая полоска, Гром — блюдце) и «воздушной фазе» (полёт «Рывка вепря»: тень
+## сжимается и бледнеет — герой не на земле). Спрайты/икания не тронуты.
 func _sync_shadow(e: Node2D) -> void:
 	var sh := e.get_node(SHADOW_NAME) as Sprite2D
 	if sh == null:
@@ -305,7 +373,34 @@ func _sync_shadow(e: Node2D) -> void:
 	if spr == null:
 		return
 	var blob := SHADOW_BOSS if e.is_in_group("boss") else SHADOW_CHAR
-	sh.position = _shadow_pos(e, spr, blob.size)
+	var k := _shadow_scale(spr)
+	var air := false
+	var bt: Variant = e.get("boar_t")
+	if bt != null and float(bt) > 0.0:
+		air = true
+		k *= 0.72
+	sh.scale = Vector2(k, k)
+	sh.modulate = Color(0, 0, 0, 0.32 if air else 0.5)
+	# позиционируем СЖАТЫЙ блоб тем же якорем: нижний край — на линии ног + BIAS,
+	# центр по x — на пятке (при k=1 формула совпадает с прежней побитово)
+	var p1 := _shadow_pos(e, spr, blob.size)
+	sh.position = p1 + Vector2(blob.size.x * 0.5 * (1.0 - k), blob.size.y * (1.0 - k))
+
+## t18: базовый масштаб тени = отрисованная высота актёра / высота-канон героя (32 px).
+## Берём высоту кадра (у атласов — высота region) × scale спрайта; clip [0.55, 2.2].
+func _shadow_scale(spr: Node2D) -> float:
+	var vh := 0.0
+	if spr is Sprite2D and (spr as Sprite2D).texture != null:
+		vh = float((spr as Sprite2D).texture.get_height())
+	elif spr is AnimatedSprite2D:
+		var a := spr as AnimatedSprite2D
+		if a.sprite_frames != null and a.sprite_frames.has_animation(a.animation) \
+				and a.sprite_frames.get_frame_count(a.animation) > 0:
+			vh = float(a.sprite_frames.get_frame_texture(a.animation, 0).get_height())
+	vh *= absf(spr.scale.y)
+	if vh <= 2.0:
+		return 1.0
+	return clampf(vh / 32.0, 0.55, 2.2)
 
 ## Позиция тени в координатах сущности: центр блоба по x над пяткой,
 ## низ блоба — на линии ног + SHADOW_BIAS.
@@ -536,6 +631,7 @@ func _build_cave() -> void:
 		c /= float(altar_cells.size())
 		_altar_light = _mk_light(Color(0.4, 1.0, 0.5), 1.0, 60.0)
 		_altar_light.position = c + Vector2(world.CAVE_OFFSET)
+		_altar_home = _altar_light.position  # t18: bob считается от домашней точки
 		add_child(_altar_light)
 	# босс — свет radius 44 за спиной (child в боссе: живёт и умирает вместе с ним)
 	var bosses := get_tree().get_nodes_in_group("boss")
@@ -550,7 +646,11 @@ func _build_cave() -> void:
 		for ch in dz.get_children():
 			if is_instance_valid(ch) and ch.has_method("get_hint") \
 					and String(ch.call("get_hint")).find("сундук") >= 0:
-				ch.add_child(_mk_light(Color(1.0, 0.84, 0.4), 0.8, 24.0))
+				var cl := _mk_light(Color(1.0, 0.84, 0.4), 0.8, 24.0)
+				ch.add_child(cl)
+				# t18: сундук «дышит» — пульс + bob ±1.5 px (золото = лут, канон цвета)
+				_prop_lights.append({"light": cl, "home": cl.position,
+					"phase": 2.0, "base": 0.7, "amp": 0.18})
 				break
 
 # ---------- игрок ----------
@@ -714,7 +814,9 @@ func _pick_decor(roll: int) -> int:
 
 ## Процедурная виньетка под размер вьюпорта: центр прозрачный, углы чёрный alpha~90,
 ## самый край — чисто (0). HUD кладёт TextureRect с этой текстурой поверх всего.
-static func make_vignette_texture(vp: Vector2) -> ImageTexture:
+## t18: колер и максимальная альфа параметризованы (красный импульс урона в hud);
+## вызов без аргументов даёт прежнюю чёрную виньетку (байт-в-байт тот же пиксель).
+static func make_vignette_texture(vp: Vector2, col := Color(0, 0, 0), max_a := 90.0) -> ImageTexture:
 	var w := int(vp.x)
 	var h := int(vp.y)
 	if w < 8 or h < 8:
@@ -731,7 +833,7 @@ static func make_vignette_texture(vp: Vector2) -> ImageTexture:
 			var t := clampf((r - 0.45) / 0.55, 0.0, 1.0)
 			var edge := minf(minf(float(x), float(y)), minf(float(w - 1 - x), float(h - 1 - y))) / 3.0
 			var a := (3.0 * t * t - 2.0 * t * t * t) * clampf(edge, 0.0, 1.0)
-			img.set_pixel(x, y, Color(0, 0, 0, a * (90.0 / 255.0)))
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, a * (max_a / 255.0)))
 	return ImageTexture.create_from_image(img)
 
 # ---------- утилиты ----------
