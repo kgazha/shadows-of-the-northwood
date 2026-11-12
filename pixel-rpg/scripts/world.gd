@@ -132,6 +132,23 @@ const ASHEN_FLOOR_ART := [
 	"res://assets/art/ground_ashen_2.png",
 	"res://assets/art/ground_ashen_3.png",
 ]
+## V-01..V-04 (волна «Тени-3»): ОБЩЕЕ пространство глубины актёров и пропсов.
+## Слой-«пятёрка» (GroveCanopy/VillageProps/Env4Props) упорядочивал пропсы только
+## МЕЖДУ СОБОЙ и всегда рисовался поверх актёров (z 0): герой «съедался» избами,
+## кронами и алтарями с любой стороны. Переход: z_index высокого пропа = его
+## СТОПА (глобальный Y нижнего края спрайта, абсолютный z), z_index актёра
+## (герой, мобы, NPC) = его стопа на той же шкале. Порядок пропс-против-пропа
+## остаётся порядком стоп (честный y-sort канон), но отношение «актёр vs проп»
+## становится корректным с обеих сторон. Коллайдеры/блокировка/геометрия — бит-в-бит.
+## Ограничение движка: z_index клампится в [-4096..4096], а «этажи» зон лежат на
+## +4800/+9600 (CAVE_OFFSET/ASHEN_OFFSET) — поэтому общая шкала ЦИКЛИЧНА:
+## z = fposmod(Y, 4800). Этажи разнесены на 4800 px при высоте карты ≤480 px,
+## в одном кадре двух «этажей» не бывает — свёртка в локальную глубину безопасна.
+const YS_CYCLE := 4800.0         # шаг «этажей» зон == CAVE_OFFSET.y (ASHEN — кратно)
+const YS_ACTOR_BIAS := 10        # визуальная стопа актёра ниже центра ноды (герой ~11, NPC ~10, мобы ~8)
+const YS_CANOPY_DIM_AT := 0.5    # крона «растворяется», когда закрывает >= 50% бокса героя (крона над героем)
+const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нависании (паттерн Glimpse/T3)
+const YS_HUD_Z := 4000           # цифры урона поверх любой глубины: локальная y зон ≤ 480 << 4000 ≤ 4096
 ## Плотность живого пола пещер: ~70% floor-клеток (h % 20 < 14) — подземелью
 ## нужна связная «дышащая» поверхность, а не островки.
 const ZONE_FLOOR_PAINT_DENSITY := 14
@@ -174,6 +191,7 @@ var _env4_props: Array = [] # [{"spr": Sprite2D, "live": Callable}] — пряч
 var _env4_cave_props: Node2D   # визуальный слой пропсов пещеры (z 5, как village_props)
 var _env4_ashen_props: Node2D  # визуальный слой пропсов Пепелища (z 5)
 var ground_paint: Node2D       # «живая земля» деревни (z -5): патчи + тропа (волна 5)
+var _ys_canopies: Array = []   # Sprite2D крон GroveCanopy — overhead-дим по герою (V-01/V-07)
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -413,10 +431,27 @@ func _grove_init() -> void:
 			_grove_cells[c] = true
 
 
+## Глубина пропа по канону стоп (V-01): абсолютный z = глобальный Y нижнего края
+## картинки (стопа). z_as_relative=false — радиус действия слоя (z 5) больше не
+## перекрывает актёров; порядок пропсов внутри слоя не меняется (стопы тех же
+## кластеров монотонны по y-sort), но актёр южнее стопы теперь честно поверх.
+## Внутренний offset спрайта (в домасштабных пикселях) учитывается до to_global.
+func _ys_prop(spr: Sprite2D) -> void:
+	var tex := spr.texture
+	if tex == null:
+		return
+	spr.z_as_relative = false
+	var foot_local := Vector2(0.0, float(tex.get_height()) * 0.5 + spr.offset.y)
+	spr.z_index = int(round(fposmod(spr.to_global(foot_local).y, YS_CYCLE)))
+
+
 ## Один спрайт на рощу: центр — центр bbox кластера (та же сетка, что и
-## tile_to_world), z_index 5 (герой 0, метки NPC 8, цифры урона 90), линейная
-## фильтрация — новые ассеты не должны выглядеть «пиксельно»; старые тайлы при
-## этом остаются nearest. Вариант и отражение — хеш от якоря кластера, без randi.
+## tile_to_world), з — по канону стоп (_ys_prop: нога ствола = низ bbox кроны),
+## линейная фильтрация — новые ассеты не должны выглядеть «пиксельно»; старые
+## тайлы при этом остаются nearest. Вариант и отражение — хеш от якоря кластера,
+## без randi. V-07: кронный bbox на 12% шире кластера («fit-overhead», запись в
+## SCALE_CANON.md) — при нависании над героем крона димится к alpha 0.5
+## (_ys_update), герой различим; с юга от стопы герой рисуется поверх кроны.
 func _build_grove_canopy() -> void:
 	if _groves.is_empty():
 		return
@@ -466,6 +501,9 @@ func _build_grove_canopy() -> void:
 		spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE, (y0 + y1 + 1) * 0.5 * TILE + 2.0)
 		spr.scale = Vector2(k, k)
 		root.add_child(spr)
+		# V-01/V-07: глубина по стопе bbox (низ ствола), overhead-дим по герою
+		_ys_prop(spr)
+		_ys_canopies.append(spr)
 
 
 ## ---- Пропсы деревни (избы/колодцы/указатель/костёр) -----------------------
@@ -540,12 +578,14 @@ func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vecto
 	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
 		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * k * 0.5)
 	village_props.add_child(spr)
+	_ys_prop(spr)  # V-01: глубина по стопе, а не «слой поверх всех»
 	return spr
 
-## Один визуальный слой z_index=5 (тот же уровень, что GroveCanopy, — поверх
-## тайлов и сущностей; в деревне кроны с пропсами не пересекаются). Полностью
-## fail-safe: без любого ассета его клетки просто остаются тайловой отрисовкой
-## (она не менялась). Геометрия, коллайдеры, миникарта — не затронуты.
+## Слой пропсов деревни (узел z_index=5, но дети — абсолютная глубина по стопе,
+## _ys_prop/V-01: порядок «стопа к стопе» с актёрами, а не «слой поверх всех»;
+## в деревне кроны с пропсами не пересекаются). Полностью fail-safe: без любого
+## ассета его клетки просто остаются тайловой отрисовкой (она не менялась).
+## Геометрия, коллайдеры, миникарта — не затронуты.
 func _build_village_props() -> void:
 	village_props = Node2D.new()
 	village_props.name = "VillageProps"
@@ -671,6 +711,7 @@ func _env4_place(parent: Node2D, tex: Texture2D, x0: int, x1: int, y0: int, y1: 
 	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
 		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * s * 0.5)
 	parent.add_child(spr)
+	_ys_prop(spr)  # V-03/V-04: алтари/портал/сундуки — глубина по стопе
 	return spr
 
 ## Пропс, прячущийся по геймплейному состоянию: live() пересчитывается на
@@ -686,8 +727,9 @@ func _sync_env4_props() -> void:
 		if is_instance_valid(spr):
 			spr.visible = bool((p["live"] as Callable).call())
 
-## Визуальные слои z_index=5 — поверх тайлов и сущностей (тот же уровень, что
-## VillageProps/GroveCanopy). Полностью fail-safe: без любого ассета его якоря
+## Слой пропсов пещеры/Пепелища (узел z_index=5; дети — абсолютная глубина по
+## стопе, _ys_prop/V-03/V-04: «стопа к стопе» с актёрами, как у VillageProps).
+## Полностью fail-safe: без любого ассета его якоря
 ## просто остаются тайловой отрисовкой (она не менялась). Геометрия,
 ## коллайдеры, миникарта, тайловая логика — не затронуты.
 func _build_env4_props() -> void:
@@ -973,10 +1015,12 @@ func _spawn_entities() -> void:
 	for e: Array in meta.get("npcs", []):
 		var npc = npc_script.new()
 		village_zone.add_child(npc)
+		npc.add_to_group("ys_actor")  # V-01: общая глубина «стопа к стопе» с пропсами
 		npc.setup(self, String(e[0]), Vector2i(int(e[1]), int(e[2])))
 	# Кузнец Гриим (лавка): фиксированная точка, тайл 'g' walkable
 	var smith = npc_script.new()
 	village_zone.add_child(smith)
+	smith.add_to_group("ys_actor")
 	smith.setup(self, "smith", Vector2i(26, 13))
 	var it_script := load("res://scripts/interactable.gd")
 	for e: Array in meta.get("herbs", []):
@@ -1424,9 +1468,47 @@ func _build_fade() -> void:
 	fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cl.add_child(fade_rect)
 
+## V-01..V-04: единая шкала глубины актёров и пропсов каждый кадр. Пропсы уже
+## получили z=стопа при постройке (_ys_prop); здесь его получают актёры: герой,
+## мобы (группа "enemy", включая боссов и отпрысков) и NPC ("ys_actor").
+## Кроны (overhead) гаснут до YS_CANOPY_DIM_ALPHA, пока накрывают >= 50% бокса
+## героя И рисуются над ним (герой северее стопы кроны); южнее стопы герой сам
+## поверх кроны. Цифры урона поднимаются над всей z-шкалой зон. Только порядок
+## отрисовки: физика, коллайдеры, координаты не трогаются.
+func _ys_update(delta: float) -> void:
+	var hz := int(round(fposmod(player.global_position.y, YS_CYCLE))) + YS_ACTOR_BIAS
+	player.z_index = hz
+	for grp: String in ["enemy", "ys_actor"]:
+		for n in get_tree().get_nodes_in_group(grp):
+			var a := n as Node2D
+			if a != null and is_instance_valid(a):
+				a.z_index = int(round(fposmod(a.global_position.y, YS_CYCLE))) + YS_ACTOR_BIAS
+	var dn := get_node_or_null("DmgNumbers")
+	if dn == null and get_tree().current_scene != null and get_tree().current_scene != self:
+		dn = get_tree().current_scene.get_node_or_null("DmgNumbers")  # мир вложен (харнессы)
+	if dn is CanvasItem and (dn as CanvasItem).z_index < YS_HUD_Z:
+		(dn as CanvasItem).z_index = YS_HUD_Z
+	# бокс героя ~ канон 32 px: макушка -21, стопа +11 от центра ноды
+	var hr := Rect2(player.global_position + Vector2(-8.0, -21.0), Vector2(16.0, 32.0))
+	for c in _ys_canopies:
+		var spr := c as Sprite2D
+		if spr == null or not is_instance_valid(spr) or spr.texture == null:
+			continue
+		var target := 1.0
+		if spr.z_index > hz:  # крона над героем (южнее — герой сам поверх, дим не нужен)
+			var sz := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height())) * spr.get_global_transform().get_scale().abs()
+			var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
+			if cr.intersects(hr) and cr.intersection(hr).get_area() / maxf(hr.get_area(), 1.0) >= YS_CANOPY_DIM_AT:
+				target = YS_CANOPY_DIM_ALPHA
+		var a := spr.modulate.a
+		# плавное растворение; в покое (вдали) — ровно 1.0, без «хвоста» лерпа
+		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
+		spr.modulate.a = a
+
 func _process(delta: float) -> void:
 	if player == null:
 		return
+	_ys_update(delta)  # V-01: общая глубина «актёры + пропсы» каждый кадр
 	# t20 P0-3: время забега для экрана смерти (rs.t, сек). Копится, пока мир
 	# живёт (в т.ч. при открытом журнале/магазине — «время экспедиции», не чистое
 	# время ввода); диалог смерти замораживает мир до снимка итогов — счёт честный.

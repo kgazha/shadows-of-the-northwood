@@ -23,6 +23,11 @@ extends Node2D
 ##  7. Стартовые тайлы мобов деревни проходимы и достижимы из spawn:
 ##     slimes[] (JSON, пин) + лучники world.gd [4,26],[44,26] + мглокрысы
 ##     glade_west world.gd [6,16],[9,16],[6,18],[10,18] — пин-факты из кода.
+##  8. t33 (V-01/V-02/V-07) общая глубина: дети VillageProps/GroveCanopy —
+##     абсолютный z = глобальный Y стопы (независимая формула rect); изба —
+##     герой южнее ПОВЕРХ, севернее ПОД; крона над «стоящим в роще» героем
+##     димится к alpha 0.5 и возвращается в 1.0 (в покое — ровно 1.0); NPC в
+##     динамической шкале. Порядок отрисовки — геометрия/коллайдеры не трогаются.
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -129,6 +134,7 @@ func _ready() -> void:
 	_inv4()
 	_inv5()
 	_inv7()
+	await _inv8()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -367,6 +373,138 @@ func _inv5() -> void:
 	chk(t == PIN_T, "inv5: деревьев в лесу %d = пин %d" % [t, PIN_T])
 	chk(r == PIN_R, "inv5: валунов в лесу %d = пин %d" % [r, PIN_R])
 	chk(all >= lo and all <= hi, "inv5: блоков %d в ±20%% от базы %d (%d..%d)" % [all, PIN_BASE_BLOCK, lo, hi])
+
+# ---------------------------------------------------------------- инв. 8
+const MAIN_SCENE := "res://scenes/main.tscn"
+const SAVE_PATH := "user://save_morkheim.json"
+
+var game_world: Node2D = null
+
+func _frames(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+## Мировой rect спрайта (независимая формула-зеркало: центральный якорь, без
+## поворотов — пропы/кроны/NPC-картинки их не имеют).
+func _spr_rect(sp: Sprite2D) -> Rect2:
+	var tex := sp.texture
+	var gt := sp.get_global_transform()
+	var sz := Vector2(float(tex.get_width()), float(tex.get_height())) \
+		* Vector2(absf(gt.x.x), absf(gt.y.y))
+	return Rect2(gt * (Vector2(float(tex.get_width()), float(tex.get_height())) * -0.5 + sp.offset), sz)
+
+func _biggest_sprite(layer: Node, tex_suffix: String) -> Sprite2D:
+	if layer == null:
+		return null
+	var best: Sprite2D = null
+	var ba := 0.0
+	for c in layer.get_children():
+		var spr := c as Sprite2D
+		if spr == null or spr.texture == null or not spr.visible:
+			continue
+		if tex_suffix != "" and not String(spr.texture.resource_path).ends_with(tex_suffix):
+			continue
+		var a := _spr_rect(spr).get_area()
+		if a > ba:
+			ba = a
+			best = spr
+	return best
+
+func _inv8() -> void:
+	# Живой мир: глубина «актёры + пропсы» проверяется на реальной постройке.
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	GameState.class_id = "warrior"
+	GameState.seen_intro = true
+	await _frames(2)
+	GameState.run_seed = 42
+	game_world = load(MAIN_SCENE).instantiate()
+	add_child(game_world)
+	await _frames(8)
+	var w := game_world
+	chk(w != null and w.player != null, "inv8: мир и герой построены")
+	if w == null or w.player == null:
+		return
+	# 8.1 дети VillageProps/GroveCanopy — абсолютный z == глобальный Y стопы
+	var layers: Array = []
+	if w.village_props != null:
+		layers.append(w.village_props)
+	var gc = w.village_zone.get_node_or_null("GroveCanopy")
+	if gc != null:
+		layers.append(gc)
+	chk(layers.size() == 2, "inv8: слои VillageProps и GroveCanopy на месте")
+	var n_all := 0
+	var bad_rel := 0
+	var bad_z := 0
+	var n_can := 0
+	for l in layers:
+		for c in (l as Node).get_children():
+			var spr := c as Sprite2D
+			if spr == null or spr.texture == null:
+				continue
+			n_all += 1
+			if spr.z_as_relative:
+				bad_rel += 1
+			# зеркало формулы мира: z = round(fposmod(Y стопы, цикл 4800))
+			if spr.z_index != int(round(fposmod(_spr_rect(spr).end.y, 4800.0))):
+				bad_z += 1
+		if l == gc:
+			n_can = (l as Node).get_child_count()
+	chk(n_all >= 20, "inv8: спрайтов пропсов/крон %d" % n_all)
+	chk(bad_rel == 0, "inv8: все дети — абсолютный z (z_as_relative=false)")
+	chk(bad_z == 0, "inv8: z == глобальный Y стопы (%d/%d)" % [n_all - bad_z, n_all])
+	# 8.2 крона в покое (герой на спавне, в рощах не стоит) — alpha ровно 1.0
+	var rest_ok := true
+	var can_list: Array = (gc as Node).get_children() if gc != null else []
+	for c in can_list:
+		var spr := c as Sprite2D
+		if spr != null and not is_equal_approx(spr.modulate.a, 1.0):
+			rest_ok = false
+	chk(rest_ok and n_can > 0, "inv8: кроны в покое alpha=1.0 (%d крон)" % n_can)
+	# 8.3 изба: южнее — герой ПОВЕРХ, севернее — ПОД (тот же прогон, пара)
+	var cottage := _biggest_sprite(w.village_props, "village_cottage.png")
+	if cottage == null:
+		chk(false, "inv8: изба не найдена")
+	else:
+		var r := _spr_rect(cottage)
+		w.player.global_position = Vector2(r.get_center().x, r.end.y + 22.0)
+		await _frames(4)
+		chk(w.player.z_index > cottage.z_index,
+			"inv8: герой южнее избы — ПОВЕРХ (%d > %d)" % [w.player.z_index, cottage.z_index])
+		w.player.global_position = Vector2(r.get_center().x, r.position.y + r.size.y * 0.4)
+		await _frames(4)
+		chk(w.player.z_index < cottage.z_index,
+			"inv8: герой севернее избы — ПОД (%d < %d)" % [w.player.z_index, cottage.z_index])
+	# 8.4 крона: «встал в рощу» — димится к 0.5; «вышел с юга» — 1.0 и герой поверх
+	var canopy := _biggest_sprite(gc, "")
+	if canopy == null:
+		chk(false, "inv8: крона не найдена")
+	else:
+		var cr := _spr_rect(canopy)
+		w.player.global_position = cr.get_center()
+		await _frames(50)
+		chk(canopy.z_index > w.player.z_index and absf(canopy.modulate.a - 0.5) < 0.02,
+			"inv8: крона над героем димится к 0.5 (alpha=%.3f, z %d>%d)" \
+			% [canopy.modulate.a, canopy.z_index, w.player.z_index])
+		w.player.global_position = Vector2(cr.get_center().x, cr.end.y + 22.0)
+		await _frames(50)
+		chk(is_equal_approx(canopy.modulate.a, 1.0) and w.player.z_index > canopy.z_index,
+			"inv8: южнее стопы крона 1.0 и герой поверх (alpha=%.3f)" % canopy.modulate.a)
+	# 8.5 NPC — в динамической шкале (стопа + биас, смещение ноги => смещение z)
+	var npc: Node2D = null
+	for e in get_tree().get_nodes_in_group("ys_actor"):
+		if is_instance_valid(e) and (e as Node2D).get_parent() == w.village_zone:
+			npc = e as Node2D
+			break
+	if npc == null:
+		chk(false, "inv8: NPC не найден в группе глубины")
+	else:
+		var z1: int = npc.z_index
+		npc.global_position = Vector2(npc.global_position.x, npc.global_position.y + 48.0)
+		await _frames(4)
+		chk(z1 > 0 and absf(float(npc.z_index - z1 - 48)) <= 1.0 \
+			and absf(float(npc.z_index) - (npc.global_position.y + 10.0)) < 3.0,
+			"inv8: NPC в динамической шкале глубины (%d -> %d)" % [z1, npc.z_index])
 
 # ---------------------------------------------------------------- инв. 7
 func _inv7() -> void:

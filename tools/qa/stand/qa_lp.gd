@@ -37,6 +37,11 @@ extends Node2D
 ##      overshoot цифр 1.3 (qa_dn зелёный), тень по высоте актёра + воздушная
 ##      фаза «Рывка вепря», «дыхание» env4-пропов (JuiceLight: алтарь/портал/
 ##      сундук, спрайты неподвижны), шлейф кувырка, красный виньеточный импульс.
+##  T13 t33 «общая глубина» (V-03/V-04): дети слоёв Env4CaveProps/Env4AshenProps —
+##      абсолютный z = глобальный Y стопы (независимая формула rect); герой ЮЖНЕ
+##      алтаря/портала рисуется ПОВЕРХ (z_hero > z_prop), СЕВЕРНЕЕ — под; мобы и
+##      NPC участвуют в той же динамической шкале; цифры урона подняты над всей
+##      z-шкалой зон (100000). Только порядок отрисовки — геометрия бит-в-бит.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -95,6 +100,7 @@ func _ready() -> void:
 	_t10()
 	_t11()
 	await _t12()
+	await _t13()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1237,3 +1243,117 @@ func _t12() -> void:
 	chk(Engine.time_scale == 1.0, "T12: Engine.time_scale == 1.0 на выходе")
 	Juice.reset()
 	p.modulate = Color.WHITE
+
+# ------------------------------------------------------------------ T13 (t33)
+
+## Независимый мировой rect спрайта (только центральный якорь, без поворотов —
+## пропы их не имеют): origin = gt * (−size/2 + offset), size — масштабированный.
+func _spr_rect(sp: Sprite2D) -> Rect2:
+	var tex := sp.texture
+	var gt := sp.get_global_transform()
+	var sz := Vector2(float(tex.get_width()), float(tex.get_height())) \
+		* Vector2(absf(gt.x.x), absf(gt.y.y))
+	return Rect2(gt * (Vector2(float(tex.get_width()), float(tex.get_height())) * -0.5 + sp.offset), sz)
+
+func _biggest_prop(zone: Node2D, layer_name: String, tex_suffix: String) -> Sprite2D:
+	var l = zone.get_node_or_null(NodePath(layer_name))
+	if l == null:
+		return null
+	var best: Sprite2D = null
+	var ba := 0.0
+	for c in l.get_children():
+		var spr := c as Sprite2D
+		if spr == null or spr.texture == null or not spr.visible:
+			continue
+		if not String(spr.texture.resource_path).ends_with(tex_suffix):
+			continue
+		var a := _spr_rect(spr).get_area()
+		if a > ba:
+			ba = a
+			best = spr
+	return best
+
+func _t13() -> void:
+	# чистый мир (T12 гонял героя/модалки; глубина проверяется на свежей постройке)
+	world.queue_free()
+	await _frames(5)
+	world = await _spawn_world()
+	# 1) дети слоёв пропсов — абсолютная глубина по стопе (независимая формула)
+	var n_prop := 0
+	var bad_rel := 0
+	var bad_z := 0
+	for zone: Node2D in [world.cave_zone, world.ashen_zone]:
+		for lname: String in ["Env4CaveProps", "Env4AshenProps"]:
+			var l = zone.get_node_or_null(NodePath(lname))
+			if l == null:
+				continue
+			for c in l.get_children():
+				var spr := c as Sprite2D
+				if spr == null or spr.texture == null:
+					continue
+				n_prop += 1
+				if spr.z_as_relative:
+					bad_rel += 1
+				if spr.z_index != int(round(fposmod(_spr_rect(spr).end.y, WS.YS_CYCLE))):
+					bad_z += 1
+	chk(n_prop >= 8, "T13: env4-пропов в сцене %d" % n_prop)
+	chk(bad_rel == 0, "T13: все дети env4-слоёв — абсолютный z (z_as_relative=false)")
+	chk(bad_z == 0, "T13: z env4-пропов == глобальный Y стопы (%d/%d)" % [n_prop - bad_z, n_prop])
+	# 2) актёры участвуют: моб (деревенский слизень) двигает z вместе с ногами
+	var mob: Node2D = null
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(e) and (e as Node2D).get_parent() == world.village_zone:
+			mob = e as Node2D
+			break
+	if mob == null:
+		chk(false, "T13: мобиль деревни не найден")
+	else:
+		var z1: int = mob.z_index
+		var y1: float = mob.global_position.y
+		mob.global_position = Vector2(mob.global_position.x, mob.global_position.y + 64.0)
+		await _frames(4)
+		# z следует за ногами: сместился на 64 — вырос минимум на 60 (микродвижение
+		# ИИ и int-усечение дают запас), и сам z в пределах 3 px от формулы стопы
+		chk(z1 > 0 and mob.z_index >= z1 + 60 and mob.global_position.y > y1 \
+			and absf(float(mob.z_index) - (round(fposmod(mob.global_position.y, WS.YS_CYCLE)) + WS.YS_ACTOR_BIAS)) < 3.0,
+			"T13: моб в динамической шкале глубины (%d -> %d)" % [z1, mob.z_index])
+	# 3) пещера: алтарь — южнее герой поверх, севернее — под
+	world.apply_area("cave")
+	await _frames(20)
+	var altar := _biggest_prop(world.cave_zone, "Env4CaveProps", "env4_altar.png")
+	if altar == null:
+		chk(false, "T13: алтарь пещеры не найден")
+	else:
+		var ra := _spr_rect(altar)
+		world.player.global_position = Vector2(ra.get_center().x, ra.end.y + 22.0)
+		await _frames(4)
+		chk(world.player.z_index > altar.z_index,
+			"T13: герой южнее алтаря — ПОВЕРХ (%d > %d)" % [world.player.z_index, altar.z_index])
+		world.player.global_position = Vector2(ra.get_center().x, ra.position.y + ra.size.y * 0.4)
+		await _frames(4)
+		chk(world.player.z_index < altar.z_index,
+			"T13: герой севернее алтаря — ПОД (%d < %d)" % [world.player.z_index, altar.z_index])
+	# 4) Пепелище: портал — та же пара
+	world.apply_area("ashen")
+	await _frames(20)
+	var portal := _biggest_prop(world.ashen_zone, "Env4AshenProps", "env4_portal.png")
+	if portal == null:
+		chk(false, "T13: портал Пепелища не найден")
+	else:
+		var rp := _spr_rect(portal)
+		world.player.global_position = Vector2(rp.get_center().x, rp.end.y + 22.0)
+		await _frames(4)
+		chk(world.player.z_index > portal.z_index,
+			"T13: герой южнее портала — ПОВЕРХ (%d > %d)" % [world.player.z_index, portal.z_index])
+		world.player.global_position = Vector2(rp.get_center().x, rp.position.y + rp.size.y * 0.4)
+		await _frames(4)
+		chk(world.player.z_index < portal.z_index,
+			"T13: герой севернее портала — ПОД (%d < %d)" % [world.player.z_index, portal.z_index])
+	# 5) цифры урона над всей z-шкалой зон (иначе высокий z пропов прятал бы их).
+	# Хост DmgNumbers живёт на current_scene (в стенде это корень харнесса, не мир)
+	# — тот же путь, что в T12; мир поднимает его fallback'ом по current_scene.
+	DmgNumbers.spawn(world.player.global_position, 5, "normal")
+	await _frames(3)
+	var dn = get_node_or_null("DmgNumbers")
+	chk(dn != null and (dn as CanvasItem).z_index >= WS.YS_HUD_Z,
+		"T13: цифры урона подняты над глубиной (z=%d)" % ((dn as CanvasItem).z_index if dn != null else -1))
