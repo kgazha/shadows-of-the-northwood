@@ -44,6 +44,12 @@ var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
+	# t39 (t38: лучник — «островок вне волн», его r плоский по всем кругам):
+	# лёгкий hp-скейл +20% MAX_HP за волну, УРОН не скейлится (dmg 2 — и так
+	# самый чувствительный контакт для новичка). w5: hp 4→8.
+	var ngw := GameState.ng_wave()
+	hp = MAX_HP + int(floor(float(MAX_HP) * 0.2 * float(ngw)))
+	max_hp = hp
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4

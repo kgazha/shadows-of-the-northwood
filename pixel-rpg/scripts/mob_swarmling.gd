@@ -45,6 +45,11 @@ var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
+	# t39: как у лучника — лёгкий hp-скейл +20% MAX_HP за волну, урон прежний.
+	# На w0–w1 floor(2×0.2×w)=0: стартовый рой деревни (круг 0) не дорожает.
+	var ngw := GameState.ng_wave()
+	hp = MAX_HP + int(floor(float(MAX_HP) * 0.2 * float(ngw)))
+	max_hp = hp
 	position = world.tile_to_world(tile)
 	home = position
 	collision_layer = 4
@@ -161,6 +166,12 @@ func _physics_process(delta: float) -> void:
 				wander_dir = Vector2.ZERO
 			else:
 				wander_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)).normalized()
+		# t39 «grace стартового роя»: LEASH («реакция только на героя рядом») отныне
+		# связывает и блуждание — рой не уходит со своей поляне дальше полу-LEASH
+		# (28 px ≈ 1,75 тайла). Раньше свободный random-walk мог донести крысу до
+		# пассивного героя к ~34 с (t38/t39-база: idle-новичок умирал на 43 с).
+		if global_position.distance_to(home) > LEASH * 0.5:
+			wander_dir = (home - global_position).normalized()
 		velocity = wander_dir * SPEED_WANDER
 	_face(player.global_position - global_position if d < LEASH else velocity)
 	_anim()

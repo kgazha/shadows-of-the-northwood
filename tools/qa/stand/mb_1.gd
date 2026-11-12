@@ -16,7 +16,7 @@ func section_spawn() -> void:
 	var rats: Array = find_mob(world.village_zone, "mob_swarmling")
 	var wraiths: Array = find_mob(world.dungeon_zone, "mob_wraith")
 	check("S1: 2 лучника заспавнены", archers.size() == 2)
-	check("S1: стая из 4 мглокрыс", rats.size() == 4)
+	check("S1: стая из 2 мглокрыс (t39 grace: рой у старта урезан 4→2)", rats.size() == 2)
 	check("S1: тенеплётов в пещере нет — T13 убран из геймплея (резерв)", wraiths.is_empty())
 	var want_arch: Array = [Vector2i(4, 26), Vector2i(44, 26)]
 	for i in range(mini(archers.size(), 2)):
@@ -24,7 +24,9 @@ func section_spawn() -> void:
 		var t := tile_of(a.position)
 		check("S1: лучник на тайле %s" % str(t), t == want_arch[0] or t == want_arch[1])
 		check("S1: тайл лучника %s проходим" % str(t), village_tile_walkable(t))
-	var want_rats: Array = [Vector2i(6, 16), Vector2i(9, 16), Vector2i(6, 18), Vector2i(10, 18)]
+	# t39 grace: стая уведена 4→2 особей в глубь западной поляны (подальше от
+	# старта новичка); тайлы ниже — новые пин-факты из world.gd (_spawn_entities).
+	var want_rats: Array = [Vector2i(4, 24), Vector2i(3, 26)]
 	for r in rats:
 		var t2 := tile_of((r as Node2D).position)
 		check("S1: крыса на тайле %s" % str(t2), want_rats.has(t2))

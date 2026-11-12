@@ -17,16 +17,49 @@ const SPEED_SCALE := 0.9       # скорость x0.9 от BOSS_SPEED
 const GUARD_SWARM := "witch_guard"
 const TINT_WITCH := Color(0.80, 0.70, 0.86)  # пепел + сиренцевая ведьмина дымка
 const TINT_GUARD := Color(1.0, 0.78, 0.6)    # стража: искра из золы
+# t39 (баланс по t38): твёрдая ведьма 48hp/3dmg была r=7.5 для новичка 1-го
+# уровня (t38) — «зона проходима на 4–6 уровне» из шапки теперь обеспечена
+# масштабированием по глубине прогресса, а не надеждой на аккуратность игрока:
+# L1 ×0.4 (19hp/1dmg) → L6+ ×1.0 (48hp/3dmg, канон). Формула — одна точка
+# истины depth_scale(); мир пересчитывает ведьму при входе в Пепелище.
+const SCALE_BASE := 0.4
+const SCALE_STEP := 0.125      # +12.5% за уровень, кап на L6
 
 var hp_full := 0               # порог «половина здоровья» считаем от него
 var guard_done := false        # страж spawn'ится ровно один раз на инстанс
 var home_tile := Vector2i.ZERO
 
+## Множитель силы ведьмы по уровню героя: 0.4 на L1, шаг +0.125/ур., кап 1.0 с L6.
+static func depth_scale(level: int) -> float:
+	return minf(1.0, SCALE_BASE + SCALE_STEP * float(maxi(level, 1) - 1))
+
+## Пересчёт HP/урона под текущий уровень. reset_full=true — полный перелив
+## (setup); иначе прогресс боя пропорциональный (ушёл полечиться и вернулся —
+## добиваешь с того же места). Вызывается из apply_area при входе в Пепелище.
+func _apply_depth_scale(reset_full: bool) -> void:
+	var s := depth_scale(GameState.level)
+	var hp_new := int(round(float(BOSS_HP) * HP_SCALE * s))
+	var dmg_new := maxi(1, int(float(BOSS_DMG) * s))
+	if hp_new == hp_full and dmg_new == dmg:
+		return
+	if reset_full or hp_full <= 0 or hp >= hp_full:
+		hp = hp_new
+	else:
+		hp = maxi(1, int(round(float(hp) * float(hp_new) / float(hp_full))))
+	hp_full = hp_new
+	dmg = dmg_new
+
+## Мир дёргает при каждом входе в Пепелище: пришёл 6-м — получи канонических
+## 48/3; пришёл 1-м — получите «ослабшую от давнего сна ведьму» (19/1).
+func refresh_depth() -> void:
+	_apply_depth_scale(false)
+
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	boss = true                # крупный хитбокс, группа "boss", tension-тема
 	hp = int(round(BOSS_HP * HP_SCALE))
 	hp_full = hp
-	dmg = BOSS_DMG             # урон не повышаем: зона проходима на 4–6 уровне
+	dmg = BOSS_DMG             # дальше _apply_depth_scale пересчитает под уровень
+	_apply_depth_scale(true)   # t39: 19/1 на L1 … 48/3 на L6+
 	speed = BOSS_SPEED * SPEED_SCALE
 	charge_cd = 0.0            # см. шапку: без унаследованного рывка и его тоста
 	boss_leash = 110.0         # сторожим арену: радиус 110 px (значение из

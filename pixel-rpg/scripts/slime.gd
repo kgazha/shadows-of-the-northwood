@@ -118,6 +118,12 @@ func _physics_process(delta: float) -> void:
 				dirv = Vector2.ZERO
 			else:
 				dirv = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)).normalized()
+		# t39 «grace» (как у мглокрыса, по канону лучника _wander): блуждание
+		# привязано к гнезду — дальше половины погони (24 px) слайм не уходит,
+		# к гнезду и курс возвращает. Раньше свободный random-walk на 16 px/с за ~30 с
+		# доходил до пассивного новичка (t39-база: idle-смерть на 43 с).
+		if global_position.distance_to(home) > CHASE_DIST * 0.5:
+			dirv = (home - global_position).normalized()
 		velocity = dirv * SPEED_WANDER
 	move_and_slide()
 	_push_from_hero()

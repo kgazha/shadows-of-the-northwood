@@ -42,6 +42,7 @@ func _ready() -> void:
 	GameState.seen_intro = true
 	GameState.seen_cave_intro = true
 	GameState.elder_quest = 0
+	GameState.level = 6  # t39: ведьма масштабируется под уровень (depth_scale, кап L6) — пиним канон 48/3 на L6+
 	await _frames(2)
 	await _phase_build()
 	await _phase_nav()
@@ -249,7 +250,18 @@ func _phase_witch() -> void:
 	await _frames(2)
 	var az = world.ashen_grid
 	var witch = az.boss_node
-	chk(int(witch.hp) == 48, "hp x2 = 48")
+	chk(int(witch.hp) == 48, "hp x2 = 48 (t39: канон на L6+, depth_scale кап)")
+	chk(int(witch.dmg) == 3, "t39: dmg канон 3 на L6+")
+	# t39: масштаб силы ведьмы по уровню героя — формула-пин (одна точка истины)
+	var WBS := load("res://scripts/mob_boss2.gd")
+	chk(absf(WBS.depth_scale(1) - 0.4) < 0.001 and absf(WBS.depth_scale(3) - 0.65) < 0.001 \
+			and absf(WBS.depth_scale(5) - 0.9) < 0.001 and absf(WBS.depth_scale(6) - 1.0) < 0.001 \
+			and absf(WBS.depth_scale(12) - 1.0) < 0.001, \
+			"t39 depth_scale: .4/.65/.9/1.0 и кап с L6")
+	# refresh_depth при входе в зону идемпотентен на том же уровне (apply_area дёргал его выше)
+	var hp_before: int = witch.hp
+	witch.refresh_depth()
+	chk(int(witch.hp) == hp_before, "t39: refresh_depth идемпотентен на том же уровне")
 	chk(absf(float(witch.speed) - 34.0 * 0.9) < 0.01, "скорость x0.9")
 	chk(float(witch.charge_cd) == 0.0, "рывок выключен (нет чужого тоста)")
 	var c0 := _count_mobs(world.ashen_zone)

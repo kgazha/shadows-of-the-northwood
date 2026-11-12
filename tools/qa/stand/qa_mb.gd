@@ -15,6 +15,7 @@ func _ready() -> void:
 	r3_effects_on_new_run()
 	r4_ash_retention_band()
 	r5_volkhv_blessing()
+	r8_master_x15()
 	r7_infra_pins()
 	await get_tree().process_frame
 	await r6_death_screen()
@@ -357,6 +358,27 @@ func r6_death_screen() -> void:
 	check("R6: rekindle стёр rs.* (статистика сгорела вместе с забегом)", not GameState.flags.has("rs.k.slime") and not GameState.flags.has("rs.zone") and not GameState.flags.has("rs.src"))
 	host.queue_free()
 	await get_tree().process_frame
+
+# --- R8 (t39): «Мастерство» алтаря Пепла = ровно +15% за покупку, кап 3 ---
+
+func r8_master_x15() -> void:
+	# База 20 выбрана против float-шума: 20×1.15=22.999…→23, 20×1.3=26.000…4→26,
+	# 20×1.45=28.999…6→29 (round() в GDScript — от нуля; узкие места исключены).
+	var f := preload("res://scripts/gear_data.gd")
+	mk({"flags": flags_with({"meta.master": 1})})
+	check("R8-t39: мастер f=1 → 20×1.15 = 23", int(f.player_damage(20, GameState)) == 23)
+	mk({"flags": flags_with({"meta.master": 2})})
+	check("R8-t39: мастер f=2 → 20×1.30 = 26", int(f.player_damage(20, GameState)) == 26)
+	mk({"flags": flags_with({"meta.master": 3})})
+	check("R8-t39: мастер f=3 (кап) → 20×1.45 = 29", int(f.player_damage(20, GameState)) == 29)
+	mk({"flags": flags_with({"meta.master": 9})})
+	check("R8-t39: кап f≤3 держится (meta.master=9 → всё равно 29)", int(f.player_damage(20, GameState)) == 29)
+	mk({"flags": flags_with({})})
+	check("R8-t39: без мастера регресс 20", int(f.player_damage(20, GameState)) == 20)
+	# source-пин: множитель именно 0.15 (t38 было 0.10)
+	var fs := FileAccess.open("res://scripts/gear_data.gd", FileAccess.READ)
+	var src := fs.get_as_text() if fs != null else ""
+	check("R8-t39: gear_data содержит 0.15 * f (ровно +15%/стек)", src.contains("0.15 * f") and not src.contains("0.10 * f"))
 
 # --- R7: инфраструктурные пины (PaperEdge/AshIcon/таблица доски) ---
 

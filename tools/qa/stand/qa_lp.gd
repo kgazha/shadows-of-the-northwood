@@ -101,6 +101,7 @@ func _ready() -> void:
 	_t11()
 	await _t12()
 	await _t13()
+	await _t14()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1393,3 +1394,76 @@ func _t13() -> void:
 	var dn = get_node_or_null("DmgNumbers")
 	chk(dn != null and (dn as CanvasItem).z_index >= WS.YS_HUD_Z,
 		"T13: цифры урона подняты над глубиной (z=%d)" % ((dn as CanvasItem).z_index if dn != null else -1))
+
+# ------------------------------------------------------------------ T14 (t39)
+
+## t39 «баланс по t38»: гейт брутов по волне, масштаб ведьмы по уровню, grace
+## стартового роя, сундук без меча, hp-скейл лучника/крыса, пепел с киллов = 0.
+func _t14() -> void:
+	# 1) brute_max_tier: w≤2→т1, w3→т2, w4+→т3
+	chk(GameState.brute_max_tier(0) == 1 and GameState.brute_max_tier(1) == 1 \
+			and GameState.brute_max_tier(2) == 1 and GameState.brute_max_tier(3) == 2 \
+			and GameState.brute_max_tier(4) == 3 and GameState.brute_max_tier(9) == 3,
+		"T14: brute_max_tier 1/1/1/2/3/3 (w0..w3,w4,w9)")
+	# 2) рантайм: в пещере на волне 0 живой Гром-трэш только т1 (гейт в спавне)
+	var nb := 0
+	var bad := 0
+	for c in world.dungeon_zone.get_children():
+		if c.get_script() == null:
+			continue
+		if not String(c.get_script().resource_path).ends_with("brute.gd"):
+			continue
+		if bool(c.get("boss")):
+			continue
+		nb += 1
+		if int(c.get("tier")) > GameState.brute_max_tier(GameState.ng_wave()):
+			bad += 1
+	chk(nb >= 1 and bad == 0, "T14: пещера w0: брутов %d, все tier ≤ гейта (нарушений %d)" % [nb, bad])
+	# 3) ведьма: глубинная формула + таблица hp/dmg (L1 19/1, L3 31/1, L5 43/2, L6+ 48/3)
+	var WB := load("res://scripts/mob_boss2.gd")
+	chk(absf(WB.depth_scale(1) - 0.4) < 0.001 and absf(WB.depth_scale(3) - 0.65) < 0.001 \
+			and absf(WB.depth_scale(5) - 0.9) < 0.001 and absf(WB.depth_scale(6) - 1.0) < 0.001 \
+			and absf(WB.depth_scale(20) - 1.0) < 0.001,
+		"T14: depth_scale 0.4/0.65/0.9/1.0/кап")
+	var wl = WB.new()
+	var lv0 := GameState.level
+	for pair: Array in [[1, 19, 1], [3, 31, 1], [5, 43, 2], [6, 48, 3], [9, 48, 3]]:
+		GameState.level = int(pair[0])
+		wl._apply_depth_scale(true)
+		chk(int(wl.hp) == int(pair[1]) and int(wl.dmg) == int(pair[2]),
+			"T14: ведьма L%d = %d hp / %d dmg" % [pair[0], pair[1], pair[2]])
+	GameState.level = lv0
+	wl.free()
+	# 4) grace: стартовый рой у спавна — ровно 2 особи (общий испуг с 1-й смерти)
+	var rats := 0
+	for c in world.village_zone.get_children():
+		if String(c.get("swarm_id")) == "glade_west":
+			rats += 1
+	chk(rats == 2, "T14: старт-рой glade_west = 2 особи (было 4)")
+	# 4b) t39 grace: блуждание крыса/слайма привязано к дому (канон лучника
+	# _wander: за пределами нормы — возврат к home); пассивный новичок мобов
+	# не дожидается (t38-база: idle-смерть ~34–43 с от блуждающих мобов).
+	var fwr := FileAccess.open("res://scripts/mob_swarmling.gd", FileAccess.READ)
+	var swr: String = fwr.get_as_text() if fwr != null else ""
+	var fsm := FileAccess.open("res://scripts/slime.gd", FileAccess.READ)
+	var stm: String = fsm.get_as_text() if fsm != null else ""
+	chk(swr.contains("LEASH * 0.5") and stm.contains("CHASE_DIST * 0.5"),
+		"T14: wander крыса/слайм привязан к дому (grace)")
+	# 5) лёгкий hp-скейл лучника/крыса (источник: +20% MAX_HP за волну, урон не тронут)
+	var fa := FileAccess.open("res://scripts/mob_archer.gd", FileAccess.READ)
+	var sa: String = fa.get_as_text() if fa != null else ""
+	var fw := FileAccess.open("res://scripts/mob_swarmling.gd", FileAccess.READ)
+	var sw: String = fw.get_as_text() if fw != null else ""
+	chk(sa.contains("0.2 * float(ngw)") and sw.contains("0.2 * float(ngw)"),
+		"T14: archer/swarmling hp-скейл +20%/волну в setup")
+	# 6) сундук (37,21): не меч — кошель 32..42 поверх loot 8..18 (= 40..60)
+	var fi := FileAccess.open("res://scripts/interactable.gd", FileAccess.READ)
+	var si: String = fi.get_as_text() if fi != null else ""
+	chk(si.contains("randi_range(32, 42)") and not si.contains("has_sword"),
+		"T14: chest-ветка — кошель 32..42, меча не даёт (has_sword не трогает)")
+	var fl := FileAccess.open("res://scripts/loot.gd", FileAccess.READ)
+	var sl: String = fl.get_as_text() if fl != null else ""
+	chk(sl.contains("randi_range(8, 18)"), "T14: chest_reward 8..18 не менялся (итог сундука 40..60)")
+	# 7) пепел за киллы = 0 — приёмочный инвариант (loot.gd не знает про Ash)
+	chk(not sl.contains("Ash.add") and not sl.contains("Ash.spend"),
+		"T14: пепел с киллов = 0 (loot.gd не вызывает Ash)")

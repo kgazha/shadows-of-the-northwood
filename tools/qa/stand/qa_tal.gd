@@ -151,8 +151,9 @@ func _run() -> void:
 	_fresh(); GameState.has_sword = true
 	_chk("t3_sword_rank0", pd.call(10) == 20, "регресс: legacy-меч x2 ранг0 = 20")
 	_fresh(); GameState.has_sword = true; GameState.flags["tal.whetstone"] = 2; GameState.flags["tal.fury"] = 3; GameState.flags["tal.heavy"] = 1; GameState.has_amulet = true; GameState.flags["meta.master"] = 3
-	# 10*(2.0+0.30)*(1.3)=29.9; *1.15=34.385; +1(амулет)+1(heavy)=36.385 -> 36
-	_chk("t3_stack_all", pd.call(10) == 36, "стек sword+wh2+master3+fury3+amul+heavy: 36 (один множитель ярости, плоские до round)")
+	# t39: мастерство +15%/стек (было +10%): 10*(2.0+0.30)*(1.45)=33.35;
+	# *1.15=38.3525; +1(амулет)+1(heavy)=40.3525 -> 40
+	_chk("t3_stack_all", pd.call(10) == 40, "стек sword+wh2+master3+fury3+amul+heavy: 40 (мастер t39 +15%×3=+45%)")
 	_fresh(); GameState.flags["tal.fury"] = 3
 	_chk("t3_min1", GearData.player_damage(-5, GameState) >= 1, "округление к минимуму 1")
 

@@ -99,14 +99,20 @@ func try_interact() -> void:
 		_sync_shadow()  # иначе чёрный блин тени висит над пустой клеткой до респавна
 	else:
 		used = true
-		GameState.has_sword = true
+		# t39 (находка t38): сундук НЕ выдаёт меч — меч покупается у кузнеца (80g),
+		# а бесплатный «второй меч» обесценивает экономику первой минуты. Награда —
+		# кошель: вместе с Loot.chest_reward (8–18 зол. + расходник с шансом 50%)
+		# суммарно 40–60 зол.: purse≥32 закрывает нижнюю границу (32+8=40),
+		# purse≤42 — верхнюю (42+18=60).
 		GameState.chest_mark_used(_uid())  # «сундук открыт» в сейв (фикс T2)
-		GameState.toast.emit("Найден Железный меч! Урон x2")
-		GameState.stats_changed.emit()
-		GameState.quest_changed.emit()  # автосейв: меч и состояние сундука
 		Loot.chest_reward(GameState)  # золото/зелье (loot.gd)
+		var purse := randi_range(32, 42)
+		GameState.add_gold(purse)
+		GameAudio.sfx("coin")
+		GameState.toast.emit("В сундуке — кошель: ещё +%d зол.! Меч ищите у кузнеца." % purse)
+		GameState.quest_changed.emit()  # автосейв: состояние сундука и золото
 		Achv.on_chest_opened()  # ачивка «Клад» (achv.gd)
-		if FirstHint.I != null: FirstHint.I.show_hint("chest", "В сундуках — оружие и золото. Они прячутся по всей округе.")
+		if FirstHint.I != null: FirstHint.I.show_hint("chest", "В сундуках — золото и расходники. Оружие — у кузнеца.")
 		spr.texture = _atlas(14)
 		world.near.erase(self)
 

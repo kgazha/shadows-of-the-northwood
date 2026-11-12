@@ -556,6 +556,18 @@ func hp_mult(w: int) -> float:
 func dmg_bonus(w: int) -> int:
 	return int(ceil(float(w) / 2.0))
 
+## t39 «баланс по t38»: гейт тяжёлых(brute) по волнам. Профиль глубины остаётся
+## полосами пещеры (bands в proc_profiles.json — золотой тест), но ранг brute
+## режется по волне забега: w≤2 — только т1, w3 — до т2, w4+ — до т3.
+## Смысл: скачок сложности волны 1→2 (t1→t2 = +50% HP и +100% урона) не должен
+## вылезать за ×2 относительной угрозы (t38: было ×3.7).
+func brute_max_tier(w: int) -> int:
+	if w <= 2:
+		return 1
+	if w == 3:
+		return 2
+	return 3
+
 ## Множитель золота (§1.3): +40% за круг, w5 → ×3.0. Применяется к ИТОГУ ролла.
 func ng_gold_mult(w: int) -> float:
 	return 1.0 + 0.4 * float(w)

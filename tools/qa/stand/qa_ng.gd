@@ -231,15 +231,26 @@ func _ready() -> void:
 	ck("w1_boss", int(boss1.hp) == 36 and int(boss1.dmg) == 4, "hp=%s" % boss1.hp)
 
 	# reset стёр ashen.boss => мир перестраивается с ЖИВОЙ ведьмой, и её
-	# цифры не тронуты скейлом (канон-решение оркестратора: boss2 вне круга)
+	# цифры не тронуты скейлом ВОЛНЫ (канон-решение оркестратора: boss2 вне
+	# круга). t39: ведьма масштабируется по ГЛУБИНЕ (mob_boss2.depth_scale):
+	# hp=round(48×s), dmg=max(1,int(3×s)), s=min(1, 0.4+0.125×(L−1)).
+	# Уровень игрока к этой точке теста плавающий (в этом прогоне L4 → 37/2),
+	# поэтому ожидание — независимая перезаформулировка той же функции по
+	# ФАКТИЧЕСкомуGameState.level, а не жёсткая цифра уровня. Суть проверки
+	# прежняя: волна ведьму не трогает (иначе hp вышел бы ×1.5). Канон 48/3
+	# с L6 закреплён числом в qa_z1.
 	var w_live = load("res://scenes/main.tscn").instantiate()
 	add_child(w_live)
 	await get_tree().process_frame
 	var witch_live = _find_node_script(w_live, "mob_boss2")
 	ck("witch_respawns_after_reset", witch_live != null)
 	if witch_live != null:
-		ck("w1_witch_unscaled", int(witch_live.hp) == 48 and int(witch_live.dmg) == 3, \
-			"hp=%s dmg=%s" % [witch_live.hp, witch_live.dmg])
+		var lv_w := maxi(GameState.level, 1)
+		var s_w: float = minf(1.0, 0.4 + 0.125 * float(lv_w - 1))
+		var exp_hp_w := int(round(48.0 * s_w))
+		var exp_d_w := maxi(1, int(3.0 * s_w))
+		ck("w1_witch_unscaled", int(witch_live.hp) == exp_hp_w and int(witch_live.dmg) == exp_d_w, \
+			"hp=%s dmg=%s (ожидалось round(48×depth_scale(L%d)=%.3f))=%d / max(1,int(3×s))=%d; волной не тронута)" % [witch_live.hp, witch_live.dmg, lv_w, s_w, exp_hp_w, exp_d_w])
 	else:
 		ck("w1_witch_unscaled", false, "witch missing")
 	w_live.queue_free()

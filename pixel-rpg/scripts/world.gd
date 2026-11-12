@@ -1193,8 +1193,15 @@ func _spawn_entities() -> void:
 		village_zone.add_child(arch)
 		arch.setup(self, Vector2i(int(e[0]), int(e[1])))
 	# …а стая мглокрыс — на западной поляне (общий испуг при живых <= половины).
+	# t39 grace: рой у старта урезан 4→2 и уведён в глубь западной поляны
+	# (t38: 4 особи в 97 px — агрессивный новичок умирал за 9.9 с, а без ввода
+	# блуждающая крыса доходила до героя к ~34 с). 2 особи = первое убийство
+	# сразу включает панику стаи (alive*2<=total); 233+ px — ближайшая цель
+	# агрессивного бота на старте теперь слайм (1-на-1), а не свалка 2-в-1;
+	# плюс блуждание роя привязано к дому (mob_swarmling, t39) — пассивный
+	# новичок крыс не дождётся.
 	var rat_script := load("res://scripts/mob_swarmling.gd")
-	for e: Array in [[6, 16], [9, 16], [6, 18], [10, 18]]:
+	for e: Array in [[4, 24], [3, 26]]:
 		var rat = rat_script.new()
 		rat.swarm_id = "glade_west"
 		village_zone.add_child(rat)
@@ -1576,7 +1583,10 @@ func _spawn_cave_mobs() -> void:
 			continue
 		var m = load("res://scripts/brute.gd").new()
 		m.boss = false
-		m.tier = int((u as Dictionary).get("tier", 1))
+		# t39: полосы глубины (bands) остаются как есть — золотой тест T3 про
+		# place_units не трогает, — но ранг брута режется по волне забега
+		# (w≤2→т1, w3→т2, w4+→т3): волна 2 перестаёт быть скачком ×3,7.
+		m.tier = mini(int((u as Dictionary).get("tier", 1)), GameState.brute_max_tier(GameState.ng_wave()))
 		dz.add_child(m)
 		m.setup(self, t)
 
@@ -1974,6 +1984,11 @@ func apply_area(area: String, teleport: bool = true) -> void:
 	cave_zone.process_mode = Node.PROCESS_MODE_INHERIT if to_cave else Node.PROCESS_MODE_DISABLED
 	ashen_zone.process_mode = Node.PROCESS_MODE_INHERIT if area == "ashen" else Node.PROCESS_MODE_DISABLED
 	near.clear()
+	# t39: ведьма Пепелища масштабируется под уровень героя (mob_boss2.depth_scale) —
+	# переливаем силу при каждом входе в зону (L1 19hp/1dmg … L6+ канон 48/3).
+	if area == "ashen" and ashen_grid != null and ashen_grid.boss_node != null \
+			and is_instance_valid(ashen_grid.boss_node) and ashen_grid.boss_node.has_method("refresh_depth"):
+		ashen_grid.boss_node.refresh_depth()
 	player.cancel_orders()  # приказы прошлой зоны не тянем в новую
 	if teleport:
 		if area == "cave":
