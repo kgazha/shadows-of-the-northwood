@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://qa_lp.gd" id="1"]
+
+[node name="QaLp" type="Node2D"]
+script = ExtResource("1")

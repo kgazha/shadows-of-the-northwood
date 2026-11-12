@@ -95,6 +95,24 @@ const PATH_ART := [
 ## Плотность патчей земли: ~55% кандидатов (h % 20 < 11). Детерминировано хэшем
 ## клетки, без randi — два прогона рисуют побитово идентичный слой.
 const GROUND_PAINT_DENSITY := 11
+## Т14 «живой пол» пещеры/Пепелища: мягкие патчи, перерезанные из ОДОБРЁННЫХ
+## внутриигровых атласов dungeon_tiles.png / ashen_tiles.png (полные глубина
+## цвета и LINEAR, без квантизации). Тот же слой z=-5, что у деревенской
+## «живой земли»: под сущностями, над тайлами. Fail-safe: нет ассетов → слой
+## не создаётся (прежний рендер).
+const CAVE_FLOOR_ART := [
+	"res://assets/art/ground_cave_1.png",
+	"res://assets/art/ground_cave_2.png",
+	"res://assets/art/ground_cave_3.png",
+]
+const ASHEN_FLOOR_ART := [
+	"res://assets/art/ground_ashen_1.png",
+	"res://assets/art/ground_ashen_2.png",
+	"res://assets/art/ground_ashen_3.png",
+]
+## Плотность живого пола пещер: ~70% floor-клеток (h % 20 < 14) — подземелью
+## нужна связная «дышащая» поверхность, а не островки.
+const ZONE_FLOOR_PAINT_DENSITY := 14
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
@@ -799,6 +817,49 @@ func _build_ground_paint() -> void:
 				spr2.modulate = Color(1.0, 1.0, 1.0, 0.92)
 				ground_paint.add_child(spr2)
 
+## Т14 «живой пол» пещеры/Пепелища — тот же приём, что у деревенской GroundPaint,
+## но по floor-клеткам grid зоны («.»/«,»). Детерминизм: вариант/flip/поворот/
+## джиттер/alpha — только из хэша клетки (_env4_hash), randi нет — два прогона
+## рисуют побитово идентичный слой. z=-5: над тайлами (-10), ПОД сущностями (0),
+## пропсами/кронами (5) и маркерами. Alpha 0.30..0.42 — патч тише тайла.
+## Перо патча (3–4 px) слегка наползает на базу стен — намеренно: пол «врастает»
+## в камень, стык клетки перестаёт читаться. Fail-safe: нет ни одного патча →
+## push_warning и слой не создаётся вовсе (прежний рендер).
+func _build_zone_floor_paint(parent: Node2D, rows: Array, art: Array, layer_name: String) -> void:
+	var texs: Array = []
+	for p in art:
+		if ResourceLoader.exists(p):
+			var t = load(p)
+			if t is Texture2D:
+				texs.append(t)
+	if texs.is_empty():
+		push_warning("world: нет патчей пола %s — слой %s пропущен (прежний рендер)" % [str(art), layer_name])
+		return
+	var layer := Node2D.new()
+	layer.name = layer_name
+	layer.z_index = -5
+	layer.y_sort_enabled = false  # патчи перекрываются произвольно — порядок не важен
+	parent.add_child(layer)
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] != "." and row[x] != ",":
+				continue
+			var h := _env4_hash(x, y)
+			if h % 20 >= ZONE_FLOOR_PAINT_DENSITY:
+				continue
+			var spr := Sprite2D.new()
+			spr.texture = texs[(h >> 4) % texs.size()]
+			spr.centered = true
+			spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+			spr.flip_h = ((h >> 16) & 1) == 1
+			spr.rotation = PI * 0.5 * float((h >> 8) % 4)
+			# привязка к tile_to_world (тот же +2 по Y), джиттер центра — из хэша
+			spr.position = Vector2((x + 0.5) * TILE, (y + 0.5) * TILE + 2.0) \
+				+ Vector2(float((h >> 20) % 9) - 4.0, float((h >> 24) % 9) - 4.0)
+			spr.modulate = Color(1.0, 1.0, 1.0, 0.30 + 0.02 * float((h >> 28) % 7))
+			layer.add_child(spr)
+
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
 	body.name = "Walls"
@@ -915,10 +976,223 @@ func campfire_near() -> Node2D:
 				best = n
 	return best
 
+## ---- Т14: перестройка пространства пещеры/Пепелища --------------------------
+## Фидбек игрока: «в подземелье огромные алтари и порталы» — SCALE_CANON-пропы
+## (алтарь 51 px, портал 70 px) не уменьшаются, вместо них генераторную сетку
+## post-process'ят чистая геометрия: залы 5×6 вокруг каждого пропа и проходы
+## шире 1 клетки. Позиции-якоря (spawn/stairs/door/chest/A/P/meta) НЕ двигаются;
+## алфавит grid и CHAR_TO_TILE не трогаются; выемка только ДОБАВЛЯЕТ пол
+## (монотонно) — старые POI остаются достижимы. Детерминизм: никаких randi,
+## обход row-major, тай-брейки по хэшу клетки — два прогона дают бит-в-бит
+## одинаковую сетку (стенд qa_lp сверяет снимки двух сборок).
+## Никогда не вскрываются: внешний ранг "#", клетки «L»/«S»/«C»/«A»/«P» (их нет
+## в dig-наборах), и защищённая ниша сундука — интерьер, достижимый из «C» без
+## «L», плюс её настенная рамка: дверь остаётся ЕДИНСТВЕННЫМ входом к сундуку.
+
+## Символы зон: floor-набор выемки, проходимые (для 2×2), вскрываемые блоки.
+const RG_CAVE_WALK := ".,SBM"           # «L» (дверь) — блокировщик, не walk
+const RG_CAVE_DIG := "#PRV"             # стена / колонна / осыпь / ниша-стена
+const RG_ASHEN_WALK := ".,caP"          # портал «P» проходим
+const RG_ASHEN_DIG := "#TK"             # бревно / дерево / пень
+
+static func _rg_ch(grid: Array, x: int, y: int) -> String:
+	if y < 0 or y >= grid.size():
+		return ""
+	var row := String(grid[y])
+	if x < 0 or x >= row.length():
+		return ""
+	return row[x]
+
+static func _rg_set(grid: Array, x: int, y: int, ch: String) -> void:
+	var row := String(grid[y])
+	grid[y] = row.substr(0, x) + ch + row.substr(x + 1)
+
+static func _rg_key(x: int, y: int) -> int:
+	return y * 4096 + x
+
+## Копия FNV-1a из _env4_hash: тем же вектор входа — тот же бит-выход.
+static func _rg_hash(x: int, y: int) -> int:
+	var h := 2166136261
+	for b in [x & 0xFF, (x >> 8) & 0xFF, y & 0xFF, (y >> 8) & 0xFF]:
+		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
+	return h
+
+## Защищённые клетки: интерьер ниши сундука (BFS от каждой «C»; «L» и стены —
+## непроходимы) плюс все «#», примыкающие к интерьеру (в т.ч. по диагонали).
+static func _rg_chest_protect(grid: Array, walk: String) -> Dictionary:
+	var prot := {}
+	for y in grid.size():
+		var row := String(grid[y])
+		for x in row.length():
+			if row[x] != "C":
+				continue
+			var seen := {_rg_key(x, y): true}
+			var stack: Array = [Vector2i(x, y)]
+			while not stack.is_empty():
+				var t: Vector2i = stack.pop_back()
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+					var n := t + Vector2i(int(d[0]), int(d[1]))
+					var k := _rg_key(n.x, n.y)
+					if seen.has(k):
+						continue
+					var ch := _rg_ch(grid, n.x, n.y)
+					if ch != "C" and walk.find(ch) < 0:
+						continue
+					seen[k] = true
+					stack.append(n)
+			for k in seen:
+				prot[k] = true
+			for k in seen.keys():
+				var cx := int(k) % 4096
+				var cy := int(k) >> 12
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]:
+					if _rg_ch(grid, cx + int(d[0]), cy + int(d[1])) == "#":
+						prot[_rg_key(cx + int(d[0]), cy + int(d[1]))] = true
+	return prot
+
+## Выемкаdig-символов в прямоугольнике x±hw, y−up..y+down; ранг и защита — табу.
+static func _rg_hall(grid: Array, cx: int, cy: int, hw: int, up: int, down: int,
+		dig: String, prot: Dictionary) -> void:
+	var h := grid.size()
+	for y in range(cy - up, cy + down + 1):
+		if y < 0 or y >= h:
+			continue
+		var w := String(grid[y]).length()
+		for x in range(cx - hw, cx + hw + 1):
+			if x <= 0 or y <= 0 or x >= w - 1 or y >= h - 1:
+				continue  # ранг не вскрываем никогда
+			if prot.has(_rg_key(x, y)):
+				continue
+			if dig.find(_rg_ch(grid, x, y)) >= 0:
+				_rg_set(grid, x, y, ".")
+
+## Кандидатский квадрат 2×2 с клеткой (x,y) в углу (a,b): проходим?
+## Возвращает [feasible, cost, cells] — cells только dig-клетки под выемку.
+static func _rg_square(grid: Array, x: int, y: int, a: int, b: int,
+		walk: String, dig: String, prot: Dictionary) -> Array:
+	var h := grid.size()
+	var cells: Array = []
+	var cost := 0
+	for dy in 2:
+		for dx in 2:
+			var cx := x - a + dx
+			var cy := y - b + dy
+			var w := String(grid[cy]).length() if cy >= 0 and cy < h else 0
+			if cx <= 0 or cy <= 0 or cx >= w - 1 or cy >= h - 1:
+				return [false, 0, []]
+			var ch := _rg_ch(grid, cx, cy)
+			if walk.find(ch) >= 0:
+				continue
+			if dig.find(ch) < 0 or prot.has(_rg_key(cx, cy)):
+				return [false, 0, []]
+			cost += 1
+			cells.append(Vector2i(cx, cy))
+	return [true, cost, cells]
+
+## Есть ли у клетки проходимый квадрат 2×2 (клетка — в любом из 4 углов).
+static func _rg_has_2x2(grid: Array, x: int, y: int, walk: String) -> bool:
+	for a in [0, 1]:
+		for b in [0, 1]:
+			var ok := true
+			for dy in 2:
+				for dx in 2:
+					if walk.find(_rg_ch(grid, x - a + dx, y - b + dy)) < 0:
+						ok = false
+			if ok:
+				return true
+	return false
+
+## Найти выполнимый квадрат 2×2 (тот же порядок кандидатов, что у выемки):
+## публичная проверка «тупик легален — вскрыть нечего».
+static func _rg_feasible_2x2(grid: Array, x: int, y: int,
+		walk: String, dig: String, prot: Dictionary) -> bool:
+	var hsh := _rg_hash(x, y)
+	var rot := hsh % 4
+	for i in 4:
+		var a: int = [0, 0, 1, 1][(rot + i) % 4]
+		var b: int = [0, 1, 0, 1][(rot + i) % 4]
+		var r := _rg_square(grid, x, y, a, b, walk, dig, prot)
+		if bool(r[0]):
+			return true
+	return false
+
+## Расширение проходов: каждая проходимая клетка обязана лежать в проходимом
+## квадрате 2×2; если нет — вскрываем кандидатский квадрат с минимальной ценой
+## (меньше спилить нельзя), порядок кандидатов — поворот от хэша клетки.
+## Итерации до неподвижной точки (≤12; сетки 30×22/40×30 — миг).
+static func _rg_widen(grid: Array, walk: String, dig: String, prot: Dictionary) -> void:
+	var rounds := 0
+	var changed := true
+	while changed and rounds < 12:
+		changed = false
+		rounds += 1
+		for y in grid.size():
+			var row := String(grid[y])
+			for x in row.length():
+				if walk.find(row[x]) < 0:
+					continue
+				if _rg_has_2x2(grid, x, y, walk):
+					continue
+				var hsh := _rg_hash(x, y)
+				var rot := hsh % 4
+				var best_cells: Variant = null
+				var best_cost := 99
+				for i in 4:
+					var a: int = [0, 0, 1, 1][(rot + i) % 4]
+					var b: int = [0, 1, 0, 1][(rot + i) % 4]
+					var r := _rg_square(grid, x, y, a, b, walk, dig, prot)
+					if bool(r[0]) and int(r[1]) > 0 and int(r[1]) < best_cost:
+						best_cost = int(r[1])
+						best_cells = r[2]
+				if best_cells != null:
+					for c: Vector2i in best_cells:
+						_rg_set(grid, c.x, c.y, ".")
+					changed = true
+
+## Пещера: зал 5×6 вокруг КАЖДОГО алтаря «A» (x±2, y−3..y+2 — пропс якорится
+## нижней гранью, 51 px вершины стоят над свободным полом; правило «не более
+## нижней трети высоты пропса пересекает стену») + расширение проходов.
+static func _reshape_cave_map(p_map: Dictionary) -> void:
+	var grid: Array = p_map.get("grid", [])
+	if grid.is_empty() or String(grid[0]).is_empty():
+		return
+	var prot := _rg_chest_protect(grid, RG_CAVE_WALK)
+	for y in grid.size():
+		var row := String(grid[y])
+		for x in row.length():
+			if row[x] == "A":
+				_rg_hall(grid, x, y, 2, 3, 2, RG_CAVE_DIG, prot)
+	_rg_widen(grid, RG_CAVE_WALK, RG_CAVE_DIG, prot)
+
+## Пепелище: зал 5×6 вокруг выходного портала (x±2, y−4..y+1 — портал 70 px,
+# якорь у земли, вершина трещины высоко) + расширение проходов.
+static func _reshape_ashen_map(p_map: Dictionary) -> void:
+	var grid: Array = p_map.get("grid", [])
+	if grid.is_empty() or String(grid[0]).is_empty():
+		return
+	var meta: Dictionary = p_map.get("meta", {})
+	var prot := _rg_chest_protect(grid, RG_ASHEN_WALK)
+	var portal := Vector2i(-1, -1)
+	var pa: Array = meta.get("exit_portal", [])
+	if pa.size() == 2:
+		portal = Vector2i(int(pa[0]), int(pa[1]))
+	if portal.x < 0:
+		for y in grid.size():
+			var xi := String(grid[y]).find("P")
+			if xi >= 0:
+				portal = Vector2i(xi, y)
+				break
+	if portal.x >= 0:
+		_rg_hall(grid, portal.x, portal.y, 2, 4, 1, RG_ASHEN_DIG, prot)
+	_rg_widen(grid, RG_ASHEN_WALK, RG_ASHEN_DIG, prot)
+
 func _build_cave() -> void:
 	# Шов PROCGEN §2: словарь карты — из ProcGen, сид = сид забега × «cave» × волна.
 	# Порядок в _ready не двигается: билдеры и так стоят после load_game() (qa_rf).
 	cave_map = ProcGen.cave_map(ProcGen.seed_zone(GameState.run_seed, CAVE_ZONE_ID, GameState.ng_wave()))
+	# Т14: перестройка пространства ДО setup — тайлы, коллайдеры, миникарта,
+	# якоря мобов и угли строятся уже из новой сетки (чанк ниже — чистая геометрия).
+	_reshape_cave_map(cave_map)
 	var dz = load("res://scripts/dungeon_zone.gd").new()
 	cave_zone.add_child(dz)
 	# Словарь-шов §2: карта пещеры строится генератором (как Пепелище в T5b);
@@ -927,6 +1201,7 @@ func _build_cave() -> void:
 	dungeon_zone = dz
 	_spawn_cave_embers()
 	_apply_cave_shapes(dz)
+	_build_zone_floor_paint(cave_zone, dz.map_rows, CAVE_FLOOR_ART, "CaveFloorPaint")
 	# сундук открывают и в этой сессии: try_interact эмитит stats_changed — снимаем
 	# коллайдер сразу, а не только после перезахода (пещера строится один раз)
 	GameState.stats_changed.connect(_sync_cave_chest)
@@ -1072,10 +1347,13 @@ func _build_ashen() -> void:
 	# grid — канон тайлов map_ashen.json). data/map_ashen.json остаётся на диске
 	# деревенским эталоном — ashen_zone читает его только как fallback пустого dict.
 	ashen_map = ProcGen.ashen_map(ProcGen.seed_zone(GameState.run_seed, ASHEN_ZONE_ID, GameState.ng_wave()))
+	# Т14: зал выходного портала + проходы ≥2 — та же чистая геометрия, что у пещеры.
+	_reshape_ashen_map(ashen_map)
 	var az = load("res://scripts/ashen_zone.gd").new()
 	ashen_zone.add_child(az)
 	az.setup(self, ashen_map)
 	ashen_grid = az
+	_build_zone_floor_paint(ashen_zone, az.map_rows, ASHEN_FLOOR_ART, "AshenFloorPaint")
 	ashen_zone.visible = false
 	ashen_zone.process_mode = Node.PROCESS_MODE_DISABLED
 

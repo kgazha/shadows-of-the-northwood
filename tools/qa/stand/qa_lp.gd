@@ -1,0 +1,663 @@
+extends Node2D
+## QA-стенд Т14 «крупные пропы вписаны в пространство» (пещера/Пепелище).
+## Прогон: godot --headless res://qa_lp.tscn
+## Пин-сид забега 42 (как qa_z1). Проверяет пост-процесс сеток world._reshape_*
+## (залы алтарей/портала, проходы ≥2 клетки) С НЕЗАВИСИМОЙ геометрией: BFS/2×2
+## переписаны здесь, а не вызываются из world.gd (зеркальная реализация).
+##  T1  таблицы символов бит-в-бит + монотонность перестройки против свежего
+##      генераторного dict (только dig-символы -> ".", якоря/рамка целы).
+##  T2  зал алтаря 5x6 (x±2, y-3..y+2): в верхних рядах нет стен (кроме
+##      защищённой ниши сундука); ранг не тронут; ширина пропов ≤ 5*16.
+##  T3  все POI пещеры достижимы из spawn BFS с открытой дверью; сундук и
+##      алтари НЕ достижимы с закрытой (гейт двери сохранён).
+##  T4  Пепелище: монотонность, зал портала 5x6 (x±2, y-4..y+1), якорь=клетка P.
+##  T5  проходы: каждая проходимая клетка обеих зон лежит в проходимом 2x2
+##      ИЛИ вскрытие легально невозможно (тупик у рамки/защиты).
+##  T6  детерминизм: два мира на сиде 42 — бит-в-бит сетки и дампы слоёв
+##      живого пола (текстура/позиция/альфа/поворот); alpha ∈ [0.30,0.42];
+##      fail-safe: пустой набор ассетов -> слой не создаётся.
+##  T7  SCALE_CANON на рантайме: altar 51, portal 70, boulder 26, stones 32 px,
+##      масштаб спрайтов 1.0.
+##  T8  физ-проба: в центре КАЖДОЙ проходимой клетки обеих зон нет статических
+##      коллайдеров (сетка <-> коллайдеры после перестройки согласованы).
+##  T9  soak 2x5 сек (пещера+Пепелище, враги сняты): герой не застревает в
+##      стенах (>30 кадров в блокирующей клетке), не вылетает за карту.
+##  T10 миникарта: размер сетки-подложки = размер текущей зоны (динамический
+##      пересчёт, не пиксель — пиксельные сигнатуры сверяет qa_mm).
+
+const Main := "res://scenes/main.tscn"
+const WS := preload("res://scripts/world.gd")
+const SAVE_PATH := "user://save_morkheim.json"
+const PIN_SEED := 42
+
+const CAVE_WALK := ".,SBM"
+const CAVE_DIG := "#PRV"
+const ASHEN_WALK := ".,caP"
+const ASHEN_DIG := "#TK"
+const PIN_CAVE_CT := {".": 0, ",": 1, "#": 2, "L": 3, "S": 5, "P": 6, "R": 7,
+	"B": 8, "M": 9, "A": 10, "C": 11, "V": 15}
+const PIN_CAVE_BLK := [2, 3, 6, 7, 10, 11, 15]
+const PIN_ASHEN_CT := {".": 0, ",": 1, "c": 2, "a": 3, "T": 4, "K": 5, "#": 6, "P": 7}
+const PIN_ASHEN_BLK := [4, 5, 6]
+
+var pass_n := 0
+var fail_n := 0
+var world: Node2D
+var _ash_meta: Dictionary = {}
+
+func chk(cond: bool, name: String) -> void:
+	if cond:
+		pass_n += 1
+		print("qa_lp ok: ", name)
+	else:
+		fail_n += 1
+		print("qa_lp FAIL: ", name)
+
+func _frames(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+func _ready() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	GameState.class_id = "warrior"
+	GameState.seen_intro = true
+	GameState.seen_cave_intro = true
+	GameState.flags["ashen.intro_seen"] = "1"
+	await _frames(2)
+	world = await _spawn_world()
+	var cave_raw: Dictionary = ProcGen.cave_map(ProcGen.seed_zone(PIN_SEED, "cave", 0))
+	var ashen_raw: Dictionary = ProcGen.ashen_map(ProcGen.seed_zone(PIN_SEED, "ashen", 0))
+	_ash_meta = ashen_raw.get("meta", {})
+	var snap1: String = _snapshot(world)
+	_t1(cave_raw, ashen_raw)
+	_t2(cave_raw)
+	_t3()
+	_t4(ashen_raw)
+	_t5()
+	await _t6(snap1)
+	_t7()
+	await _t8()
+	await _t9()
+	_t10()
+	var total: int = pass_n + fail_n
+	print("QA_LP %d/%d" % [pass_n, total])
+	get_tree().quit(0 if fail_n == 0 else 1)
+
+func _spawn_world() -> Node2D:
+	GameState.run_seed = PIN_SEED
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	var w: Node2D = load(Main).instantiate()
+	add_child(w)
+	await _frames(3)
+	return w
+
+# ----------------------------------------------------------- helpers (независимые)
+
+func _ch(rows: Array, x: int, y: int) -> String:
+	if y < 0 or y >= rows.size():
+		return ""
+	var row := String(rows[y])
+	if x < 0 or x >= row.length():
+		return ""
+	return row[x]
+
+func _walk(ch: String, set: String) -> bool:
+	return set.find(ch) >= 0
+
+## Защищённая ниша сундука: BFS от «C» без «L» + настенная рамка (8-соседи).
+func _protect(rows: Array, walk: String) -> Dictionary:
+	var prot := {}
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] != "C":
+				continue
+			var seen := {y * 4096 + x: true}
+			var stack: Array = [Vector2i(x, y)]
+			while not stack.is_empty():
+				var t: Vector2i = stack.pop_back()
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+					var n := t + Vector2i(int(d[0]), int(d[1]))
+					var k := n.y * 4096 + n.x
+					if seen.has(k):
+						continue
+					var c := _ch(rows, n.x, n.y)
+					if c != "C" and not _walk(c, walk):
+						continue
+					seen[k] = true
+					stack.append(n)
+			for k in seen:
+				prot[k] = true
+				var cx := int(k) % 4096
+				var cy := int(k) >> 12
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]:
+					if _ch(rows, cx + int(d[0]), cy + int(d[1])) == "#":
+						prot[(cy + int(d[1])) * 4096 + cx + int(d[0])] = true
+	return prot
+
+## Интерьеры ниш сундука: по одному Dictionary (ключи клеток) на каждую «C» —
+## BFS без «L» (стены и дверь непроходимы).
+func _chest_interiors(rows: Array) -> Array:
+	var out: Array = []
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] != "C":
+				continue
+			var seen := {y * 4096 + x: true}
+			var stack: Array = [Vector2i(x, y)]
+			while not stack.is_empty():
+				var t: Vector2i = stack.pop_back()
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+					var n := t + Vector2i(int(d[0]), int(d[1]))
+					var k := n.y * 4096 + n.x
+					if seen.has(k):
+						continue
+					var c := _ch(rows, n.x, n.y)
+					if c == "#" or c == "L" or c == "":
+						continue
+					seen[k] = true
+					stack.append(n)
+			out.append(seen)
+	return out
+
+func _has2x2(rows: Array, x: int, y: int, walk: String) -> bool:
+	for a in [0, 1]:
+		for b in [0, 1]:
+			var ok := true
+			for dy in 2:
+				for dx in 2:
+					if not _walk(_ch(rows, x - a + dx, y - b + dy), walk):
+						ok = false
+			if ok:
+				return true
+	return false
+
+func _feas2x2(rows: Array, x: int, y: int, walk: String, dig: String, prot: Dictionary) -> bool:
+	var h := rows.size()
+	for a: int in [0, 1]:
+		for b: int in [0, 1]:
+			var bad := false
+			for dy: int in 2:
+				for dx: int in 2:
+					var cx := x - a + dx
+					var cy := y - b + dy
+					var w := String(rows[cy]).length() if cy >= 0 and cy < h else 0
+					if cx <= 0 or cy <= 0 or cx >= w - 1 or cy >= h - 1:
+						bad = true
+					var c := _ch(rows, cx, cy)
+					if not _walk(c, walk) and (dig.find(c) < 0 or prot.has(cy * 4096 + cx)):
+						bad = true
+			if not bad:
+				return true
+	return false
+
+## BFS от клетки; door_open=true считает «L» проходимой. Возвращает set ключей.
+func _bfs(rows: Array, start: Vector2i, walk: String, door_open: bool) -> Dictionary:
+	var seen := {}
+	if not (_walk(_ch(rows, start.x, start.y), walk) or (door_open and _ch(rows, start.x, start.y) == "L")):
+		return seen
+	seen = {start.y * 4096 + start.x: true}
+	var queue: Array = [start]
+	var head := 0
+	while head < queue.size():
+		var t: Vector2i = queue[head]
+		head += 1
+		for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+			var n := t + Vector2i(int(d[0]), int(d[1]))
+			var k := n.y * 4096 + n.x
+			if seen.has(k):
+				continue
+			var c := _ch(rows, n.x, n.y)
+			var ok := _walk(c, walk) or (door_open and c == "L")
+			if not ok:
+				continue
+			seen[k] = true
+			queue.append(n)
+	return seen
+
+func _cell_of_ach(rows: Array, ch: String) -> Array:
+	var out: Array = []
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] == ch:
+				out.append(Vector2i(x, y))
+	return out
+
+func _reach_adj(reach: Dictionary, rows: Array, t: Vector2i, walk: String) -> bool:
+	for d in [[1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]]:
+		var n := t + Vector2i(int(d[0]), int(d[1]))
+		if reach.has(n.y * 4096 + n.x):
+			return true
+	return false
+
+# ------------------------------------------------------------------ снимки
+
+func _paint_dump(w: Node2D, zone: Node2D, layer_name: String) -> String:
+	var layer = zone.get_node_or_null(NodePath(layer_name))
+	if layer == null:
+		return layer_name + ":ABSENT"
+	var s := layer_name + ":z=%d,ys=%s,n=%d;" % [layer.z_index, str(layer.y_sort_enabled), layer.get_child_count()]
+	for c in layer.get_children():
+		var spr := c as Sprite2D
+		if spr == null:
+			s += "NOTSPRITE;"
+			continue
+		s += "%s|%s|%.3f,%.3f|a=%.4f|r=%.2f|f=%d;" % [
+			String(spr.texture.resource_path) if spr.texture != null else "null",
+			"", snappedf(spr.position.x, 0.001), snappedf(spr.position.y, 0.001),
+			spr.modulate.a, snappedf(spr.rotation, 0.001), int(spr.flip_h)]
+	return s
+
+func _snapshot(w: Node2D) -> String:
+	var s := "CAVE>"
+	for r in w.dungeon_zone.map_rows:
+		s += String(r) + "/"
+	s += "|ASHEN>"
+	for r in w.ashen_grid.map_rows:
+		s += String(r) + "/"
+	s += "|CP>" + _paint_dump(w, w.cave_zone, "CaveFloorPaint")
+	s += "|AP>" + _paint_dump(w, w.ashen_zone, "AshenFloorPaint")
+	return s
+
+# ------------------------------------------------------------------ T1
+
+func _t1(cave_raw: Dictionary, ashen_raw: Dictionary) -> void:
+	var dz = world.dungeon_zone
+	var az = world.ashen_grid
+	chk(dz.CHAR_TO_TILE == PIN_CAVE_CT and dz.BLOCKING == PIN_CAVE_BLK,
+		"T1: CHAR_TO_TILE/BLOCKING пещеры бит-в-бит")
+	chk(az.CHAR_TO_TILE == PIN_ASHEN_CT and az.BLOCKING == PIN_ASHEN_BLK,
+		"T1: CHAR_TO_TILE/BLOCKING Пепелища бит-в-бит")
+	var raw: Array = cave_raw.get("grid", [])
+	var new: Array = dz.map_rows
+	chk(raw.size() == new.size() and String(raw[0]).length() == 30 and new.size() == 22,
+		"T1: пещера 30x22 сохранена")
+	var viol := 0
+	var changed := 0
+	for y in new.size():
+		for x in String(new[y]).length():
+			var a: String = String(raw[y])[x]
+			var b: String = String(new[y])[x]
+			if a != b:
+				changed += 1
+				if CAVE_DIG.find(a) < 0 or b != ".":
+					viol += 1
+	chk(viol == 0, "T1: монотонность пещеры (только dig -> .) diff=%d" % changed)
+	chk(changed > 0, "T1: пещера реально перестроена (%d клеток)" % changed)
+	var anchors_ok := true
+	for key: String in ["spawn", "stairs_out", "hermit", "boss", "boss_trigger", "chest", "door"]:
+		var a: Array = cave_raw.get(key, [])
+		if a.size() != 2:
+			continue
+		var c0: String = String(raw[int(a[1])])[int(a[0])]
+		var c1: String = String(new[int(a[1])])[int(a[0])]
+		if c0 != c1:
+			anchors_ok = false
+			print("   якорь ", key, " сдвинулся: ", c0, "->", c1)
+	chk(anchors_ok, "T1: якоря dict пещеры на своих клетках со своими символами")
+	var raw_a := _cell_of_ach(raw, "A").size()
+	var new_a := _cell_of_ach(new, "A").size()
+	chk(raw_a > 0 and raw_a == new_a, "T1: алтари сохранены %d->%d" % [raw_a, new_a])
+	# Пепелище
+	var araw: Array = ashen_raw.get("grid", [])
+	var anew: Array = az.map_rows
+	chk(anew.size() == 30 and String(anew[0]).length() == 40, "T1: Пепелище 40x30 сохранено")
+	var aviol := 0
+	var ach := 0
+	for y in anew.size():
+		for x in String(anew[y]).length():
+			var a2: String = String(araw[y])[x]
+			var b2: String = String(anew[y])[x]
+			if a2 != b2:
+				ach += 1
+				if ASHEN_DIG.find(a2) < 0 or b2 != ".":
+					aviol += 1
+	chk(aviol == 0, "T1: монотонность Пепелища (только dig -> .) diff=%d" % ach)
+	chk(ach > 0, "T1: Пепелище реально перестроено (%d клеток)" % ach)
+	# рамка
+	var border_ok := true
+	for zone_rows: Array in [new, anew]:
+		var hh := zone_rows.size()
+		var ww := String(zone_rows[0]).length()
+		for x in ww:
+			if String(zone_rows[0])[x] != "#" or String(zone_rows[hh - 1])[x] != "#":
+				border_ok = false
+		for y in hh:
+			var r := String(zone_rows[y])
+			if r[0] != "#" or r[r.length() - 1] != "#":
+				border_ok = false
+	chk(border_ok, "T1: внешний ранг обеих зон — сплошной «#»")
+	# сырой пол был проходим -> остался
+	var mono_walk := true
+	for y in new.size():
+		for x in String(new[y]).length():
+			var a3: String = String(raw[y])[x]
+			if _walk(a3, CAVE_WALK) and not _walk(String(new[y])[x], CAVE_WALK):
+				mono_walk = false
+	chk(mono_walk, "T1: проходимое пещеры не стало непроходимым")
+
+# ------------------------------------------------------------------ T2
+
+func _t2(cave_raw: Dictionary) -> void:
+	var rows: Array = world.dungeon_zone.map_rows
+	var prot := _protect(rows, CAVE_WALK)
+	var halls_ok := true
+	var top_ok := true
+	var altar_n := 0
+	for t: Vector2i in _cell_of_ach(rows, "A"):
+		altar_n += 1
+		for dy in range(t.y - 3, t.y + 3):
+			for dx in range(t.x - 2, t.x + 3):
+				if dx <= 0 or dy <= 0 or dx >= 29 or dy >= 21:
+					continue
+				if prot.has(dy * 4096 + dx):
+					continue
+				var c := _ch(rows, dx, dy)
+				if CAVE_DIG.find(c) >= 0:
+					halls_ok = false
+					print("   зал алтаря (", t, "): клетка (", dx, ",", dy, ")=", c)
+				if dy < t.y and CAVE_DIG.find(c) >= 0:
+					top_ok = false
+	# ширина алтаря/камней ≤ 5*16
+	var altar_tex: Texture2D = load(String(WS.ENV4_ART["altar"]))
+	var stones_tex: Texture2D = load(String(WS.ENV4_ART["stones"]))
+	chk(halls_ok, "T2: залы алтарей 5x6 без dig-символов (алтарей %d)" % altar_n)
+	chk(top_ok, "T2: верхние ряды залов (выше клетки алтаря) без стен")
+	chk(altar_tex.get_width() <= 5 * 16, "T2: ширина алтаря %d ≤ 80" % altar_tex.get_width())
+	chk(stones_tex.get_width() <= 5 * 16, "T2: ширина камней %d ≤ 80" % stones_tex.get_width())
+
+# ------------------------------------------------------------------ T3
+
+func _t3() -> void:
+	var dz = world.dungeon_zone
+	var rows: Array = dz.map_rows
+	var spawn := Vector2i(int(dz.loaded_map["spawn"][0]), int(dz.loaded_map["spawn"][1]))
+	GameState.door_opened = true
+	var open_reach := _bfs(rows, spawn, CAVE_WALK, true)
+	GameState.door_opened = false
+	var closed_reach := _bfs(rows, spawn, CAVE_WALK, false)
+	chk(open_reach.has(spawn.y * 4096 + spawn.x), "T3: spawn проходим")
+	var stairs: Array = dz.loaded_map.get("stairs_out", [])
+	if stairs.size() == 2:
+		chk(open_reach.has(int(stairs[1]) * 4096 + int(stairs[0])), "T3: лестница выхода достижима (door open)")
+	var alt_ok := true
+	for t: Vector2i in _cell_of_ach(rows, "A"):
+		if not _reach_adj(open_reach, rows, t, CAVE_WALK):
+			alt_ok = false
+			print("   алтарь (", t, ") недостижим")
+	chk(alt_ok, "T3: все алтари достижимы (door open)")
+	var ct: Vector2i = dz.chest_tile
+	chk(ct.x >= 0 and _reach_adj(open_reach, rows, ct, CAVE_WALK), "T3: сундук достижим с открытой дверью")
+	chk(not _reach_adj(closed_reach, rows, ct, CAVE_WALK), "T3: сундук НЕдостижим с закрытой дверью (гейт)")
+	var alt_in_niche_closed := true
+	var niches := _chest_interiors(rows)
+	for interior in niches:
+		var openings: Array = []
+		for k in interior.keys():
+			var cx := int(k) % 4096
+			var cy := int(k) >> 12
+			for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+				var nx := cx + int(d[0])
+				var ny := cy + int(d[1])
+				var nk := ny * 4096 + nx
+				if interior.has(nk):
+					continue
+				var c := _ch(rows, nx, ny)
+				if c != "#" and not (openings.size() > 0 and openings[0] == nk):
+					if not openings.has(nk):
+						openings.append(nk)
+		var door_ok := openings.size() == 1 and _ch(rows, int(openings[0]) % 4096, int(openings[0]) >> 12) == "L"
+		chk(door_ok, "T3: ниша сундука — единственный проём это дверь «L» (проёмов %d)" % openings.size())
+		for t: Vector2i in _cell_of_ach(rows, "A"):
+			if interior.has(t.y * 4096 + t.x) and _reach_adj(closed_reach, rows, t, CAVE_WALK):
+				alt_in_niche_closed = false
+	chk(alt_in_niche_closed, "T3: алтари внутри ниши закрыты дверью")
+	var boss: Array = dz.loaded_map.get("boss", [])
+	if boss.size() == 2:
+		chk(_reach_adj(open_reach, rows, Vector2i(int(boss[0]), int(boss[1])), CAVE_WALK),
+			"T3: клетка босса достижима (door open)")
+
+# ------------------------------------------------------------------ T4
+
+func _t4(ashen_raw: Dictionary) -> void:
+	var az = world.ashen_grid
+	var rows: Array = az.map_rows
+	var raw: Array = ashen_raw.get("grid", [])
+	var meta: Dictionary = ashen_raw.get("meta", {})
+	var pa: Array = meta.get("exit_portal", [])
+	chk(pa.size() == 2, "T4: якорь exit_portal есть")
+	if pa.size() != 2:
+		return
+	var pt := Vector2i(int(pa[0]), int(pa[1]))
+	chk(_ch(rows, pt.x, pt.y) == "P", "T4: якорь портала = клетка «P» (%s)" % str(pt))
+	var prot := _protect(rows, ASHEN_WALK)
+	var hall_ok := true
+	for dy in range(pt.y - 4, pt.y + 2):
+		for dx in range(pt.x - 2, pt.x + 3):
+			if dx <= 0 or dy <= 0 or dx >= 39 or dy >= 29:
+				continue
+			if prot.has(dy * 4096 + dx):
+				continue
+			if ASHEN_DIG.find(_ch(rows, dx, dy)) >= 0:
+				hall_ok = false
+				print("   зал портала: (", dx, ",", dy, ")=", _ch(rows, dx, dy))
+	chk(hall_ok, "T4: зал портала 5x6 без dig-символов")
+	var portal_tex: Texture2D = load(String(WS.ENV4_ART["portal"]))
+	chk(portal_tex.get_width() <= 5 * 16, "T4: ширина портала %d ≤ 80" % portal_tex.get_width())
+	# POI Пепелища: spawn/портал/сундук/ведьма (meta генераторного dict — reshape
+	# его не двигает; ashen_zone dict не хранит)
+	var m: Dictionary = meta
+	var sp: Array = m.get("spawn", [])
+	if sp.size() == 2:
+		var s0 := Vector2i(int(sp[0]), int(sp[1]))
+		var reach := _bfs(rows, s0, ASHEN_WALK, true)
+		chk(reach.has(pt.y * 4096 + pt.x), "T4: портал достижим из spawn")
+		var b: Array = m.get("boss", [])
+		if b.size() == 2:
+			chk(_reach_adj(reach, rows, Vector2i(int(b[0]), int(b[1])), ASHEN_WALK), "T4: арена ведьмы достижима")
+		var ch_list: Array = m.get("chests", [])
+		var chests_ok := true
+		for e: Array in ch_list:
+			if not _reach_adj(reach, rows, Vector2i(int(e[0]), int(e[1])), ASHEN_WALK):
+				chests_ok = false
+		chk(chests_ok, "T4: сундук(и) Пепелища достижимы")
+
+# ------------------------------------------------------------------ T5
+
+func _t5() -> void:
+	for spec: Array in [[world.dungeon_zone.map_rows, CAVE_WALK, CAVE_DIG, "пещера"],
+			[world.ashen_grid.map_rows, ASHEN_WALK, ASHEN_DIG, "Пепелище"]]:
+		var rows: Array = spec[0]
+		var prot := _protect(rows, String(spec[1]))
+		var bad := 0
+		var legal_dead := 0
+		for y in rows.size():
+			for x in String(rows[y]).length():
+				if not _walk(_ch(rows, x, y), String(spec[1])):
+					continue
+				if _has2x2(rows, x, y, String(spec[1])):
+					continue
+				if _feas2x2(rows, x, y, String(spec[1]), String(spec[2]), prot):
+					bad += 1
+					print("   ", spec[3], ": клетка (", x, ",", y, ") в тупике, хотя вскрывать можно")
+				else:
+					legal_dead += 1
+		chk(bad == 0, "T5: %s — проходы ≥2 (легальных тупиков %d)" % [spec[3], legal_dead])
+
+# ------------------------------------------------------------------ T6
+
+func _t6(snap1: String) -> void:
+	var layer_c = world.cave_zone.get_node_or_null("CaveFloorPaint")
+	var layer_a = world.ashen_zone.get_node_or_null("AshenFloorPaint")
+	chk(layer_c != null and layer_c.get_child_count() > 0, "T6: CaveFloorPaint построен (%d)" % (layer_c.get_child_count() if layer_c != null else -1))
+	chk(layer_a != null and layer_a.get_child_count() > 0, "T6: AshenFloorPaint построен (%d)" % (layer_a.get_child_count() if layer_a != null else -1))
+	var alpha_ok := true
+	var lin_ok := true
+	for layer: Node2D in [layer_c, layer_a]:
+		if layer == null:
+			continue
+		for c in layer.get_children():
+			var spr := c as Sprite2D
+			if spr == null:
+				continue
+			if spr.modulate.a < 0.299 or spr.modulate.a > 0.4201:
+				alpha_ok = false
+			if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
+				lin_ok = false
+	chk(alpha_ok, "T6: alpha патчей ∈ [0.30, 0.42]")
+	chk(lin_ok, "T6: все патчи LINEAR")
+	# fail-safe: несуществующие ассеты -> слой не создаётся
+	var probe := Node2D.new()
+	add_child(probe)
+	var fake_rows: Array = ["....", "...."]
+	world._build_zone_floor_paint(probe, fake_rows, ["res://assets/art/__нет_такого__.png"], "X")
+	chk(probe.get_child_count() == 0, "T6: fail-safe — без ассетов слой не создаётся")
+	probe.queue_free()
+	# второй мир — тот же сид: снимок бит-в-бит
+	world.queue_free()
+	await _frames(5)
+	world = null
+	world = await _spawn_world()
+	var snap2: String = _snapshot(world)
+	chk(snap2 == snap1, "T6: детерминизм — два мира идентичны (grid+floor paint dump)")
+
+# ------------------------------------------------------------------ T7
+
+func _t7() -> void:
+	var altar: Texture2D = load(String(WS.ENV4_ART["altar"]))
+	var portal: Texture2D = load(String(WS.ENV4_ART["portal"]))
+	var boulder: Texture2D = load(String(WS.ENV4_ART["boulder"]))
+	var stones: Texture2D = load(String(WS.ENV4_ART["stones"]))
+	chk(altar.get_height() == 51, "T7: altar drawn_h=51")
+	chk(portal.get_height() == 70, "T7: portal drawn_h=70")
+	chk(boulder.get_height() == 26, "T7: boulder drawn_h=26")
+	chk(stones.get_height() == 32, "T7: stones drawn_h=32")
+	var scale_ok := true
+	for layer_name: String in ["Env4CaveProps", "Env4AshenProps"]:
+		for zone: Node2D in [world.cave_zone, world.ashen_zone]:
+			var l = zone.get_node_or_null(NodePath(layer_name))
+			if l == null:
+				continue
+			for c in l.get_children():
+				var spr := c as Sprite2D
+				if spr != null and spr.scale != Vector2.ONE:
+					scale_ok = false
+	chk(scale_ok, "T7: пропы слоя env4 без масштаба (масштаб 1.0)")
+
+# ------------------------------------------------------------------ T8
+
+func _probe_zone(zone: Node2D, rows: Array, walk: String) -> int:
+	var bad := 0
+	var space := get_world_2d().direct_space_state
+	for y in rows.size():
+		for x in String(rows[y]).length():
+			if not _walk(_ch(rows, x, y), walk):
+				continue
+			var q := PhysicsPointQueryParameters2D.new()
+			q.position = Vector2(x * 16 + 8, y * 16 + 8) + zone.position
+			q.collision_mask = 2
+			q.collide_with_bodies = true
+			var hits := space.intersect_point(q, 4)
+			var wall := false
+			for h in hits:
+				var col: Object = h.get("collider")
+				if col is StaticBody2D and zone.is_ancestor_of(col as Node):
+					wall = true
+			if wall:
+				bad += 1
+				if bad <= 5:
+					print("   физ-проба: клетка (", x, ",", y, ") проходима по grid, но в стене-коллайдере")
+	return bad
+
+func _t8() -> void:
+	var bad_c := _probe_zone(world.cave_zone, world.dungeon_zone.map_rows, CAVE_WALK)
+	chk(bad_c == 0, "T8: пещера — сетка и коллайдеры согласованы (bad=%d)" % bad_c)
+	var bad_a := _probe_zone(world.ashen_zone, world.ashen_grid.map_rows, ASHEN_WALK)
+	chk(bad_a == 0, "T8: Пепелище — сетка и коллайдеры согласованы (bad=%d)" % bad_a)
+
+# ------------------------------------------------------------------ T9
+
+func _clear_enemies(zone: Node2D) -> void:
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(e) and zone.is_ancestor_of(e as Node):
+			(e as Node).queue_free()
+
+func _soak(zone: Node2D, rows: Array, walk: String, spawn: Vector2i, tag: String) -> void:
+	var stuck_bad := 0
+	var max_stuck := 0
+	var out_of_map := 0
+	var dirs := ["move_left", "move_right", "move_up", "move_down"]
+	var held := ""
+	var stuck_run := 0
+	var f := 0
+	while f < 300:
+		if f % 20 == 0:
+			if held != "":
+				Input.action_release(held)
+			held = dirs[int(f / 20.0) % 4]
+			Input.action_press(held)
+		await get_tree().physics_frame
+		f += 1
+		var p: Vector2 = world.player.global_position - zone.position
+		var t := Vector2i(int(floor(p.x / 16.0)), int(floor(p.y / 16.0)))
+		var in_map: bool = t.x >= 0 and t.y >= 0 and t.y < rows.size() and t.x < String(rows[t.y]).length()
+		if not in_map:
+			out_of_map += 1
+			continue
+		if _walk(_ch(rows, t.x, t.y), walk) or _ch(rows, t.x, t.y) == "L":
+			stuck_run = 0
+		else:
+			stuck_run += 1
+			if stuck_run > 30:
+				stuck_bad += 1
+		max_stuck = maxi(max_stuck, stuck_run)
+		if maxi(absi(t.x - spawn.x), absi(t.y - spawn.y)) > 12:
+			world.player.global_position = Vector2(spawn.x * 16 + 8, spawn.y * 16 + 8) + zone.position
+			stuck_run = 0
+	if held != "":
+		Input.action_release(held)
+	chk(stuck_bad == 0, "T9: %s soak 5 с — застреваний в стенах нет (max_stuck=%d)" % [tag, max_stuck])
+	chk(out_of_map == 0, "T9: %s soak — герой не покидал карту" % tag)
+
+func _t9() -> void:
+	world.apply_area("cave", true)
+	await _frames(5)
+	_clear_enemies(world.cave_zone)
+	await _frames(10)
+	var dz = world.dungeon_zone
+	var sp: Array = dz.loaded_map.get("spawn", [1, 1])
+	var spc := Vector2i(int(sp[0]), int(sp[1]))
+	world.player.global_position = Vector2(spc.x * 16 + 8, spc.y * 16 + 8) + world.cave_zone.position
+	await _soak(world.cave_zone, dz.map_rows, CAVE_WALK, spc, "пещера")
+	world.apply_area("ashen", true)
+	await _frames(5)
+	_clear_enemies(world.ashen_zone)
+	await _frames(10)
+	var az = world.ashen_grid
+	var m: Dictionary = _ash_meta
+	var asp: Array = m.get("spawn", [1, 1])
+	var aspc := Vector2i(int(asp[0]), int(asp[1]))
+	world.player.global_position = Vector2(aspc.x * 16 + 8, aspc.y * 16 + 8) + world.ashen_zone.position
+	await _soak(world.ashen_zone, az.map_rows, ASHEN_WALK, aspc, "Пепелище")
+
+# ------------------------------------------------------------------ T10
+
+func _t10() -> void:
+	var mm = Minimap.I
+	chk(mm != null, "T10: миникарта живёт")
+	if mm == null:
+		return
+	var gw: int = int(mm.get("_grid_w"))
+	var gh: int = int(mm.get("_grid_h"))
+	var cw: int = world.dungeon_zone.map_w
+	var chh: int = world.dungeon_zone.map_h
+	# apply_area("ashen") ещё активен — подложка пересчитывается динамически;
+	# здесь сверяем, что набран размер актуальной зоны: пещеры или Пепелища.
+	var aw: int = world.ashen_grid.map_w
+	var ah: int = world.ashen_grid.map_h
+	chk((gw == cw and gh == chh) or (gw == aw and gh == ah),
+		"T10: подложка %dx%d = актуальная зона (cave %dx%d, ashen %dx%d)" % [gw, gh, cw, chh, aw, ah])
