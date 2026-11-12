@@ -14,8 +14,10 @@ const SPEED_WANDER := 14.0
 const FLEE_RADIUS := 128.0    # отбежал на это расстояние — стая растворилась в тумане
 const MAX_HP := 2
 ## Волна 5: визуальный масштаб ×1.5 (коллайдер 8x6, дистанции и скорости —
-## прежние). Контент-стоп 16px-кадра на +6: якорь +6*(1−1.5) = −3.0.
-const VISUAL_SCALE := 1.5
+## прежние). Контент-стоп 16px-кадра на +6: якорь +6*(1−s).
+## t22 (вердикт 12.11 15:49, SCALE_CANON): мглокрыс 0.75H→0.55H, экранная
+## высота 24→18 px. Пиксельный лист 16px: s=18/16=1.125, якорь +6*(1−1.125)=−0.75.
+const VISUAL_SCALE := 1.125
 
 ## Реестры стай: swarm_id -> {total, alive, panicked, scatter}.
 ## static — переживает конкретный экземпляр; чистится сам, когда стая гибнет/исчезает.
@@ -87,16 +89,16 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		anim.sprite_frames = fr
 		add_child(anim)
 		if gen:
-			# tight-кроп: s=24/tex_h; линия ног 7.5 (замер старых кадров, ffb=1)
-			# → pos.y = 7.5 − 12
-			var gs := 24.0 / float(tex.get_height())
+			# tight-кроп: s=18/tex_h (t22: канон 0.55H=18 px; был 24); линия ног
+			# 7.5 (замер старых кадров, ffb=1) → pos.y = 7.5 − 18/2 = −1.5
+			var gs := 18.0 / float(tex.get_height())
 			anim.scale = Vector2.ONE * gs
-			anim.position = Vector2(0, 7.5 - 12.0)
+			anim.position = Vector2(0, 7.5 - 9.0)
 			anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 			anim.flip_h = facing == "left"
 		else:
 			anim.scale = Vector2.ONE * VISUAL_SCALE
-			anim.position = Vector2(0, -3.0)
+			anim.position = Vector2(0, -0.75)  # t22: 6*(1−1.125); было −3.0 при ×1.5
 		anim.play("idle_down")
 	else:
 		push_warning("Нет ассета: assets/mobs_swarmling.png — у мглокрыса цветная заглушка")

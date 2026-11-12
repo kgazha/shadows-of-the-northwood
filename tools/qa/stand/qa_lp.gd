@@ -16,8 +16,10 @@ extends Node2D
 ##  T6  детерминизм: два мира на сиде 42 — бит-в-бит сетки и дампы слоёв
 ##      живого пола (текстура/позиция/альфа/поворот); alpha ∈ [0.30,0.42];
 ##      fail-safe: пустой набор ассетов -> слой не создаётся.
-##  T7  SCALE_CANON на рантайме: ЭКРАННЫЕ altar 51, portal 70, boulder 26, stones
-##      32 px (Т15/Т15b: алтарь/портал — текстуры >=3× экранных (полный кроп
+##  T7  SCALE_CANON на рантайме: ЭКРАННЫЕ altar 51, portal 70; t22 (вердикт
+##      12.11): boulder 21, stones 24 px — текстуры 26/32 не перерезаны,
+##      масштаб скомпенсирован при установке, фильтр LINEAR (mips у boulder=0).
+##      (Т15/Т15b: алтарь/портал — текстуры >=3× экранных (полный кроп
 ##      1024-исходника) со scale-компенсацией от фактической высоты,
 ##      LINEAR_WITH_MIPMAPS и mips/generate=true; прочие пропы scale 1.0).
 ##  T8  физ-проба: в центре КАЖДОЙ проходимой клетки обеих зон нет статических
@@ -386,9 +388,13 @@ func _t2(cave_raw: Dictionary) -> void:
 	chk(aw <= 5 * 16, "T2: экранная ширина алтаря %d ≤ 80" % aw)
 	chk(sw <= 5 * 16, "T2: экранная ширина камней %d ≤ 80" % sw)
 
-## Экранная ширина пропа: текстуры из ENV4_CANON_H масштабируются в канон.
+## Экранная ширина пропа: текстуры из ENV4_CANON_H / ENV4_PROP_CANON_H (t22)
+## масштабируются в канон.
 func _eff_w(tex: Texture2D) -> float:
-	var canon: float = float(WS.ENV4_CANON_H.get(String(tex.resource_path), 0.0))
+	var p := String(tex.resource_path)
+	var canon: float = float(WS.ENV4_CANON_H.get(p, 0.0))
+	if canon <= 0.0:
+		canon = float(WS.ENV4_PROP_CANON_H.get(p, 0.0))
 	if canon > 0.0:
 		return float(tex.get_width()) * canon / float(tex.get_height())
 	return float(tex.get_width())
@@ -563,13 +569,15 @@ func _t7() -> void:
 	var stones: Texture2D = load(String(WS.ENV4_ART["stones"]))
 	chk(altar.get_height() >= 3 * 51, "T7: altar texture_h=%d ≥ 3×экранной (51)" % altar.get_height())
 	chk(portal.get_height() >= 3 * 70, "T7: portal texture_h=%d ≥ 3×экранной (70)" % portal.get_height())
-	chk(boulder.get_height() == 26, "T7: boulder drawn_h=26")
-	chk(stones.get_height() == 32, "T7: stones drawn_h=32")
+	chk(boulder.get_height() == 26, "T7: boulder tex_h=26 (текстура не перерезана; экран 21 — ниже)")
+	chk(stones.get_height() == 32, "T7: stones tex_h=32 (текстура не перерезана; экран 24 — ниже)")
 	var eff_ok := true    # экранная высота 51/70 на живых спрайтах
 	var filt_ok := true   # LINEAR_WITH_MIPMAPS на этих двух
 	var plain_ok := true  # остальные: scale 1.0 и прежний LINEAR
 	var n_altar := 0
 	var n_portal := 0
+	var n_boulder := 0
+	var boulder_ok := true  # t22: валуны — экран 21 px, LINEAR
 	for layer_name: String in ["Env4CaveProps", "Env4AshenProps"]:
 		for zone: Node2D in [world.cave_zone, world.ashen_zone]:
 			var l = zone.get_node_or_null(NodePath(layer_name))
@@ -592,13 +600,38 @@ func _t7() -> void:
 						eff_ok = false
 					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS:
 						filt_ok = false
+				elif p.ends_with("env4_boulder.png"):
+					# t22: валун — экран 21 px (scale-компенсация), фильтр LINEAR
+					n_boulder += 1
+					if absf(float(spr.texture.get_height()) * spr.scale.y - 21.0) > 0.05:
+						boulder_ok = false
+					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
+						boulder_ok = false
 				else:
 					if spr.scale != Vector2.ONE or spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
 						plain_ok = false
 	chk(n_altar >= 5 and eff_ok, "T7: экранные алтари (5 шт.) — высота 51 px, scale скомпенсирован")
 	chk(n_portal >= 1, "T7: портал в сцене (%d)" % n_portal)
 	chk(filt_ok, "T7: спрайты алтаря/портала — TEXTURE_FILTER_LINEAR_WITH_MIPMAPS")
-	chk(plain_ok, "T7: прочие пропы env4 не тронуты (scale 1.0, LINEAR)")
+	chk(n_boulder >= 5 and boulder_ok, "T7: валуны — ЭКРАННАЯ высота 21 px (t22), LINEAR (%d шт.)" % n_boulder)
+	chk(plain_ok, "T7: прочие пропы env4 (сундуки) не тронуты (scale 1.0, LINEAR)")
+	# t22: кластеры камней деревни — ЭКРАННАЯ высота 24 px (scale-компенсация,
+	# ножки на нижней границе клеток), фильтр LINEAR (не MIPMAPS)
+	var n_stones := 0
+	var stones_ok := true
+	if world.village_props != null:
+		for c in world.village_props.get_children():
+			var spr := c as Sprite2D
+			if spr == null or spr.texture == null:
+				continue
+			if not String(spr.texture.resource_path).ends_with("env4_stones.png"):
+				continue
+			n_stones += 1
+			if absf(float(spr.texture.get_height()) * spr.scale.y - 24.0) > 0.05:
+				stones_ok = false
+			if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
+				stones_ok = false
+	chk(n_stones >= 1 and stones_ok, "T7: кластеры камней — ЭКРАННАЯ высота 24 px (t22), LINEAR (%d шт.)" % n_stones)
 	var ai: Array = _ctex_mip_info(String(WS.ENV4_ART["altar"]))
 	var pi: Array = _ctex_mip_info(String(WS.ENV4_ART["portal"]))
 	var bi: Array = _ctex_mip_info(String(WS.ENV4_ART["boulder"]))
@@ -920,7 +953,7 @@ func _t11() -> void:
 		chk(false, "T11: герой — flip_h по facing (нет ген-арта)")
 	# --- 3. живой бестиарий: setup-спавн вдали, проверки по месту, free ---
 	_t11_mob("слизень", "res://scripts/slime.gd", "mob_slime.png", 22.0, 7.0625, {})
-	_t11_mob("мглокрыс", "res://scripts/mob_swarmling.gd", "mob_swarmling.png", 24.0, 7.5, {})
+	_t11_mob("мглокрыс", "res://scripts/mob_swarmling.gd", "mob_swarmling.png", 18.0, 7.5, {})
 	_t11_mob("лучник", "res://scripts/mob_archer.gd", "mob_archer.png", 24.0, 8.5, {})
 	# brute.gd: var boss := true по умолчанию — ярусных мобов world.gd переводит
 	# в boss=false до setup; здесь воспроизводим канонический порядок

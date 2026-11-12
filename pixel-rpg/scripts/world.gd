@@ -77,6 +77,17 @@ const ENV4_CANON_H := {
 	"res://assets/art/env4_altar.png": 51.0,
 	"res://assets/art/env4_portal.png": 70.0,
 }
+## t22 (вердикт 12.11 15:49, SCALE_CANON): экранная высота камней/валунов —
+## кластер 1.0H→0.75H (32→24 px), одиночный валун 0.8H→0.65H (26→21 px).
+## Текстуры НЕ перерезаны (храним facts и mips-пинки Т7): scale = канон /
+## фактическая высота текстуры при установке; НОЖКИ не съезжают — формула
+## низа (y1+1)*TILE+2 − tex_h*s*0.5 уже компенсирована в _add_prop/_env4_place.
+## Фильтр остаётся LINEAR (не MIPMAPS — это НЕ 3×-ассеты, Т7 «boulder-контроль
+## мипов=0» должен остаться истинным).
+const ENV4_PROP_CANON_H := {
+	"res://assets/art/env4_stones.png": 24.0,
+	"res://assets/art/env4_boulder.png": 21.0,
+}
 ## Камни «r»: кластер 2..6 клеток — «валуны мха»; одинокий в стороне от воды —
 ## одинокий валун («r» у воды — колодец village_props, не трогаем). Кластер
 ## крупнее 6 — осыпь, остаётся тайловой (как «стена» деревьев у крон).
@@ -511,6 +522,10 @@ func _village_art(p: String) -> Texture2D:
 ## k — визуальный масштаб под bbox кластера (паттерн GroveCanopy): низ
 ## по-прежнему стоит на нижней границе, масштабом меняется только картинка.
 func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i, k := 1.0) -> Sprite2D:
+	var path := String(tex.resource_path)
+	if ENV4_PROP_CANON_H.has(path):
+		# t22: экранный канон важнее позирующего k (низ фиксирован формулой ниже)
+		k = float(ENV4_PROP_CANON_H[path]) / float(maxi(1, tex.get_height()))
 	var spr := Sprite2D.new()
 	spr.texture = tex
 	spr.centered = true
@@ -642,6 +657,9 @@ func _env4_place(parent: Node2D, tex: Texture2D, x0: int, x1: int, y0: int, y1: 
 		s = float(ENV4_CANON_H[path]) / float(maxi(1, tex.get_height()))
 		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	else:
+		if ENV4_PROP_CANON_H.has(path):
+			# t22: валуны пещеры («B») — экранная высота 21 px, фильтр преждний
+			s = float(ENV4_PROP_CANON_H[path]) / float(maxi(1, tex.get_height()))
 		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	spr.scale = Vector2(s, s)
 	spr.flip_h = (_env4_hash(seed_c.x, seed_c.y) >> 16) & 1 == 1
