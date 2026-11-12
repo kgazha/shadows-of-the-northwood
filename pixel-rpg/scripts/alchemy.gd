@@ -68,6 +68,11 @@ static func brew(rid: String) -> bool:
 
 ## Выпить крепкое зелье (кнопка HUD; Q-зелье — отдельная семантика, не трогаем).
 static func drink_brewed() -> bool:
+	# t29 B-03 (реестр t28): модалка/диалог не гейтили заряд — зелье выпивалось
+	# «сквозь разговор». Тот же гейт, что у Q-зелья (world.gd::drink_potion):
+	# под input_locked (диалог, модалка, лавка, настройки, журнал-лок) — отказ.
+	if GameState.input_locked:
+		return false
 	if GameState.brewed_potions <= 0:
 		GameState.toast.emit("Крепких зелий нет. Вари у костра.")
 		return false

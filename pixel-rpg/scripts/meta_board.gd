@@ -54,6 +54,13 @@ func _ready() -> void:
 static func open() -> void:
 	if I == null or I.root == null:
 		return
+	# t29 B-09 (реестр t28): гейта не было вовсе — MetaBoard.open() из любого кода
+	# поднимал доску (layer=7) посреди живого забега. Контракт: вход ТОЛЬКО с
+	# экрана итогов, поэтому пока RunSummary закрыт — отказ (как Shop.open() под
+	# чужим окном). Штатная кнопка «Доска пепла» живёт на RunSummary — не затронута.
+	if not RunSummary.is_open():
+		GameAudio.sfx("ui_deny")
+		return
 	I._set_open(true)
 
 static func close_panel() -> void:

@@ -35,6 +35,7 @@ var ui_frame_tex: Texture2D     # 9-slice рамка (assets/ui/panel_frame.png)
 var board: MetaBoard            # «Доска пепла» (дитя панели, layer=7)
 var _holds_lock := false        # input_locked сейчас принадлежит нам, а не кому-то ещё
 var _finalized := false         # start_new_run ровно один раз (кнопка и Esc)
+var _want_open := false         # t29 B-06: заявка на открытие, когда мир освободится
 
 func _enter_tree() -> void:
 	if I == null:
@@ -66,8 +67,15 @@ func _ready() -> void:
 static func open() -> void:
 	if I == null or I.root == null:
 		return
-	if I._busy():  # чужой диалог/модалка/lock — не открываемся (как Shop)
-		GameAudio.sfx("ui_deny")
+	if I._busy():
+		# t29 B-06 (реестр t28): раньше это было «ui_deny и всё» — единственный вызов
+		# из конца диалога смерти, а значит при любом чужом окне/локе в этом кадре
+		# (гонка перелоков лавки, журнал, квестовый диалог поверх) экран итогов
+		# терялся НАВСЕГДА: забег зависал без game over. Теперь открытие откладывается:
+		# заявка живёт, пока мир не освободится (watchdog в _process).
+		if not I.root.visible:
+			I._want_open = true
+			GameAudio.sfx("ui_deny")
 		return
 	I._set_open(true)
 
@@ -177,6 +185,8 @@ func _set_open(v: bool) -> void:
 	if root.visible == v:
 		return
 	root.visible = v
+	if v:
+		_want_open = false  # t29 B-06: заявка выполнена
 	# открытая панель ловит мышь (мир под ней мёртв и не нужен); скрытая — IGNORE
 	root.mouse_filter = Control.MOUSE_FILTER_STOP if v else Control.MOUSE_FILTER_IGNORE
 	GameAudio.sfx("ui_confirm" if v else "ui_click")
@@ -213,9 +223,16 @@ func _refresh() -> void:
 	# Благословение волхвы: vd ещё «до этой смерти» (инкрементит start_new_run) —
 	# показываем, с каким множителем стартует НОВЫЙ забег.
 	var next_stacks := clampi(deaths_to_stacks_preview(), 0, GameState.BLESS_CAP_DEATHS)
-	bless_lbl.text = "Волхва: +%d%% урона в новом забеге (смертей круга: %d)" % [
+	# t29 B-08 (реестр t28): процент РЕЖЕТСЯ капом, а подпись показывала сырое число
+	# смертей — при 16 игрок видел «+20% … (смертей круга: 16)» и ждал +32%. Теперь
+	# кап назван явно; ниже капа формулировка не меняется вовсе (стаб qa_mb «+6%»).
+	var raw_deaths := GameState._num(f.get("meta.vd", 0), 0) + 1
+	var note := "смертей круга: %d" % raw_deaths
+	if raw_deaths > GameState.BLESS_CAP_DEATHS:
+		note = "кап %d смертей, а их %d" % [GameState.BLESS_CAP_DEATHS, raw_deaths]
+	bless_lbl.text = "Волхва: +%d%% урона в новом забеге (%s)" % [
 		int(round(GameState.BLESS_PER_DEATH * 100.0 * float(next_stacks))),
-		GameState._num(f.get("meta.vd", 0), 0) + 1,
+		note,
 	]
 
 ## Смертей круга, которые учтёт новый забег (meta.vd + эта смерть, с капом
@@ -300,6 +317,10 @@ func _release_lock() -> void:
 ## Страховка (паттерн Shop): если внешний код снял lock (безусловный разлок в
 ## конце диалога) — возвращаем, пока панель открыта и чужие окна чисты.
 func _process(_delta: float) -> void:
+	# t29 B-06: отложенное открытие (заявка из open() при занятом мире) — в первом
+	# же свободном кадре. Итоги обязаны появиться всегда: без них забег зависает.
+	if root != null and _want_open and not root.visible and not _busy():
+		_set_open(true)
 	if root != null and root.visible and not GameState.input_locked and not _ui_windows_open():
 		GameState.input_locked = true
 		_holds_lock = true

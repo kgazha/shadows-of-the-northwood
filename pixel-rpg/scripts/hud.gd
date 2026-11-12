@@ -49,8 +49,15 @@ var xp_bg: ColorRect
 var xp_fill: ColorRect
 var info: Label
 var quests: Label
+# t29 B-11 (реестр t28): тост был один на все события — новый затирал непрочитанный.
+# Теперь стопка из TOAST_SLOTS строк: toast_lbl — самый свежий (верх), toast_more —
+# уходящие вниз со СВОИМИ таймерами, так что очередь не теряется.
+const TOAST_SLOTS := 3
+const TOAST_ROW_H := 14.0   # шаг стопки: строка 12 px + 2 px зазора
 var toast_lbl: Label
 var toast_t := 0.0
+var toast_more: Array[Label] = []   # слайт 1..TOAST_SLOTS-1 (ниже свежего)
+var toast_more_t: Array[float] = [] # таймер каждой строки стопки
 var panel: PanelContainer
 var portrait: TextureRect
 var dname: Label
@@ -59,6 +66,9 @@ var lines: Array = []
 var li := 0
 var typing := false
 var chars_shown := 0.0
+# t29 B-04: номер текущей страницы длинной реплики (страница = строки, влезшие в
+# окно; листается прокруткой — page-API в 4.7 нет)
+var dlg_page := 0
 var on_end: Callable = Callable()
 # on_end прерванных (перетёртых поверх) диалогов: побочные эффекты уже
 # начавшихся реплик не должны теряться — дождутся закрытия текущего
@@ -181,6 +191,21 @@ func setup(p_world: Node2D) -> void:
 	toast_lbl.add_theme_constant_override("outline_size", 4)
 	toast_lbl.theme = th
 	add_child(toast_lbl)
+	# t29 B-11: нижние слоты стопки тостов — тот же стиль, чуть глуше по яркости,
+	# чтобы иерархия «свежий → старый» читалась глазам.
+	for i in TOAST_SLOTS - 1:
+		var ts := Label.new()
+		ts.position = Vector2(0, 30 + TOAST_ROW_H * float(i + 1))
+		ts.size = Vector2(640, 12)
+		ts.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ts.add_theme_color_override("font_color", Color(1, 1, 0.75))
+		ts.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		ts.add_theme_constant_override("outline_size", 4)
+		ts.modulate = Color(1, 1, 1, 0.78 - 0.18 * float(i))
+		ts.theme = th
+		add_child(ts)
+		toast_more.append(ts)
+		toast_more_t.append(0.0)
 
 	panel = PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
@@ -194,6 +219,20 @@ func setup(p_world: Node2D) -> void:
 	dtext.bbcode_enabled = false
 	dtext.custom_minimum_size = Vector2(0, 36)  # t27 P1-2: контент 48 = dname + dtext (было 40 при контенте 50)
 	dtext.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# t29 B-04 (реестр t28): реплика длиннее окна обрезалась безвозвратно (1395
+	# симв. -> content_h 99 против 36 px, хвост нечитаем). Окно при этом НЕ должно
+	# расти: короткая реплика = одна страница = те же 64/69 px, что были.
+	# ВАЖНО: в Godot 4.7 у RichTextLabel НЕТ page-API — reflection'ом проверено, что
+	# pagination/page_height/page_count/page у класса отсутствуют (констант PAGE_*
+	# тоже нет, обращение к ним роняло весь hud.gd на парсинге). Поэтому страницы
+	# делаем тем, что есть: перенос по словам + прокрутка окна по СТРОКАМ
+	# (scroll_to_line); размер страницы = сколько строк реально влезает в контрол
+	# (get_visible_line_count). advance() листает страницы, панель не растянута.
+	dtext.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dtext.scroll_active = true
+	# пока идёт печать — следует за курсором печати; на первом же «далее»
+	# (переворот страницы) следование выключается, дальше окна управляет игрок
+	dtext.scroll_following = true
 	portrait = TextureRect.new()
 	portrait.custom_minimum_size = Vector2(40, 40)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -303,6 +342,12 @@ func _process(delta: float) -> void:
 		toast_t -= delta
 		if toast_t <= 0.0:
 			toast_lbl.text = ""
+	# t29 B-11: у каждой строки стопки свой таймер — старый не гаснет вместе со свежим.
+	for i in toast_more.size():
+		if toast_more_t[i] > 0.0:
+			toast_more_t[i] = maxf(0.0, toast_more_t[i] - delta)
+			if toast_more_t[i] <= 0.0:
+				toast_more[i].text = ""
 	if typing:
 		chars_shown += delta * 45.0
 		if chars_shown >= float(dtext.get_total_character_count()):
@@ -410,15 +455,21 @@ func refresh() -> void:
 			else:
 				q.append("• Открой сундук за запертой дверью (нужен ключ)")
 	quests.text = ("Задания:\n" + "\n".join(q)) if not q.is_empty() else ""
+	# t29 B-03 (реестр t28): кнопки зелий висят НИЖНЕГО края экрана и при открытом
+	# окне диалога/модалки лягут ПОВЕРХ текста (пересечение по прямоугольникам) и
+	# остаются кликабельными — «зелье пьётся сквозь разговор». Хотбар целиком
+	# (панель скиллов, Q-кнопка, заряд, счётчик материалов) гасится одним гейтом
+	# _hotbar_allowed(): скрытая кнопка не участвует в GUI-хиттесте, кликнуть
+	# сквозь окно физически нельзя. Тот же гейт, что у skill_panel.
 	if potion_btn != null:
-		potion_btn.visible = GameState.class_id != ""
+		potion_btn.visible = GameState.class_id != "" and _hotbar_allowed()
 		potion_btn.text = "x%d" % GameState.herbs
 	if mat_lbl != null:
-		mat_lbl.visible = GameState.class_id != ""
+		mat_lbl.visible = GameState.class_id != "" and _hotbar_allowed()
 		mat_lbl.text = "Сухоцвет %d/%d · Жим %d/%d" % [GameState.mat_count("suhotsvet"), GameState.MAT_CAP, GameState.mat_count("zhim"), GameState.MAT_CAP]
 		mat_lbl.tooltip_text = "Материалы слаймов. Вари у костра (появится кнопка варки)."
 	if brewed_btn != null:
-		brewed_btn.visible = GameState.class_id != ""
+		brewed_btn.visible = GameState.class_id != "" and _hotbar_allowed()
 		brewed_btn.text = "x%d" % GameState.brewed_potions
 
 ## Эвристика «отказа»: подстрока в тексте тоста -> звук ui_deny. Специально НЕ
@@ -427,6 +478,14 @@ const DENY_MARKS := ["не хватает", "нельзя", "полон", "не 
 	"прерван", "потерян", "и так здрав", "и так полон", "нет. ", "отошёл", "прочь"]
 
 func show_toast(text: String) -> void:
+	# t29 B-11: новый тост НЕ затирает непрочитанный — стопка съезжает вниз,
+	# уезжает только нижняя (самая старая) строка.
+	for i in range(toast_more.size() - 1, 0, -1):
+		toast_more[i].text = toast_more[i - 1].text
+		toast_more_t[i] = toast_more_t[i - 1]
+	if not toast_more.is_empty():
+		toast_more[0].text = toast_lbl.text
+		toast_more_t[0] = toast_t
 	toast_lbl.text = text
 	toast_t = 3.0
 	var low := text.to_lower()
@@ -485,8 +544,55 @@ func _show_line() -> void:
 
 func _typing_reset() -> void:
 	chars_shown = 0.0
+	# t29 B-04: новая реплика — всегда с первой страницы; окно прокручено вверх,
+	# следование за печатью включено (фронт печати виден на длинных репликах)
+	dlg_page = 0
+	dtext.scroll_following = true
+	dtext.scroll_to_line(0)
 	dtext.visible_characters = 0
 	typing = true
+
+## t29 B-04: сколько строк влезает в окно = размер страницы длинной реплики.
+## 0 (текст ещё не разложен) -> страниц нет, реплика листается как обычно.
+func _dlg_page_lines() -> int:
+	return dtext.get_visible_line_count()
+
+## t29 B-04: макет текста готов к постраничной прокрутке только когда TextServer
+## уже разложил реплику: до первого кадра после смены текста
+## get_visible_line_count() == 0, а get_line_count() отдаёт УКЛОНИВШУСЯ разбивку
+## (замер на headless-стенде: реплика в 75 символов давала line_count == 64).
+## По такому макету страницы строить нельзя — иначе «Далее» уходит в бесконечную
+## нарезку и диалог не закрывается вообще (регресс qa_ng2 w0_dialog_closed).
+func _dlg_layout_ready() -> bool:
+	var vis := dtext.get_visible_line_count()
+	var total := dtext.get_line_count()
+	return vis > 0 and total >= vis
+
+## Текущая страница длинной реплики (0-based). QA-стенд qa_ib читает это.
+func dialog_page() -> int:
+	return dlg_page
+
+## Всего страниц текущей реплики. Считается по фактической разбивке текста на
+## строки после переноса; до полной выкладки (идёт печать) = 1.
+func dialog_page_count() -> int:
+	var per := _dlg_page_lines()
+	if not _dlg_layout_ready() or per <= 0:
+		return 1
+	var total := dtext.get_line_count()
+	if total <= per:
+		return 1
+	return int(ceil(float(total) / float(per)))
+
+## Есть ли следующая страница (только при полностью выложенном тексте).
+func _dlg_next_page_exists() -> bool:
+	if dtext.visible_characters != -1:
+		return false
+	if not _dlg_layout_ready():
+		return false
+	var per := _dlg_page_lines()
+	if per <= 0:
+		return false
+	return dtext.get_line_count() > (dlg_page + 1) * per
 
 ## Кэш-загрузка фичевого портрета: who начинается с ключа словаря -> Texture2D.
 ## Нет ассета/ключа — null, слот скрыт (отступ фиксирован, вёрстка не прыгает).
@@ -514,6 +620,15 @@ func advance() -> void:
 	if typing:
 		typing = false
 		dtext.visible_characters = -1
+		return
+	# t29 B-04: длинная реплика — это несколько страниц одной реплики. «Далее»
+	# листает страницу прокруткой окна; следующая реплика идёт только после
+	# последней страницы (панель при этом не растётся).
+	if _dlg_next_page_exists():
+		dlg_page += 1
+		dtext.visible_characters = -1  # страница показана целиком (эффект печати уже отыгран)
+		dtext.scroll_following = false
+		dtext.scroll_to_line(dlg_page * _dlg_page_lines())
 		return
 	li += 1
 	if li >= lines.size():
@@ -822,11 +937,19 @@ func _hotbar_allowed() -> bool:
 ## окно диалога, и возвращается сразу после закрытия (иначе висела бы скрытой
 ## до ближайшего refresh_skills — на них никто не подписан при advance()).
 func _refresh_hotbar_gate() -> void:
-	if skill_panel == null or GameState.class_id == "":
+	if GameState.class_id == "":
 		return
 	var vis := _hotbar_allowed()
-	if skill_panel.visible != vis:
+	if skill_panel != null and skill_panel.visible != vis:
 		skill_panel.visible = vis
+	# t29 B-03: зельевые кнопки и счётчик материалов — часть того же хотбара:
+	# гаснем в тот же кадр, что открылось окно (иначе клики шли сквозь диалог).
+	if potion_btn != null and potion_btn.visible != vis:
+		potion_btn.visible = vis
+	if brewed_btn != null and brewed_btn.visible != vis:
+		brewed_btn.visible = vis
+	if mat_lbl != null and mat_lbl.visible != vis:
+		mat_lbl.visible = vis
 
 func _update_skill_states() -> void:
 	if skill_panel == null or not skill_panel.visible or GameState.class_id == "":

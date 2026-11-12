@@ -100,6 +100,7 @@ var sv_apply_btn: Button
 var sv_msg: Label              # тост результата прямо в секции
 var ct_col: VBoxContainer      # правая колонка «Управление» (в _build переставляется в HBox)
 var _open := false
+var _holds_lock := false   # t29 B-07: input_locked сейчас поставлен НАМИ (паттерн Shop)
 
 func _ready() -> void:
 	layer = 20                   # выше hud (1) и фейда переходов (10)
@@ -117,8 +118,13 @@ func open() -> void:
 	_sync_audio()
 	_refresh_click_move()        # фича могла «прилететь» между открытиями — перепроверка
 	_refresh_minimap()           # фича могла «прилететь» между открытиями — перепроверка
-	_set_open(true)
+	# t29 B-07 (реестр t28): open/close теперь АТОМАРНЫ по владению — lock ставится
+	# ДО показа панели и с пометкой «он наш», close() снимает ровно свой lock.
+	# Двойное Esc в один кадр (открыться-и-закрыться) не может оставить висячий
+	# lock: ни один кадр не существует «меню закрыто, а lock наш и непонятно чей».
 	GameState.input_locked = true
+	_holds_lock = true
+	_set_open(true)
 	GameAudio.sfx("ui_click")
 
 func close() -> void:
@@ -142,15 +148,19 @@ func _set_open(o: bool) -> void:
 
 ## Вернуть lock, который поставило меню. Если поверх успел открыться диалог
 ## (отложенный колбэк) и lock перешёл к нему — не трогаем: снимет сам advance().
+## t29 B-07: плюс явное владение — чужой lock (поставленный не нами) меню не снимает
+## никогда, даже если `_open` по какой-то причине был true поверх него.
 func _release_lock() -> void:
-	if GameState.input_locked and not _ui_windows_open():
+	if _holds_lock and GameState.input_locked and not _ui_windows_open():
 		GameState.input_locked = false
+	_holds_lock = false
 
 ## Страховка: world._unhandled_input при первом же просочившемся событии снимает
 ## lock (софтлок-страховка game-кода). Возвращаем, пока меню открыто и окна чисты.
 func _process(_delta: float) -> void:
 	if _open and not GameState.input_locked and not _ui_windows_open():
 		GameState.input_locked = true
+		_holds_lock = true  # t29 B-07: перелок — тоже наше владение (close снимет его)
 
 func _exit_tree() -> void:
 	if _open:

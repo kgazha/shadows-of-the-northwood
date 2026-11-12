@@ -53,6 +53,7 @@ var buy_btns := {}             # item id -> Button («купить и надет
 var sell_btns := {}            # slot -> Button («продать надетое»)
 var ui_frame_tex: Texture2D    # 9-slice рамка (assets/ui/panel_frame.png), опц.
 var _holds_lock := false       # input_locked сейчас принадлежит лавке, а не кому-то ещё
+var _mouse_pass := false       # t29 B-02: мышь сейчас принадлежит чужому окну (лавка её пропускает)
 
 func _enter_tree() -> void:
 	if I == null:
@@ -187,6 +188,9 @@ func _set_open(v: bool) -> void:
 		# открытая лавка ловит мышь (мир под ней не кликается и не атакует:
 		# player.gd не бьёт, когда под курсором есть Control); скрытая — IGNORE
 		root.mouse_filter = Control.MOUSE_FILTER_STOP if v else Control.MOUSE_FILTER_IGNORE
+		_mouse_pass = false
+		if v:
+			_set_mouse_pass(false)  # t29 B-02: при открытии мышь снова вся наша
 		GameAudio.sfx("ui_confirm" if v else "ui_click")
 		if v:
 			_acquire_lock()
@@ -194,6 +198,25 @@ func _set_open(v: bool) -> void:
 			_release_lock()
 	if v:
 		refresh()
+
+## t29 B-02 (реестр t28): под ЧУЖИМ окном (диалог/смерть) лавка по контракту
+## «окно работает» не должна перехватывать мышь, но раньше полноэкранный dim
+## (STOP) и кнопки продолжали есть клики: диалог смерти под вуалью нельзя было
+## пролистать мышью вообще. Здесь мышь отдаётся целиком: dim/корень/панель/кнопки
+## -> IGNORE (остальные Control и так IGNORE), клики уходят миру -> hud.advance().
+func _set_mouse_pass(passthrough: bool) -> void:
+	if root == null:
+		return
+	_apply_pass(root, passthrough)
+
+func _apply_pass(c: Control, passthrough: bool) -> void:
+	if c == root or c == dim or c == panel or c is Button:
+		var want := Control.MOUSE_FILTER_IGNORE if passthrough else Control.MOUSE_FILTER_STOP
+		if c.mouse_filter != want:
+			c.mouse_filter = want
+	for ch in c.get_children():
+		if ch is Control:
+			_apply_pass(ch as Control, passthrough)
 
 func _acquire_lock() -> void:
 	# Вызываемся только из состояния «не занято» (статический open() проверил
@@ -212,7 +235,15 @@ func _release_lock() -> void:
 ## разлок в конце диалога, просочившееся за край окна событие + world-страховка) —
 ## возвращаем, пока лавка открыта и чужие окна чисты.
 func _process(_delta: float) -> void:
-	if root != null and root.visible and not GameState.input_locked and not _ui_windows_open():
+	if root == null or not root.visible:
+		return
+	# t29 B-02: мышь принадлежит чужому окну, пока оно поверх (диалог, смерть) —
+	# отдаём весь ввод наружу; как только окно ушло, лавка снова берёт мышь себе.
+	var pass_thru := _external_lock()
+	if pass_thru != _mouse_pass:
+		_mouse_pass = pass_thru
+		_set_mouse_pass(pass_thru)
+	if not GameState.input_locked and not _ui_windows_open():
 		GameState.input_locked = true
 		_holds_lock = true
 
