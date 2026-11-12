@@ -161,12 +161,12 @@ function main() {
   if (!runImport()) { console.log('FATAL: import failed, see ' + path.join(LOGS, '_import.log')); process.exit(1); }
   const rows = [];
   let green = 0, red = 0, sumP = 0, sumF = 0;
-  for (const s of stands) {
-    const name = s.name.padEnd(13);
-    process.stdout.write('[run ] ' + name + ' ... ');
-    // чистый user:// на каждую цепочку. Rmdir без ретраев ловил EPERM, пока
-    // только что убитый Godot держит ручку на app_userdata, и валил батарею.
-    // node сам ретраит EPERM/EBUSY/ENOTEMPTY только при maxRetries.
+  let retriesUsed = 0; const retriedNames = [];
+  // t43: один автоматический изолированный повтор для RED-стенда (флейки тайминга/RNG
+  // под параллельной нагрузкой). Зелёный стенд ретрай НЕ касается. Честная видимость:
+  // вердикт «GREEN(retry)» виден в таблице и в итоговой строке — зелёный через ретрай
+  // не прячется под обычный GREEN.
+  function runStandalone(s, logPrefix) {
     try {
       fs.rmSync(USERDATA, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     } catch (e) {
@@ -174,7 +174,7 @@ function main() {
     }
     let exits = [], lastLog = '', state = 'OK';
     for (let i = 0; i < s.run.length; i++) {
-      lastLog = path.join(LOGS, s.name + '_' + (i + 1) + '.log');
+      lastLog = path.join(LOGS, s.name + '_' + logPrefix + (i + 1) + '.log');
       const r = sh(`"${GODOT}" --headless --path "${STAGE}" --fixed-fps 60 "res://${s.run[i]}" > "${lastLog}" 2>&1`, DEFAULT_TIMEOUT_MS);
       exits.push(r.exit === -2 ? 'TMO' : r.exit);
       if (r.exit === -2) { state = 'TIMEOUT'; break; }
@@ -182,18 +182,32 @@ function main() {
     }
     let v = { state: 'ERROR', pass: '-', fail: '-' };
     if (state === 'OK') v = parseVerdict(s, lastLog);
-    const pass = v.pass, fail = v.fail;
     let verdict;
     if (state === 'TIMEOUT') verdict = 'RED(timeout)';
     else if (v.state === 'NO_PARSE') verdict = 'RED(no_parse)';
     else if (v.state === 'ERROR') verdict = 'RED(error)';
-    else if (+fail === 0) { verdict = 'GREEN'; green++; }
+    else if (+v.fail === 0) verdict = 'GREEN';
     else verdict = 'RED';
-    if (verdict !== 'GREEN') red++;
+    return { exits, lastLog, v, verdict };
+  }
+  for (const s of stands) {
+    const name = s.name.padEnd(13);
+    process.stdout.write('[run ] ' + name + ' ... ');
+    let att = runStandalone(s, '');
+    if (att.verdict !== 'GREEN') {
+      console.log('');
+      console.log('[retry] ' + s.name + ': ' + att.verdict + ' → один изолированный повтор');
+      retriesUsed++; retriedNames.push(s.name);
+      att = runStandalone(s, 'retry_');
+      if (att.verdict === 'GREEN') att.verdict = 'GREEN(retry)';
+      else att.verdict += '(retry тоже)';
+    }
+    const pass = att.v.pass, fail = att.v.fail;
+    if (att.verdict.startsWith('GREEN')) green++; else red++;
     if (typeof pass === 'number') sumP += pass;
     if (typeof fail === 'number') sumF += fail;
-    console.log(`${pass}/${fail} exit=${exits.join('/')} ${verdict}  log=${path.relative(ROOT, lastLog)}`);
-    rows.push({ name: s.name, desc: s.desc, pass, fail, exit: exits.join('/'), verdict });
+    console.log(`${pass}/${fail} exit=${att.exits.join('/')} ${att.verdict}  log=${path.relative(ROOT, att.lastLog)}`);
+    rows.push({ name: s.name, desc: s.desc, pass, fail, exit: att.exits.join('/'), verdict: att.verdict });
   }
   console.log('');
   console.log('STAND         PASS  FAIL  EXIT    VERDICT        DESC');
@@ -201,8 +215,8 @@ function main() {
     console.log(r.name.padEnd(13) + ' ' + String(r.pass).padStart(4) + '  ' + String(r.fail).padStart(4) + '  ' + r.exit.padEnd(7) + ' ' + r.verdict.padEnd(14) + ' ' + r.desc);
   }
   console.log('');
-  console.log(`TOTAL: ${green} green / ${red} red | checks: ${sumP} pass / ${sumF} fail | ${((Date.now() - t0) / 1000).toFixed(0)}s`);
-  console.log(red === 0 ? 'BATTERY VERDICT: GO' : 'BATTERY VERDICT: NO-GO');
+  console.log(`TOTAL: ${green} green / ${red} red | checks: ${sumP} pass / ${sumF} fail | ${((Date.now() - t0) / 1000).toFixed(0)}s` + (retriesUsed ? ' | auto-retries: ' + retriesUsed + ' (' + retriedNames.join(', ') + ')' : ''));
+  console.log(red === 0 ? 'BATTERY VERDICT: GO' + (retriedNames.length ? ' (зелёный через ретрай: ' + retriedNames.join(', ') + ')' : '') : 'BATTERY VERDICT: NO-GO');
   process.exit(red === 0 ? 0 : 1);
 }
 

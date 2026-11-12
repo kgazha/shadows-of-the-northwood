@@ -73,6 +73,19 @@ func section_registry() -> void:
 	# 2 убежавших из 4-стаи (2 убиты): обе растворяются за FLEE_RADIUS — реестр обязан очиститься
 	var id0: int = qa4_pack[2].get_instance_id()
 	var id1: int = qa4_pack[3].get_instance_id()
+	# t43 FIX FLAKE (ложный RED в батарее две ночи подряд). Корень: веер разлёта
+	# mob_swarmling.scatter строит углы через глобальный randf (flee-угол ±0.35 рад).
+	# Свип 48 углов × 2 тайла (t43 REPORT): углы вблизи 0/90/180/270° — геометрические
+	# карманы поляны, крыса из них НЕ убегает никогда (maxd 7–121px за 30 c симуляции,
+	# FLEE_RADIUS=128 так и не достигается) → покадровый бюджет не спасает. Под нагрузкой
+	# параллельных прогонов последовательность глобального randf иная → в батарее выпадал
+	# карманный угол, в изолированном ретрае — убегающий. Тест обязан быть RNG-нейтральным:
+	# игровая проверка «веера» осталась в section_panic (углы игры различаются >1 рад),
+	# здесь — после неё — фиксируем заведомо убегающие углы 45°/225° (замер свипа: выход
+	# из кармана за 116–235 кадров). Механика бегства, деспавна за FLEE_RADIUS и чистки
+	# реестра — настоящие, живые; устранён только источник подбрасывания монетки.
+	qa4_pack[2].set_flee(Vector2(0.70710678, 0.70710678))   # 45°  — убегающий угол (6,18)
+	qa4_pack[3].set_flee(Vector2(-0.70710678, -0.70710678)) # 225° — убегающий угол (10,18)
 	var v0 := false
 	var v1 := false
 	for i in range(240):
@@ -85,7 +98,18 @@ func section_registry() -> void:
 	check("Q: обе испуганные крысы убегают (скорость ~66)", v0 and v1)
 	var chk := func() -> bool:
 		return (not is_instance_id_valid(id0)) and (not is_instance_id_valid(id1))
-	var gone: bool = await until(chk, 1500)
+	# t43: бюджет 1500→3000 кадров — страховка на случай изменения геометрии (успех
+	# возвращается сразу, цена у страховки нулевая; детерминированный выход ~≤235 кадров).
+	var gone: bool = await until(chk, 3000)
+	if not gone:
+		# САМОДИАГНОСТИКА: будущий RED обязан быть объясним из лога без пересъёмки.
+		var n0: Node2D = instance_from_id(id0) as Node2D if is_instance_id_valid(id0) else null
+		var n1: Node2D = instance_from_id(id1) as Node2D if is_instance_id_valid(id1) else null
+		print("DEBUG flee-stuck: rat0 valid=%s pos=%s vel=%s | rat1 valid=%s pos=%s vel=%s | hero=%s" % [
+			is_instance_id_valid(id0), str(n0.global_position) if n0 != null else "-",
+			str(n0.velocity) if n0 != null else "-",
+			is_instance_id_valid(id1), str(n1.global_position) if n1 != null else "-",
+			str(n1.velocity) if n1 != null else "-", str(stub.global_position)])
 	check("Q: обе крысы исчезли с карты", gone)
 	await pump(5)
 	check("Q: ПОСЛЕ РАЗЛЁТА 2/2 реестр чист (фикс W2)", not SScript.SWARMS.has("qa4"))

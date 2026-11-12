@@ -160,7 +160,7 @@ static func absorb(gs: Object, dmg: int) -> int:
 ## Формула наследует дух game_state.gd: base * (2 если меч) + (1 если амулет).
 static func player_damage(base: int, gs: Object) -> int:
 	# «Мастерство» алтаря Пепла: t39 +15% за покупку (кап 3 = +45%).
-	# (t38: +10% не покрывало роста волн; метку лавки «+10%» правит лавочник t40.)
+	# (t38: +10% не покрывало роста волн; метку лавки «+10%» правит лавочник t42.)
 	var f := 0
 	if gs != null:
 		f = mini(int(gs.flags.get("meta.master", 0)), 3)
