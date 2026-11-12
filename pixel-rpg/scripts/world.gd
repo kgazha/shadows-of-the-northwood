@@ -855,16 +855,16 @@ func _build_ground_paint() -> void:
 	if ground_texs.is_empty() and path_texs.is_empty():
 		push_warning("world: нет ассетов ground_*/path_* — слой «живой земли» пропущен (прежний рендер)")
 		return
-	ground_paint = Node2D.new()
-	ground_paint.name = "GroundPaint"
-	ground_paint.z_index = -5
-	ground_paint.y_sort_enabled = false  # патчи перекрываются произвольно — порядок не важен, y-сортировка дёрнула бы стыки
-	village_zone.add_child(ground_paint)
+	# V-05 (t35): вместо сотен Sprite2D в «порядке вставки» — ЕДИНЫЙ бейк слоя
+	# в одной RGBA8-текстуре с согласованным порядком наложения (вид, y, x):
+	# земля, затем тропа; внутри вида — юг поверх севера. Патчи (>30% перекрытий
+	# давали рваные несогласованные кромки) композитятся побайтово детерминированно.
 	# 1) Разнотонная земля: мягкий патч на ~55% клеток «g»/«f»/«G». Клетки у
 	# самой воды (Чебышёва<=1) пропускаем — перо патча не должно наползать на
 	# воду (z -9 рисуется под слоем, но закрытая водой клетка выглядела бы
 	# обрубком берега). Джиттер центра ±5 px, повороты кратно 90°, flip_h и
 	# вариант — всё из хэша; сетка клетки перестаёт читаться.
+	var specs: Array = []
 	if not ground_texs.is_empty():
 		for y in map_h:
 			var row := String(map_rows[y])
@@ -876,24 +876,23 @@ func _build_ground_paint() -> void:
 				var h := _env4_hash(x, y)
 				if h % 20 >= GROUND_PAINT_DENSITY:
 					continue
-				var spr := Sprite2D.new()
-				spr.texture = ground_texs[(h >> 4) % ground_texs.size()]
-				spr.centered = true
-				spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-				spr.flip_h = ((h >> 16) & 1) == 1
-				spr.rotation = PI * 0.5 * float((h >> 8) % 4)
-				# привязка к tile_to_world (тот же +2 по Y), джиттер — из хэша
-				spr.position = Vector2((x + 0.5) * TILE, (y + 0.5) * TILE + 2.0) \
-					+ Vector2(float((h >> 20) % 11) - 5.0, float((h >> 24) % 11) - 5.0)
+				# привязка к tile_to_world (тот же +2 по Y), джиттер — из хэша;
 				# alpha 0.30..0.42: патч тише самого тайла (std 24) — низкая
 				# контрастность по ТЗ: разнотон земли, а не второй план сцены
-				spr.modulate = Color(1.0, 1.0, 1.0, 0.30 + 0.02 * float((h >> 28) % 7))
-				ground_paint.add_child(spr)
+				specs.append({
+					"kind": 0, "x": int((x + 0.5) * TILE) + ((h >> 20) % 11) - 5, \
+					"y": int((y + 0.5) * TILE + 2.0) + ((h >> 24) % 11) - 5, \
+					"a": 0.30 + 0.02 * float((h >> 28) % 7), \
+					"rot": (h >> 8) % 4, "flip": ((h >> 16) & 1) == 1, \
+					"tex": ground_texs[(h >> 4) % ground_texs.size()], \
+				})
 	# 2) Тропа: каждый «d» — сегмент 30px с перьевыми краями. Маска непрозрачна
 	# до границы клетки и далее на ~2 px, перо 3–4 px — стык двух сегментов
 	# перекрыт, прямоугольных границ нет. 3 фактуры (утоптанная/хвоя/камешки)
 	# по хэшу; flip_h дробёт монотонность. Alpha 0.92 — тайл-«d» чуть угадывается
 	# под тропой (рельеф), миникарта его не видит (читает атлас, не спрайты).
+	# kind=1: тропа накладывается ПОСЛЕ всей земли (как лежала поверх в старом
+	# порядке вставки), поверх других троп — тоже юг поверх севера.
 	if not path_texs.is_empty():
 		for y in map_h:
 			var row2 := String(map_rows[y])
@@ -901,14 +900,156 @@ func _build_ground_paint() -> void:
 				if row2[x] != "d":
 					continue
 				var h2 := _env4_hash(x, y)
-				var spr2 := Sprite2D.new()
-				spr2.texture = path_texs[h2 % path_texs.size()]
-				spr2.centered = true
-				spr2.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-				spr2.flip_h = ((h2 >> 16) & 1) == 1
-				spr2.position = Vector2((x + 0.5) * TILE, (y + 0.5) * TILE + 2.0)
-				spr2.modulate = Color(1.0, 1.0, 1.0, 0.92)
-				ground_paint.add_child(spr2)
+				specs.append({
+					"kind": 1, "x": int((x + 0.5) * TILE), "y": int((y + 0.5) * TILE + 2.0), \
+					"a": 0.92, "rot": 0, "flip": ((h2 >> 16) & 1) == 1, \
+					"tex": path_texs[h2 % path_texs.size()], \
+				})
+	var b := _gp_bake(specs)
+	if b.is_empty():
+		push_warning("world: бейк «живой земли» не удался — слой пропущен (прежний рендер)")
+		return
+	ground_paint = Node2D.new()
+	ground_paint.name = "GroundPaint"
+	ground_paint.z_index = -5
+	# V-05: единственный запечённый ребёнок — прежний комментарий «порядок не
+	# важен» отменён: порядок задан бейком (kind, y, x) и больше нигде.
+	ground_paint.y_sort_enabled = false
+	village_zone.add_child(ground_paint)
+	ground_paint.add_child(_gp_bake_sprite(b))
+
+## Порядок бейка: (kind, y, x) — total order, стабильность сортировки не нужна
+## (клетка уникальна внутри вида → ключей-дубликатов нет → детерминизм гарантирован).
+func _gp_spec_less(a: Dictionary, b: Dictionary) -> bool:
+	if int(a["kind"]) != int(b["kind"]):
+		return int(a["kind"]) < int(b["kind"])
+	if int(a["y"]) != int(b["y"]):
+		return int(a["y"]) < int(b["y"])
+	return int(a["x"]) < int(b["x"])
+
+## V-05: детерминированный CPU-бейк патчей в одну RGBA8-текстуру. specs — список
+## {tex, x, y, a, rot90, flip} (x/y — ЦЕЛЫЕ центры спрайтов, как в tile_to_world).
+## Композиция straight-alpha «over» в каноническом порядке (сортировка вызывающего).
+## Совместимость с прежним рендером: при целых позициях растровый путь 1:1 совпадает
+## с последовательной отрисовкой спрайтов; дробный зум-ресемпл экрана — тот же LINEAR,
+## только применённый к запечённому слою (мягче на доли пикселя, пиксель-канон не трогает).
+## Возвращает {} при пустом списке/сбое; иначе {"tex": ImageTexture, "x", "y"} —
+## x/y левого верхнего угла бейка в локальных координатах слоя.
+func _gp_bake(specs: Array) -> Dictionary:
+	if specs.is_empty():
+		push_warning("world: gp_bake — нет патчей, слой не создаётся")
+		return {}
+	specs.sort_custom(_gp_spec_less)
+	var imgs: Array = []
+	var bufs: Array = []
+	var minX := 2147483647
+	var minY := 2147483647
+	var maxX := -2147483647
+	var maxY := -2147483647
+	for sp0 in specs:
+		var tex: Texture2D = sp0["tex"]
+		var src: Image = tex.get_image() if tex != null else null
+		if src == null:
+			push_warning("world: gp_bake — у текстуры нет изображения, слой пропущен")
+			return {}
+		if src.get_format() != Image.FORMAT_RGBA8:
+			src = src.duplicate()
+			src.convert(Image.FORMAT_RGBA8)
+		imgs.append(src)
+		bufs.append(src.get_data())
+		var w := src.get_width()
+		var h := src.get_height()
+		var rot := int(sp0["rot"]) & 3
+		var hw := w * 0.5
+		var hh := h * 0.5
+		var hx := hw if rot % 2 == 0 else hh
+		var hy := hh if rot % 2 == 0 else hw
+		var px := int(sp0["x"])
+		var py := int(sp0["y"])
+		for cx0 in [-hx, hx]:
+			for cy0 in [-hy, hy]:
+				var cx: float
+				var cy: float
+				match rot:
+					0: cx = cx0; cy = cy0
+					1: cx = -cy0; cy = cx0
+					2: cx = -cx0; cy = -cy0
+					_: cx = cy0; cy = -cx0
+				minX = mini(minX, px + floori(cx) - 1)
+				minY = mini(minY, py + floori(cy) - 1)
+				maxX = maxi(maxX, px + floori(cx) + 2)
+				maxY = maxi(maxY, py + floori(cy) + 2)
+	var RW := maxX - minX
+	var RH := maxY - minY
+	if RW <= 0 or RH <= 0 or RW > 8192 or RH > 8192:
+		push_warning("world: gp_bake — невозможный размер бейка %dx%d" % [RW, RH])
+		return {}
+	var out := PackedByteArray()
+	out.resize(RW * RH * 4)  # нули = полностью прозрачная подложка
+	var amax := 0.0
+	for k in specs.size():
+		var sp: Dictionary = specs[k]
+		var src: Image = imgs[k]
+		var d: PackedByteArray = bufs[k]
+		var w := src.get_width()
+		var h := src.get_height()
+		var rot := int(sp["rot"]) & 3
+		var flip := bool(sp["flip"])
+		var sa := float(sp["a"])
+		if sa > amax:
+			amax = sa
+		var px := int(sp["x"])
+		var py := int(sp["y"])
+		for v in h:
+			var y0f: float = float(v) - h * 0.5
+			for u in w:
+				var si := (v * w + u) * 4
+				var a1 := d[si + 3]
+				if a1 == 0:
+					continue
+				var x0f: float = float(u) - w * 0.5
+				if flip:
+					x0f = -x0f - 1.0
+				var cx: float
+				var cy: float
+				match rot:
+					0: cx = x0f; cy = y0f
+					1: cx = -y0f - 1.0; cy = x0f
+					2: cx = -x0f - 1.0; cy = -y0f - 1.0
+					_: cx = y0f; cy = -x0f - 1.0
+				var dx := px + floori(cx) - minX
+				var dy := py + floori(cy) - minY
+				if dx < 0 or dy < 0 or dx >= RW or dy >= RH:
+					continue
+				var di := (dy * RW + dx) * 4
+				var a1f := sa * float(a1) / 255.0
+				var da := float(out[di + 3]) / 255.0
+				var aO := a1f + da * (1.0 - a1f)
+				if aO <= 0.0:
+					continue
+				var ws := a1f / aO
+				var wd := 1.0 - ws
+				out[di] = clampi(roundi(float(d[si]) * ws + float(out[di]) * wd), 0, 255)
+				out[di + 1] = clampi(roundi(float(d[si + 1]) * ws + float(out[di + 1]) * wd), 0, 255)
+				out[di + 2] = clampi(roundi(float(d[si + 2]) * ws + float(out[di + 2]) * wd), 0, 255)
+				out[di + 3] = clampi(roundi(aO * 255.0), 0, 255)
+	var img := Image.create_from_data(RW, RH, false, Image.FORMAT_RGBA8, out)
+	if img == null:
+		push_warning("world: gp_bake — create_from_data не удалась")
+		return {}
+	return {"tex": ImageTexture.create_from_image(img), "x": minX, "y": minY, "amax": amax}
+
+## Общий спрайт-носитель запечённого слоя: левый верх в позицию бейка, LINEAR —
+## та же фильтрация, что была у каждого патча. meta gp_amax — максимальный
+## «пасхальный» alpha спецификации (пины qa_lp T6: семантика alpha живёт в спеках).
+func _gp_bake_sprite(b: Dictionary) -> Sprite2D:
+	var spr := Sprite2D.new()
+	spr.texture = b["tex"]
+	spr.centered = false
+	spr.position = Vector2(float(int(b["x"])), float(int(b["y"])))
+	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	spr.set_meta("gp_amax", float(b.get("amax", 0.0)))
+	return spr
 
 ## Т14 «живой пол» пещеры/Пепелища — тот же приём, что у деревенской GroundPaint,
 ## но по floor-клеткам grid зоны («.»/«,»). Детерминизм: вариант/flip/поворот/
@@ -928,11 +1069,9 @@ func _build_zone_floor_paint(parent: Node2D, rows: Array, art: Array, layer_name
 	if texs.is_empty():
 		push_warning("world: нет патчей пола %s — слой %s пропущен (прежний рендер)" % [str(art), layer_name])
 		return
-	var layer := Node2D.new()
-	layer.name = layer_name
-	layer.z_index = -5
-	layer.y_sort_enabled = false  # патчи перекрываются произвольно — порядок не важен
-	parent.add_child(layer)
+	# V-05 (t35): единый детерминированный бейк (kind=0, y, x) вместо «порядка
+	# вставки» — см. комментарий у _build_ground_paint.
+	var specs: Array = []
 	for y in rows.size():
 		var row := String(rows[y])
 		for x in row.length():
@@ -941,17 +1080,24 @@ func _build_zone_floor_paint(parent: Node2D, rows: Array, art: Array, layer_name
 			var h := _env4_hash(x, y)
 			if h % 20 >= ZONE_FLOOR_PAINT_DENSITY:
 				continue
-			var spr := Sprite2D.new()
-			spr.texture = texs[(h >> 4) % texs.size()]
-			spr.centered = true
-			spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-			spr.flip_h = ((h >> 16) & 1) == 1
-			spr.rotation = PI * 0.5 * float((h >> 8) % 4)
 			# привязка к tile_to_world (тот же +2 по Y), джиттер центра — из хэша
-			spr.position = Vector2((x + 0.5) * TILE, (y + 0.5) * TILE + 2.0) \
-				+ Vector2(float((h >> 20) % 9) - 4.0, float((h >> 24) % 9) - 4.0)
-			spr.modulate = Color(1.0, 1.0, 1.0, 0.30 + 0.02 * float((h >> 28) % 7))
-			layer.add_child(spr)
+			specs.append({
+				"kind": 0, "x": int((x + 0.5) * TILE) + ((h >> 20) % 9) - 4, \
+				"y": int((y + 0.5) * TILE + 2.0) + ((h >> 24) % 9) - 4, \
+				"a": 0.30 + 0.02 * float((h >> 28) % 7), \
+				"rot": (h >> 8) % 4, "flip": ((h >> 16) & 1) == 1, \
+				"tex": texs[(h >> 4) % texs.size()], \
+			})
+	var b := _gp_bake(specs)
+	if b.is_empty():
+		push_warning("world: бейк пола %s не удался — слой пропущен (прежний рендер)" % layer_name)
+		return
+	var layer := Node2D.new()
+	layer.name = layer_name
+	layer.z_index = -5
+	layer.y_sort_enabled = false  # единственный запечённый ребёнок — порядок задан бейком
+	parent.add_child(layer)
+	layer.add_child(_gp_bake_sprite(b))
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()

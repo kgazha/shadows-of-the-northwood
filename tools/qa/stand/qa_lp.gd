@@ -271,6 +271,15 @@ func _paint_dump(w: Node2D, zone: Node2D, layer_name: String) -> String:
 			String(spr.texture.resource_path) if spr.texture != null else "null",
 			"", snappedf(spr.position.x, 0.001), snappedf(spr.position.y, 0.001),
 			spr.modulate.a, snappedf(spr.rotation, 0.001), int(spr.flip_h)]
+		# t35 (V-05): запечённый слой — текстура без пути (ImageTexture). Якорь
+		# детерминизма бейка: размеры + MD5 побайтового содержимого.
+		if spr.texture != null and String(spr.texture.resource_path) == "":
+			var img := spr.texture.get_image()
+			if img != null:
+				var hc := HashingContext.new()
+				hc.start(HashingContext.HASH_MD5)
+				hc.update(img.get_data())
+				s += "BAKE %dx%d amax=%.4f md5=%s;" % [img.get_width(), img.get_height(), float(spr.get_meta("gp_amax")) if spr.has_meta("gp_amax") else -1.0, hc.finish().hex_encode()]
 	return s
 
 func _snapshot(w: Node2D) -> String:
@@ -282,6 +291,9 @@ func _snapshot(w: Node2D) -> String:
 		s += String(r) + "/"
 	s += "|CP>" + _paint_dump(w, w.cave_zone, "CaveFloorPaint")
 	s += "|AP>" + _paint_dump(w, w.ashen_zone, "AshenFloorPaint")
+	# t35 (V-05): деревенская «живая земля» тоже в снимке — бейк детерминирован и
+	# пинится md5 наравне с пещерой/Пепелищем (раньше слой не пинился вовсе).
+	s += "|GP>" + _paint_dump(w, w.village_zone, "GroundPaint")
 	return s
 
 # ------------------------------------------------------------------ T1
@@ -531,6 +543,21 @@ func _t6(snap1: String) -> void:
 	var layer_a = world.ashen_zone.get_node_or_null("AshenFloorPaint")
 	chk(layer_c != null and layer_c.get_child_count() > 0, "T6: CaveFloorPaint построен (%d)" % (layer_c.get_child_count() if layer_c != null else -1))
 	chk(layer_a != null and layer_a.get_child_count() > 0, "T6: AshenFloorPaint построен (%d)" % (layer_a.get_child_count() if layer_a != null else -1))
+	# t35 (V-05): структура бейка — по одному ребёнку, текстура без пути; деревенская
+	# «живая земля» — тоже единый запечённый спрайт (раньше — сотни детей без пина).
+	var layer_v = world.village_zone.get_node_or_null("GroundPaint")
+	var bake_ok := true
+	for layer: Node2D in [layer_c, layer_a, layer_v]:
+		if layer == null or layer.get_child_count() != 1:
+			bake_ok = false
+			continue
+		var spr := layer.get_child(0) as Sprite2D
+		if spr == null or spr.texture == null or String(spr.texture.resource_path) != "" or not spr.has_meta("gp_amax"):
+			bake_ok = false
+	chk(bake_ok, "T6: V-05 — все три слоя «живой земли» запечены единственным спрайтом (cave=%d ashen=%d village=%s)" % [
+		layer_c.get_child_count() if layer_c != null else -1,
+		layer_a.get_child_count() if layer_a != null else -1,
+		str(layer_v.get_child_count()) if layer_v != null else "нет"])
 	var alpha_ok := true
 	var lin_ok := true
 	for layer: Node2D in [layer_c, layer_a]:
@@ -540,11 +567,20 @@ func _t6(snap1: String) -> void:
 			var spr := c as Sprite2D
 			if spr == null:
 				continue
-			if spr.modulate.a < 0.299 or spr.modulate.a > 0.4201:
-				alpha_ok = false
 			if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
 				lin_ok = false
-	chk(alpha_ok, "T6: alpha патчей ∈ [0.30, 0.42]")
+			# t35 (V-05): слой запечён в одну ImageTexture — пер-патч alpha живёт
+			# в текстуре, её верхняя граница — meta gp_amax (макс alpha специки).
+			# Канон [0.30,0.42] пинится по ней; сам спрайт-носитель немодулирован
+			# (modulate=1), как и положено «стеклу» поверх мира.
+			if spr.texture != null and String(spr.texture.resource_path) == "":
+				if not spr.has_meta("gp_amax") or spr.modulate.a != 1.0:
+					alpha_ok = false
+				elif spr.get_meta("gp_amax") < 0.299 or spr.get_meta("gp_amax") > 0.4201:
+					alpha_ok = false
+			elif spr.modulate.a < 0.299 or spr.modulate.a > 0.4201:
+				alpha_ok = false
+	chk(alpha_ok, "T6: alpha патчей ∈ [0.30, 0.42] (бейк — meta gp_amax, несущий спрайт немодулирован)")
 	chk(lin_ok, "T6: все патчи LINEAR")
 	# fail-safe: несуществующие ассеты -> слой не создаётся
 	var probe := Node2D.new()
