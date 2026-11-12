@@ -55,6 +55,36 @@ const ALTAR := [
 ##    низкого окна: список уходит внутрь, а close-кнопка стоит ВНЕ скролла,
 ##    значит видима без прокрутки всегда. Пока всё влезает — полосы нет и
 ##    оффскрин-скан лавки даёт 0 (ни один элемент не за экраном).
+##
+## t40 (находка t38, t38_play/logs/w_forge.log PIN#01): при открытой лавке
+## панель накрывала ГЕРОЯ ПОЛНОСТЬЮ — он стоит ровно по центру поля, а панель
+## центрирована в том же центре. Замер ОКОННЫМ прогоном 1280×720 (stretch
+## canvas_items/expand ⇒ окно 2×, zoom мира 1.5 ⇒ 3 px окна на мирный px),
+## лавка открыта НАСТОЯЩИМ E у прилавка (кузнец Гриим, тайл (26,13)); маска
+## героя = реально накрашенные пиксели кадра спрайта (2092 шт.), не bounding box:
+##   • ЦЕНТР (как было): панель base x 200..440 — под ней 100 % пикселей героя
+##     (колонка героя x 311.6..328.4), плюс 13 126 px спрайта самого кузнеца,
+##     16 505 px реквизита и 45 414 px крон = 75 045 px живого мира под панелью;
+##   • ЛЕВЫЙ край (gap 4): герой 0 %, но под панелью 21 467 + 3 343 + 32 907
+##     = 57 717 px мира;
+##   • ПРАВЫЙ край (gap 4): герой 0 %, 16 188 + 1 905 + 19 916 = 38 009 px —
+##     наименьшее затемнение мира из трёх, выбран ОН.
+## Итог: панель прижата к правому краю (base x 396..636 вместо 200..440); до
+## колонки героя остаётся 67.6 px запаса, перекрытие спрайта героя = 0 % при
+## лимите задачи 25 %. Компакт-тема t34 и ширина 240 не тронуты (компакт-вариант
+## всё равно стоял бы на герое), полупрозрачность как последний резерв НЕ
+## применена — панель осталась opaque-«деревянной», просто съехала вправо.
+## ВЕРТИКАЛЬ для игроки НЕ изменилась: панель по-прежнему центрирована в поле с
+## зазором EDGE_GAP (как в t34), пины t34 — «Закрыть (Esc)» в кадре, OFFSCR=0,
+## высота ≤352, колесо мыши — проходят без единой правки. Единственное изменение
+## по высоте — контейнер-якорь ограничивается КАНОНической высотой поля (в окне
+## 1280×720 visible-rect ровно 640×360 ⇒ сдвиг = 0, то есть бит-в-бит то же
+## самое; в headless-окне 640×640 контейнер больше не торчит за канон 360, и
+## оффскрин-скан t30/t34 не принимает его за «элемент за экраном» — до t40 он
+## спасался лишь правилом «площадь ≥ 95 % поля», а с правым доком площадь стала
+## 248×640). Крона GroveCanopy над прилавком (34 %
+## бокса героя у t38) вне объёма задачи и не тронута: канон «принять/осветить»,
+## overhead-дим (modulate 0.5) уже работает.
 const BASE_VIEW_H := 360.0     # канон base-вьюпорта (не окно!) — поле проектирования UI
 const PANEL_W := 240.0         # ширина панели (была custom_minimum_size.x)
 const EDGE_GAP := 4.0          # воздушный зазор панели от верхней/нижней границы поля
@@ -72,6 +102,7 @@ var altar_btns := {}           # meta id -> Button алтаря
 var root: Control              # полноэкранный корень панели; visible = «лавка открыта»
 var dim: ColorRect             # затемнение мира; клик мимо окна закрывает лавку
 var panel: PanelContainer
+var center: CenterContainer    # t40: контейнер-«якорь» панели; по высоте — центр, по X — правый край
 var gold_lbl: Label
 var buy_btns := {}             # item id -> Button («купить и надеть»)
 var sell_btns := {}            # slot -> Button («продать надетое»)
@@ -136,7 +167,7 @@ func _build() -> void:
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.gui_input.connect(_on_dim_input)
 	root.add_child(dim)
-	var center := CenterContainer.new()
+	center = CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(center)
@@ -240,9 +271,11 @@ func _fit_panel() -> void:
 	if panel == null or scroll == null or list_vb == null or close_btn == null:
 		return
 	var field_h := BASE_VIEW_H
+	var raw_h: float = BASE_VIEW_H
 	var vp := get_viewport()
 	if vp != null:
-		field_h = minf(vp.get_visible_rect().size.y, BASE_VIEW_H)  # headless-окно 640×640 -> канон 360
+		raw_h = vp.get_visible_rect().size.y
+		field_h = minf(raw_h, BASE_VIEW_H)  # headless-окно 640×640 -> канон 360
 	var max_h: float = maxf(96.0, field_h - EDGE_GAP * 2.0)
 	panel.custom_minimum_size = Vector2(PANEL_W, 0)  # сброс: ниже меряем «чистый» min
 	var content := list_vb.get_combined_minimum_size().y
@@ -252,6 +285,24 @@ func _fit_panel() -> void:
 	var target := minf(natural, max_h)
 	panel.custom_minimum_size = Vector2(PANEL_W, target)
 	scroll.custom_minimum_size = Vector2(0, maxf(0.0, target - chrome))
+	# t40: док к ПРАВОМУ краю (обоснование и замеры — в ГЕОМЕТРИЯ в шапке файла).
+	# CenterContainer размещает ребёнка по ЦЕНТРУ своего rect, поэтому сдвигаем
+	# сам rect контейнера слева на (W − pw − 2×gap): левый край панели встаёт в
+	# W − pw − gap, правый — в W − gap. По высоте rect остаётся «центральным»
+	# (см. band ниже) ⇒ для окна 1280×720 вертикальная геометрия бит-в-бит t34.
+	# Берём ФАКТИЧЕСКУЮ ширину панели (запас на случай, если подпись кнопки
+	# раздвинет её дальше PANEL_W), иначе док дал бы хвост за правым краем.
+	var pw: float = maxf(PANEL_W, panel.get_combined_minimum_size().x)
+	var field_w: float = vp.get_visible_rect().size.x if vp != null else 640.0
+	center.offset_left = maxf(0.0, field_w - pw - EDGE_GAP * 2.0)
+	# t40: вертикаль якоря ограничена каноническим полем. В реальном окне 1280×720
+	# visible-rect = 640×360 ⇒ band = 0, то есть вертикальная геометрия бит-в-бит
+	# та же, что в t34 (проверено оконным прогоном: панель y=16, h=328). В headless
+	# (окно 640×640) band = 140 снимает с якоря фантомные 280 px высоты, из-за
+	# которых оффскрин-скан t30/t34 считал бы его «элементом за экраном».
+	var band: float = maxf(0.0, (raw_h - field_h) * 0.5)
+	center.offset_top = band
+	center.offset_bottom = -band
 
 ## Тёмная деревянная рамка для PanelContainer (тот же ассет и приёмы, что в hud.gd).
 func _ui_frame_style(content: float) -> StyleBoxTexture:
