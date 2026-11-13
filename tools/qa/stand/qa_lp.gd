@@ -102,6 +102,7 @@ func _ready() -> void:
 	await _t12()
 	await _t13()
 	await _t14()
+	await _t15()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1467,3 +1468,116 @@ func _t14() -> void:
 	# 7) пепел за киллы = 0 — приёмочный инвариант (loot.gd не знает про Ash)
 	chk(not sl.contains("Ash.add") and not sl.contains("Ash.spend"),
 		"T14: пепел с киллов = 0 (loot.gd не вызывает Ash)")
+
+# ------------------------------------------------------- T15 (t48): env4-дим ----
+## Дим-контракт t41, распространённый на env4-пропы (алтари пещеры, портал и
+## сундук Пепелища — всё, что ставит _env4_place). Семантика — проба D t47:
+## герой «за» пропом (y = низ rect пропа − 13 → канонный бокс 16×32 целиком под
+## картинкой), 90 кадров штатного _ys_update. Ожидание: alpha ≤ 0.5; южнее
+## стопы — ровно 1.0; скачок за кадр в норме лерпа delta*8 (без фликера);
+## пропы чужой зоны/этажа не гаснут. На HEAD 46e6725 (env4 не в _ys_props_dim)
+## пины дима — RED: alpha остаётся 1.000.
+
+func _t15_spr(layer: Node, suffix: String) -> Sprite2D:
+	if layer == null:
+		return null
+	var best: Sprite2D = null
+	var ba := 0.0
+	for c in layer.get_children():
+		var spr := c as Sprite2D
+		if spr == null or spr.texture == null or not spr.visible:
+			continue
+		if suffix != "" and not String(spr.texture.resource_path).ends_with(suffix):
+			continue
+		var a := _t15_rect(spr).get_area()
+		if a > ba:
+			ba = a
+			best = spr
+	return best
+
+## Мировой rect спрайта (центр + масштаб), зеркало world._ys_update.
+func _t15_rect(sp: Sprite2D) -> Rect2:
+	var t := sp.texture
+	if t == null:
+		return Rect2()
+	var tr := sp.get_global_transform()
+	var hw := float(t.get_width()) * 0.5
+	var hh := float(t.get_height()) * 0.5
+	var l0 := tr * (sp.offset + Vector2(-hw, -hh))
+	var l1 := tr * (sp.offset + Vector2(hw, hh))
+	return Rect2(l0, l1 - l0).abs()
+
+func _t15() -> void:
+	if world == null or world.player == null:
+		chk(false, "t15: мир не построен")
+		return
+	var cave: Node = world.get("_env4_cave_props")
+	var ashen: Node = world.get("_env4_ashen_props")
+	chk(cave != null and ashen != null, "t15: слои env4 (пещера/Пепелище) на месте")
+	if cave == null or ashen == null:
+		return
+	var altar := _t15_spr(cave, "env4_altar.png")
+	var portal := _t15_spr(ashen, "env4_portal.png")
+	var chest := _t15_spr(ashen, "env4_chest.png")
+	chk(altar != null and portal != null and chest != null,
+		"t15: алтарь/портал/сундук env4 найдены")
+	if altar == null or portal == null or chest == null:
+		return
+	# структурно: каждый env4-спрайт — в реестре дима _ys_props_dim (корень F1)
+	var ysd: Array = world.get("_ys_props_dim")
+	var reg := 0
+	var tot := 0
+	for layer: Node in [cave, ashen]:
+		for c in layer.get_children():
+			if c is Sprite2D and (c as Sprite2D).texture != null:
+				tot += 1
+				if ysd != null and ysd.has(c):
+					reg += 1
+	chk(ysd != null and tot >= 10 and reg == tot,
+		"t15: env4-спрайты зарегистрированы в _ys_props_dim (%d/%d)" % [reg, tot])
+	# герой за алтарём: физика героя и мобов выключена (без выталкивания/урона)
+	for n in get_tree().get_nodes_in_group("enemy"):
+		var e := n as Node
+		if e != null:
+			e.process_mode = Node.PROCESS_MODE_DISABLED
+	var pl := world.player as Node2D
+	pl.process_mode = Node.PROCESS_MODE_DISABLED
+	var r := _t15_rect(altar)
+	pl.global_position = Vector2(r.get_center().x, r.end.y - 13.0)
+	var max_step := 0.0
+	var prev := altar.modulate.a
+	for i in 90:
+		await _frames(1)
+		max_step = maxf(max_step, absf(altar.modulate.a - prev))
+		prev = altar.modulate.a
+	print("   t15 METRIC altar alpha=%.3f max_step=%.4f z=%d hz=%d" % [
+		altar.modulate.a, max_step, altar.z_index, pl.z_index])
+	chk(altar.z_index > pl.z_index,
+		"t15: алтарь нарисован над героем (z %d > %d)" % [altar.z_index, pl.z_index])
+	chk(altar.modulate.a <= 0.5 + 0.001,
+		"t15: алтарь пещеры над героем димится ≤0.5 (alpha=%.3f)" % altar.modulate.a)
+	# чужая зона не гаснет: изба деревни при герое в пещере — ровно 1.0
+	var cottage := _t15_spr(world.get("village_props"), "village_cottage.png")
+	chk(cottage == null or is_equal_approx(cottage.modulate.a, 1.0),
+		"t15: изба деревни при герое в пещере не гаснет (alpha=%.3f)" \
+		% (cottage.modulate.a if cottage != null else 1.0))
+	# южнее стопы — дим выключен, ровно 1.0
+	pl.global_position = Vector2(r.get_center().x, r.end.y + 22.0)
+	await _frames(50)
+	chk(is_equal_approx(altar.modulate.a, 1.0),
+		"t15: южнее алтаря alpha ровно 1.0 (alpha=%.3f)" % altar.modulate.a)
+	# портал Пепелища (coverage 1.00) и env4-сундук (0.53) — тот же контракт
+	r = _t15_rect(portal)
+	pl.global_position = Vector2(r.get_center().x, r.end.y - 13.0)
+	await _frames(90)
+	chk(portal.modulate.a <= 0.5 + 0.001,
+		"t15: портал Пепелища над героем ≤0.5 (alpha=%.3f)" % portal.modulate.a)
+	r = _t15_rect(chest)
+	pl.global_position = Vector2(r.get_center().x, r.end.y - 13.0)
+	await _frames(90)
+	chk(chest.modulate.a <= 0.5 + 0.001,
+		"t15: env4-сундук Пепелища (cov 0.53) ≤0.5 (alpha=%.3f)" % chest.modulate.a)
+	# фликер: шаг лерпа delta*8 при 1/60 — ≤ 0.5*(8/60)≈0.0667, снап ≤0.02
+	chk(max_step <= 0.08,
+		"t15: без фликера — max |Δalpha|/кадр %.4f ≤ 0.08" % max_step)
+	pl.process_mode = Node.PROCESS_MODE_INHERIT

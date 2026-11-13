@@ -726,6 +726,11 @@ func _env4_place(parent: Node2D, tex: Texture2D, x0: int, x1: int, y0: int, y1: 
 		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * s * 0.5)
 	parent.add_child(spr)
 	_ys_prop(spr)  # V-03/V-04: алтари/портал/сундуки — глубина по стопе
+	# t48 (F1 t47): env4-пропы — та же семья пропов, что и деревенские: дим-контракт
+	# t41 (YS_PROP_DIM_AT → YS_CANOPY_DIM_ALPHA, юг без дима). Rect-гейт в _ys_update
+	# сам различает зоны/этажи: картинка чужой зоны в 4800 px от героя не пересекает
+	# его бокс — пропы неактивной зоны остаются ровно 1.0.
+	_ys_props_dim.append(spr)
 	return spr
 
 ## Пропс, прячущийся по геймплейному состоянию: live() пересчитывается на
@@ -1676,9 +1681,11 @@ func _ys_update(delta: float) -> void:
 		# плавное растворение; в покое (вдали) — ровно 1.0, без «хвоста» лерпа
 		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
 		spr.modulate.a = a
-	# t41: тот же контракт для мелких пропов деревни (signpost/костёр/колодец/изба…),
+	# t41: тот же контракт для мелких пропов (signpost/костёр/колодец/изба…),
 	# порог ниже (YS_PROP_DIM_AT): пропы мелкие, но на тяжёлых тайлах закрывали до
 	# 78% героя. Южнее героя (spr.z <= hz) проп и так под ним — дим не нужен, 1.0.
+	# t48 (F1 t47): реестр общий с env4 (алтари пещеры, портал/сундук Пепелища) —
+	# ставятся _env4_place; rect-гейт различает этажи (зоны в 4800 px друг от друга).
 	for p in _ys_props_dim:
 		var spr := p as Sprite2D
 		if spr == null or not is_instance_valid(spr) or spr.texture == null:
