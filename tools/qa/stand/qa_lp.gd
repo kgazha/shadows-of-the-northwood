@@ -58,6 +58,9 @@ extends Node2D
 ##      монтаж на стене выше головы (z V-01, вне дима), пульс PointLight2D по
 ##      паттерну _altar_light, детерминированная расстановка (зеркало),
 ##      мох-кострище в дереве пещеры отсутствует (кадр — только в атласе).
+##  T16.11 c7 «микро-жизнь»: пылинки пещеры — залы (компоненты длинных
+##      прогонов), 2..4 на зал, лимит, fmod-цикл без накопления, живое
+##      движение при активной зоне, вне реестра дима.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -1831,6 +1834,90 @@ func _t16() -> void:
 				brz_px += 1
 	chk(brz_n == 0 and brz_px > 0,
 			"t16: мох-кострища в дереве пещеры нет, кадр жив в атласе (%d px)" % brz_px)
+	# 11) c7 пылинки пещеры: залы, 2..4 на зал, лимит, ненулевое падение
+	#     (fmod-цикл без накопления), живое движение, вне реестра дима
+	var dust: Node = world.cave_zone.find_child("CaveDust", true, false)
+	if dust == null:
+		chk(false, "t16: c7 — CaveDust не найден (поставка не на месте)")
+		return
+	var motes: Array = dust.get("motes")
+	var hl: Array = CA.halls(rows)
+	chk(not hl.is_empty() and motes.size() > 0 and motes.size() <= int(CA.DUST_MAX),
+		"t16: пылинки: залов %d, пылинок %d (лимит %d)" % [hl.size(), motes.size(), int(CA.DUST_MAX)])
+	# каждая пылинка вписана в bbox своего зала (старт от потолка, высота =
+	# высота зала); на зал 2..4 пылинки
+	var par_ok := 0
+	var per_hall := {}
+	for m in motes:
+		var mx := float(m["x"])
+		var mtop := float(m["top"])
+		var mh := float(m["h"])
+		for hi in hl.size():
+			var hall: Dictionary = hl[hi]
+			var hx0 := float(int(hall["left"])) * 16.0
+			var hx1 := (float(int(hall["right"])) + 1.0) * 16.0
+			var hy0 := float(int(hall["top"])) * 16.0
+			var hy1 := (float(int(hall["bottom"])) + 1.0) * 16.0
+			if mx >= hx0 - 0.1 and mx <= hx1 + 0.1 and absf(mtop - hy0) < 0.1 \
+					and absf(mtop + mh - hy1) < 0.1:
+				par_ok += 1
+				per_hall[hi] = int(per_hall.get(hi, 0)) + 1
+				break
+	var halls_ok := per_hall.size() > 0
+	for hi in per_hall:
+		if int(per_hall[hi]) < 2 or int(per_hall[hi]) > 4:
+			halls_ok = false
+	chk(par_ok == motes.size() and halls_ok,
+		"t16: пылинки вписаны в залы, 2..4 на зал (%d/%d, залов %d)" \
+				% [par_ok, motes.size(), per_hall.size()])
+	# падение ненулевое у каждой (зеркало y = top + fmod(t*spd + ph*h, h))
+	var move_ok := 0
+	for m in motes:
+		var mtop := float(m["top"])
+		var mh := float(m["h"])
+		var spd := float(m["spd"])
+		var ph := float(m["ph"])
+		var differs := false
+		var ys: Array = []
+		for tv: float in [0.3, 1.7, 4.9]:
+			ys.append(mtop + fmod(tv * spd + ph * mh, mh))
+		if not (absf(float(ys[0]) - float(ys[1])) < 0.01 and absf(float(ys[1]) - float(ys[2])) < 0.01):
+			differs = true
+		if differs and spd > 0.0 and spd <= 8.0:
+			move_ok += 1
+	chk(move_ok == motes.size(),
+		"t16: падение ненулевое у всех пылинок, скорость медленная (%d/%d)" \
+				% [move_ok, motes.size()])
+	# живое движение при активной зоне (окно по НАСТОЯЩЕМУ времени: в headless
+	# кадры быстрее реального); счёт не растёт (без накопления)
+	var n0 := motes.size()
+	var y0s: Array = []
+	var ymoved: Array = []
+	for m in motes:
+		y0s.append((m["spr"] as Sprite2D).position.y)
+		ymoved.append(false)
+	world.cave_zone.process_mode = Node.PROCESS_MODE_INHERIT
+	var t_end := Time.get_ticks_msec() + 1300
+	while Time.get_ticks_msec() < t_end:
+		await _frames(2)
+		for i in motes.size():
+			var dy: float = absf((motes[i]["spr"] as Sprite2D).position.y - float(y0s[i]))
+			if dy > 0.5:
+				ymoved[i] = true
+	var live_move := 0
+	for f in ymoved:
+		if bool(f):
+			live_move += 1
+	var grew := motes.size() != n0
+	world.cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
+	chk(live_move > 0 and not grew,
+			"t16: пылинки живые (движение %d), счёт не растёт (%d)" % [live_move, motes.size()])
+	# вне реестра дима (в воздухе, героя не накрывают)
+	var dim_free := 0
+	for m in motes:
+		if not ysd.has(m["spr"]):
+			dim_free += 1
+	chk(dim_free == motes.size(), "t16: пылинки вне реестра дима (%d)" % dim_free)
 
 
 ## Независимое зеркало расстановки факелов (тот же контракт: якоря сундук/вход/

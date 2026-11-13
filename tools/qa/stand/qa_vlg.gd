@@ -33,6 +33,10 @@ extends Node2D
 ##     накрытии >= 40% бокса героя
 ##     димится к 0.5±0.08, южнее стопы — ровно 1.0 (кроны не интегрированы —
 ##     _ys_canopies пуст).
+## 10. c7 «микро-жизнь»: VillageSway (overlay-качание травы/цветов, 2 фазы,
+##     фазы кластеров не синхронны, тайлмап не мутируется) и 3..6 светлячков
+##     с проходным маршрутом и позицией — чистой функцией времени; у обоих
+##     слоёв ноль коллайдеров.
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -141,6 +145,7 @@ func _ready() -> void:
 	_inv7()
 	await _inv8()
 	await _inv9()
+	await _inv10()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -596,3 +601,101 @@ func rect2_overlap_ratio_proxy(r: Rect2, b: Rect2) -> float:
 	if not r.intersects(b):
 		return 0.0
 	return r.intersection(b).get_area() / maxf(b.get_area(), 1.0)
+
+# ---------------------------------------------------------------- инв. 10 (c7)
+## c7 «микро-жизнь v1»: overlay-качание травы/цветов (2 дискретные фазы,
+## паттерн int(t/T)%2, фазы кластеров рассинхронизированы хэшем клетки;
+## тайлмап не мутируется — inv2/инв.деревни байт-в-байт уже зелёные выше) и
+## светлячки 3..6 (маршрут по проходным клеткам — зеркало BLOCK_CHARS, ноль
+## физ. узлов; позиция — чистая функция времени: пин-зеркало совпадает).
+func _inv10() -> void:
+	var w: Node2D = game_world
+	if w == null:
+		chk(false, "inv10: мир не построен")
+		return
+	var sway: Node2D = w.village_zone.get_node_or_null("VillageSway")
+	var mgr: Node = w.village_zone.find_child("Flies", true, false)
+	if sway == null or mgr == null:
+		chk(false, "inv10: VillageSway/Flies не найдены — поставка c7 не на месте")
+		return
+	var items: Array = sway.get("items")
+	chk(items.size() > 0, "inv10: кластеров качания построено %d" % items.size())
+	var tex0: Array = []
+	for it in items:
+		tex0.append((it["spr"] as Sprite2D).texture)
+	# окно — НАСТОЯЩЕЕ время (в headless кадры идут быстрее реального):
+	# 1.3 c ≈ 2.6 периода SWAY_T; сравнение «за весь проём» (на конце окна
+	# фаза может совпасть со стартовой)
+	var changed_flags: Array = []
+	for i in items.size():
+		changed_flags.append(false)
+	var t_end := Time.get_ticks_msec() + 1300
+	while Time.get_ticks_msec() < t_end:
+		await _frames(2)
+		for i in items.size():
+			if (items[i]["spr"] as Sprite2D).texture != tex0[i]:
+				changed_flags[i] = true
+	var moved := 0
+	var distinct := {}
+	for i in items.size():
+		if bool(changed_flags[i]):
+			moved += 1
+		distinct[(items[i]["spr"] as Sprite2D).texture] = true
+	chk(moved > 0, "inv10: качание — за 1.3 с кадр сменили %d кластеров" % moved)
+	chk(distinct.size() >= 2,
+		"inv10: фазы не синхронны — в моменте разных кадров %d" % distinct.size())
+	var bodies := 0
+	for n: Node in [sway, mgr]:
+		for d in n.find_children("*", "CollisionShape2D", true, false):
+			bodies += 1
+	chk(bodies == 0, "inv10: ноль коллайдеров у качания/светлячков (%d)" % bodies)
+	var flies: Array = mgr.get("flies")
+	chk(flies.size() >= 3 and flies.size() <= 6,
+		"inv10: светлячков %d (в диапазоне 3..6)" % flies.size())
+	if flies.is_empty():
+		return
+	var route_ok := true
+	for f: Dictionary in flies:
+		for c: Vector2i in f["cells"]:
+			if _blocked(c.x, c.y):
+				route_ok = false
+	chk(route_ok, "inv10: весь маршрут светлячков — проходимые клетки (point-сетка)")
+	# чистая функция времени: независимое зеркало формулы совпадает со живым
+	# положением (детерминизм без накопления) и в моменте позиция лежит в
+	# проходной клетке (в стены зайти не может физически)
+	var mirror_ok := true
+	var cell_ok := true
+	var tt := float(Time.get_ticks_msec()) / 1000.0
+	for f: Dictionary in flies:
+		var p_live: Vector2 = (f["spr"] as Sprite2D).global_position
+		var p_mirr := _ff_pos(f, tt)
+		if p_live.distance_to(p_mirr) > 2.0:
+			mirror_ok = false
+		var cc := Vector2i(int(floor(p_live.x / 16.0)), int(floor(p_live.y / 16.0)))
+		if _blocked(cc.x, cc.y):
+			cell_ok = false
+	chk(mirror_ok, "inv10: позиция светлячка = чистая функция времени (зеркало)")
+	chk(cell_ok, "inv10: светлячки в моменте — в проходных клетках")
+	# живое движение — тоже окном по настоящему времени (max excursion)
+	var p0: Vector2 = (flies[0]["spr"] as Sprite2D).global_position
+	var max_move := 0.0
+	t_end = Time.get_ticks_msec() + 1300
+	while Time.get_ticks_msec() < t_end:
+		await _frames(2)
+		max_move = maxf(max_move, p0.distance_to((flies[0]["spr"] as Sprite2D).global_position))
+	chk(max_move > 1.5,
+		"inv10: светлячки живые — ход %.1f px за 1.3 с" % max_move)
+
+
+## Зеркало формулы FireflyLayer._process (копия договора c7).
+func _ff_pos(f: Dictionary, tt: float) -> Vector2:
+	var cs: Array = f["cells"]
+	var nn := cs.size()
+	var u := tt / float(f["hop"]) + float(f["phase"])
+	var k := int(u)
+	var fr: float = fmod(u, 1.0)
+	var a: Vector2i = cs[posmod(k, nn)]
+	var b: Vector2i = cs[posmod(k + 1, nn)]
+	var pa := Vector2(float(a.x) * 16.0 + 8.0, float(a.y) * 16.0 + 8.0)
+	var pb := Vector2(float(b.x) * 16.0 + 8.0, float(b.y) * 16.0 + 8.0)
+	return pa.lerp(pb, fr) + Vector2(0.0, -6.0 + sin(tt * 2.1 + float(f["phase"]) * TAU) * 1.5)

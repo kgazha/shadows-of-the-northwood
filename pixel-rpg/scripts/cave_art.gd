@@ -1,4 +1,4 @@
-﻿class_name CaveArt
+class_name CaveArt
 extends RefCounted
 ## c3 «Пещера v1»: интеграция кодоген-арта пещеры по вердикту пользователя
 ## «1 внедряем; 2 сундук широкий» (docs/PIXEL_STYLE.md, docs/SCALE_CANON.md).
@@ -56,6 +56,7 @@ const TORCH_DIRS := [
 const ATLAS_PATH := "res://assets/cave/cave_props_v1.png"
 const FLOOR_PATH := "res://assets/cave/cave_floor_v1.png"
 const WALL_PATH := "res://assets/cave/cave_wall_v1.png"
+const P := preload("res://scripts/pixel_palette.gd")
 
 ## Регионы атласа пропов — alpha-trim кадры (лист 128×64). Ноги нижнего яруса
 ## на y=64, «с потолка» — ярусы сталактитов выровнены по своей верхней кромке.
@@ -115,6 +116,12 @@ static func hash_xy(x: int, y: int) -> int:
 
 static func frac(x: int, y: int, salt: int) -> float:
 	return float(hash_xy(x * 31 + salt, y * 17 + salt * 7)) / 4294967295.0
+
+
+## Целочисленный хэш с солью (тот же FNV-рецепт, что frac/hash_xy) — для
+## детерминированного выбора соседей/скоростей в c7.
+static func hash_salted(x: int, y: int, salt: int) -> int:
+	return hash_xy(x * 31 + salt, y * 17 + salt * 7)
 
 
 ## Символ карты ("" — за рамками/за длиной строки). rows — Array[String].
@@ -353,7 +360,132 @@ static func build(world) -> Node2D:
 		t.add_child(lt)
 		t.lit = lt
 		world._ys_prop(t)
+	# c7 микро-жизнь: медленные падающие пылинки в залах (чистая визуализация)
+	_build_dust(world, layer)
 	return layer
+
+
+# ------------------------------------------------------------- c7 пылинки
+
+## Пылинки: «зал» = 4-связная компонента клеток длинных (>= HALL_RUN_MIN)
+## горизонтальных прогонов проходимого ('.'/',') — коридоры шире 3 отсекаются.
+## На зал 2..4 пылинки (хэш зала), глобальный лимит DUST_MAX. Позиция каждой —
+## чистая функция времени (fmod-цикл падения + синусный снос): ни накопления,
+## ни randi; после отключения зоны не «догоняется». 1 px, CAVE_ROCK LIGHT,
+## вне реестра дима (в воздухе, героя не накрывают), z шкалы V-01 от потолка
+## зала — ПОД актёрами.
+const HALL_RUN_MIN := 5
+const DUST_MAX := 24
+
+static var _dust_tex: ImageTexture = null
+
+
+static func _dust_texture() -> ImageTexture:
+	if _dust_tex == null:
+		var im := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		im.set_pixel(0, 0, P.RAMPS["CAVE_ROCK"][P.T_LIGHT])
+		_dust_tex = ImageTexture.create_from_image(im)
+	return _dust_tex
+
+
+## Залы карты: список {left,top,right,bottom} (в клетках). Детерминировано.
+static func halls(rows: Array) -> Array:
+	var marked := {}
+	for y in rows.size():
+		var row := String(rows[y])
+		var x := 0
+		while x < row.length():
+			var run := 0
+			while x + run < row.length() and (row[x + run] == "." or row[x + run] == ","):
+				run += 1
+			if run >= HALL_RUN_MIN:
+				for k in run:
+					marked[Vector2i(x + k, y)] = true
+			x += maxi(run, 1)
+	# 4-связные компоненты
+	var seen := {}
+	var out: Array = []
+	for c0 in marked:
+		if seen.has(c0):
+			continue
+		var stack: Array = [c0]
+		var comp: Array = []
+		seen[c0] = true
+		while not stack.is_empty():
+			var c: Vector2i = stack.pop_back()
+			comp.append(c)
+			for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var n2: Vector2i = c + d
+				if marked.has(n2) and not seen.has(n2):
+					seen[n2] = true
+					stack.append(n2)
+		var l := 1 << 30
+		var t0 := 1 << 30
+		var r := -(1 << 30)
+		var b := -(1 << 30)
+		for c: Vector2i in comp:
+			l = mini(l, c.x)
+			r = maxi(r, c.x)
+			t0 = mini(t0, c.y)
+			b = maxi(b, c.y)
+		if r - l + 1 >= HALL_RUN_MIN and b - t0 + 1 >= 5 and comp.size() >= 30:
+			out.append({"left": l, "top": t0, "right": r, "bottom": b})
+	out.sort_custom(func(a2, b2):
+		var at := int(a2["top"])
+		var bt := int(b2["top"])
+		if at != bt:
+			return at < bt
+		return int(a2["left"]) < int(b2["left"])
+	)
+	return out
+
+
+static func _build_dust(world, layer: Node2D) -> void:
+	var hl: Array = halls(world.dungeon_zone.map_rows)
+	if hl.is_empty():
+		return
+	var mgr: CaveDustLayer = CaveDustLayer.new()
+	mgr.name = "CaveDust"
+	layer.add_child(mgr)
+	var total := 0
+	for hi in hl.size():
+		var hall: Dictionary = hl[hi]
+		var n := 2 + absi(hash_salted(int(hall["left"]), int(hall["top"]), 71)) % 3  # 2..4
+		for k in n:
+			if total >= DUST_MAX:
+				return
+			var seedx := absi(hash_salted(int(hall["left"]) + k, int(hall["top"]) * 3 + hi, 83))
+			var w_cells: int = int(hall["right"]) - int(hall["left"]) + 1
+			var x0 := (float(hall["left"]) + float(seedx % w_cells)) * 16.0 + 8.0
+			var top := float(hall["top"]) * 16.0
+			var hh := float(int(hall["bottom"]) - int(hall["top"]) + 1) * 16.0
+			var spr := Sprite2D.new()
+			spr.texture = _dust_texture()
+			spr.modulate = Color(1.0, 1.0, 1.0, 0.85)
+			spr.z_as_relative = false
+			spr.z_index = int(round(fposmod(top, float(world.YS_CYCLE))))
+			mgr.add_child(spr)
+			mgr.motes.append({
+				"spr": spr, "x": x0, "top": top, "h": hh,
+				"spd": 3.0 + float(seedx % 4),                 # 3..6 px/с — медленно
+				"ph": float((seedx >> 4) % 1000) / 1000.0,
+			})
+			total += 1
+
+
+class CaveDustLayer:
+	extends Node2D
+	## Падение: y = top + fmod(t*spd + ph*h, h) — бесшовный цикл без
+	## накопления; снос: x = x0 + sin(t*0.4 + ph*2PI)*1.2. Всё детерминировано.
+	var motes: Array = []
+
+	func _process(_delta: float) -> void:
+		var tt := float(Time.get_ticks_msec()) / 1000.0
+		for m in motes:
+			var y := float(m["top"]) + fmod(tt * float(m["spd"]) + float(m["ph"]) * float(m["h"]),
+					float(m["h"]))
+			var x := float(m["x"]) + sin(tt * 0.4 + float(m["ph"]) * TAU) * 1.2
+			m["spr"].position = Vector2(x, y)
 
 
 static func _floorish(ch: String) -> bool:
