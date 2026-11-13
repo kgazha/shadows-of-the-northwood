@@ -85,10 +85,12 @@ var near: Array = []
 var hint_label: Label
 var village_zone: Node2D
 var village_v4: Node2D  # t54: слой «Деревня v4» (VillageArt) — пропы кодоген-атласа
+var cave_v1: Node2D     # c3: слой «Пещера v1» (CaveArt) — алтарь/сундук/сталагмиты
 # t52 снос: GroveCanopy/VillageProps/Env4Props/живая земля сняты (VISUAL_REBUILD
-# «план сноса»); y-sort списки ниже остаются пустыми до ручной прорисовки t53+.
+# «план сноса»).
 var _ys_canopies: Array = []   # Sprite2D крон — overhead-дим по герою (V-01/V-07); пусто с t52
-var _ys_props_dim: Array = []  # Sprite2D мелких пропов — дим-контракт по герою; пусто с t52
+var _ys_props_dim: Array = []  # Sprite2D мелких пропов — дим-контракт по герою;
+                               # с t54/c3 заполнен кодоген-пропами village/ и cave/
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -681,11 +683,20 @@ func _build_cave() -> void:
 	# коллайдер сразу, а не только после перезахода (пещера строится один раз)
 	GameState.stats_changed.connect(_sync_cave_chest)
 	_spawn_cave_mobs()
+	_build_cave_v1()
 	# T13: тенеплёты в нише босса убраны из геймплея полностью (вердикт
 	# пользователя: напрягают). Скрипт-резерв и арт остаются в репозитории, но
 	# активная логика их не загружает и не создаёт — ни в пещере, ни в иных зонах.
 	cave_zone.visible = false
 	cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
+
+## c3 (вердикт «1 внедряем; 2 сундук широкий; 3 — под вопросом»): визуальный
+## слой «Пещера v1» — алтарь, широкий сундук над стандартной клеткой-коллайдером,
+## сталагмиты в реестре дима, сталактиты «с потолка» над актёров. Кострище-мох
+## НЕ размещается (ждёт отдельного вердикта). Сетка/BFS/коллайдеры не затронуты;
+## нет атласов — слой не строится (легаси-вид).
+func _build_cave_v1() -> void:
+	cave_v1 = CaveArt.build(self)
 
 ## Первая проходимая клетка-«пол» ('.'/','), отсутствующая в banned: обход
 ## колец Chebyshev d_min..d_max от t0 (внутри кольца — row-major). Якоря/двери/

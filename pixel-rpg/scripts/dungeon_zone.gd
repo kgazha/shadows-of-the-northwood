@@ -116,6 +116,24 @@ func _build_tiles() -> void:
 	for i in 16:
 		src.create_tile(Vector2i(i, 0))
 	ts.add_source(src, 0)
+	# c3 «Пещера v1» (вердикт «1 внедряем»): кодоген-атласы пола/стен — ИСКЛЮЧИТЕЛЬНО
+	# визуальные источники 1/2. CHAR_TO_TILE, BLOCKING, коллайдеры, BFS и сетка —
+	# бит-в-бит: set_cell выбирает лишь (source, coords) рисунка клетки. Нет
+	# атласов — вся пещера остаётся на легаси dungeon_tiles (фолбэк).
+	var cave := CaveArt.have_art()
+	if cave:
+		var fsrc := TileSetAtlasSource.new()
+		fsrc.texture = load(CaveArt.FLOOR_PATH)
+		fsrc.texture_region_size = Vector2i(TILE, TILE)
+		for i in CaveArt.F_TILES:
+			fsrc.create_tile(Vector2i(i, 0))
+		ts.add_source(fsrc, CaveArt.SRC_FLOOR)
+		var wsrc := TileSetAtlasSource.new()
+		wsrc.texture = load(CaveArt.WALL_PATH)
+		wsrc.texture_region_size = Vector2i(TILE, TILE)
+		for i in CaveArt.W_TILES:
+			wsrc.create_tile(Vector2i(i, 0))
+		ts.add_source(wsrc, CaveArt.SRC_WALL)
 	tilemap = TileMapLayer.new()
 	tilemap.tile_set = ts
 	tilemap.z_index = -10
@@ -129,8 +147,20 @@ func _build_tiles() -> void:
 				# дверь уже открыта в прошлой сессии — тайл 3 -> 0, как сундук 11 -> 12
 				if idx == 3 and GameState.door_opened:
 					idx = 0
+				if cave and (idx == 0 or idx == 1 or idx == 10 or idx == 11 or idx == 12):
+					tilemap.set_cell(Vector2i(x, y), CaveArt.SRC_FLOOR,
+							Vector2i(CaveArt.floor_slot(map_rows, x, y, idx), 0))
+					continue
+				if cave and idx == 2:
+					# направленные кромки (подошва/углы) — только на открытой грани,
+					# по вертикали не повторяются (аудит c2 F4)
+					tilemap.set_cell(Vector2i(x, y), CaveArt.SRC_WALL,
+							Vector2i(CaveArt.wall_slot(map_rows, x, y), 0))
+					continue
 				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
-	# амулет уже взят — сундук рисуем открытым (dungeon_tiles.png, тайл 12)
+	# амулет уже взят — сундук рисуем открытым (dungeon_tiles.png, тайл 12);
+	# широкий сундук v1 — поверх, состояние по-прежнему держит тайл 12
+	# (_sync_chest проверяет именно его).
 	if chest_tile.x >= 0 and GameState.has_amulet:
 		tilemap.set_cell(chest_tile, 0, Vector2i(12, 0))
 
@@ -166,7 +196,12 @@ func _build_walls() -> void:
 
 func unlock_door(t: Vector2i) -> void:
 	if tilemap != null:
-		tilemap.set_cell(t, 0, Vector2i(0, 0))  # открытая дверь = каменный пол
+		# открытая дверь = каменный пол (c3: тот же v1-пол, что рисует _build_tiles)
+		if CaveArt.have_art():
+			tilemap.set_cell(t, CaveArt.SRC_FLOOR,
+					Vector2i(CaveArt.floor_slot(map_rows, t.x, t.y, 0), 0))
+		else:
+			tilemap.set_cell(t, 0, Vector2i(0, 0))
 	if _door_shapes.has(t):
 		_door_shapes[t].queue_free()
 		_door_shapes.erase(t)

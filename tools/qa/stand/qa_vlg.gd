@@ -29,7 +29,8 @@ extends Node2D
 ##     на v4-кадры fire/ash; изба — герой южнее стопы ПОВЕРХ, севернее ПОД; NPC
 ##     в динамической шкале. Порядок отрисовки — геометрия/коллайдеры не трогаются.
 ##  9. t41 дим-контракт мелких пропов на v4-пропах: реестр _ys_props_dim заполнен
-##     только спрайтами атласа деревни; указатель при накрытии >= 40% бокса героя
+##     только спрайтами кодоген-атласов (деревня v4 + c3 пещера v1); указатель при
+##     накрытии >= 40% бокса героя
 ##     димится к 0.5±0.08, южнее стопы — ровно 1.0 (кроны не интегрированы —
 ##     _ys_canopies пуст).
 
@@ -531,7 +532,8 @@ func _inv7() -> void:
 
 # ---------------------------------------------------------------- инв. 9 (t54)
 ## t54 вердикт «внедряем в игру»: в деревне — кодоген-пропы v4. Реестр дима
-## заполнен ЧЕСТНО: только спрайты атласа assets/village/ (qwen в игре нет —
+## заполнен ЧЕСТНО: только спрайты кодоген-атласов assets/village/ и
+## assets/cave/ (c3 «Пещера v1»; qwen в игре нет —
 ## закон 13.11 действует); указатель — дим-контракт t41 (накрытие >= 40% бокса
 ## героя => 0.5±0.08; южнее стопы — ровно 1.0). Кроны не интегрированы —
 ## _ys_canopies по-прежнему пуст.
@@ -552,11 +554,11 @@ func _inv9() -> void:
 		var t: Texture2D = (spr.texture as AtlasTexture).atlas
 		var pth := String(t.resource_path) if t != null else "null"
 		sig += "%s@%s " % [str((spr.texture as AtlasTexture).region.size), pth.get_file()]
-		if pth.contains("assets/village/"):
+		if pth.contains("assets/village/") or pth.contains("assets/cave/"):
 			v4_n += 1
 	print("   реестр дима: %d [%s]" % [ysd.size(), sig])
 	chk(ysd.size() >= 3 and v4_n == ysd.size(),
-		"inv9: _ys_props_dim — только v4-пропы атласа (%d/%d)" % [v4_n, ysd.size()])
+		"inv9: _ys_props_dim — только кодоген-пропы village/cave (%d/%d)" % [v4_n, ysd.size()])
 	var yscan: Array = w.get("_ys_canopies") if w.get("_ys_canopies") != null else []
 	chk(yscan.is_empty(), "inv9: _ys_canopies пусты — кроны не интегрированы (%d)" % yscan.size())
 	pl.process_mode = Node.PROCESS_MODE_DISABLED

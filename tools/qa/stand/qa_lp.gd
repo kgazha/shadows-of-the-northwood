@@ -44,10 +44,20 @@ extends Node2D
 ##      Только порядок отрисовки — геометрия бит-в-бит.
 ##  T15 t52+t54: env4-реестров/VillageProps нет (контракт отсутствия); с вердикта
 ##      «Деревня v4 — внедряем» реестр _ys_props_dim заполнен только кодоген-
-##      спрайтами атласа assets/village/; в дереве мира ни одной ген-текстуры.
+##      спрайтами атласов assets/village/ и assets/cave/; в дереве мира ни одной
+##      ген-текстуры.
+##  T16 c3 «Пещера v1 — внедряем»: кодоген-атласы assets/cave/ в игре; кадры
+##      пропов alpha-trim’лены до силуэта (пустых полей нет, стопа=OUTLINE);
+##      побайтовый rebake == закоммиченные атласы; CHAR_TO_TILE/BLOCKING бит-в-бит,
+##      визуальные источники 1/2 с зеркальным пересчётом каждой клетки;
+##      направленные кромки стены по вертикали не повторяются (аудит c2 F4);
+##      широкий сундук — визуальный слой над стандартным клеточным коллайдером;
+##      сталактиты над актёров, сталагмиты в реестре дима; живой дим; чистые
+##      комментарии генератора (без CJK и склеек).
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
+const PAL := preload("res://scripts/pixel_palette.gd")
 const SAVE_PATH := "user://save_morkheim.json"
 const PIN_SEED := 42
 
@@ -106,6 +116,7 @@ func _ready() -> void:
 	await _t13()
 	await _t14()
 	await _t15()
+	await _t16()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1348,10 +1359,12 @@ func _t15() -> void:
 		"t15: env4-реестров мира нет (_env4_cave_props/_env4_ashen_props)")
 	chk(world.get("village_props") == null,
 		"t15: VillageProps снесён (world.village_props == null)")
-	# t54 (вердикт «Деревня v4 — внедряем»): реестр дима заполнен — но ЧЕСТНО:
-	# только спрайты кодоген-атласа assets/village/ (закон 13.11: qwen нет).
+	# t54 (вердикт «Деревня v4 — внедряем») + c3 («Пещера v1 — внедряем»): реестр
+	# дима заполнен — но ЧЕСТНО: только спрайты кодоген-атласов assets/village/ и
+	# assets/cave/ (закон 13.11: qwen нет).
 	var ysd: Array = world.get("_ys_props_dim")
 	var v4n := 0
+	var cvn := 0
 	if ysd != null:
 		for p in ysd:
 			var spr := p as Sprite2D
@@ -1359,9 +1372,11 @@ func _t15() -> void:
 				var t: Texture2D = (spr.texture as AtlasTexture).atlas
 				if t != null and String(t.resource_path).contains("assets/village/"):
 					v4n += 1
-	chk(ysd != null and ysd.size() >= 3 and v4n == ysd.size(),
-		"t15: реестр дима = только v4-пропы кодоген-атласа (%d/%d)" \
-		% [v4n, ysd.size() if ysd != null else 0])
+				elif t != null and String(t.resource_path).contains("assets/cave/"):
+					cvn += 1
+	chk(ysd != null and v4n >= 3 and cvn >= 2 and v4n + cvn == ysd.size(),
+		"t15: реестр дима = только кодоген-пропы village/cave (%d+%d/%d)" \
+		% [v4n, cvn, ysd.size() if ysd != null else 0])
 	# в дереве мира нет ни одной ген-текстуры: art/, portraits/, env4_ и т.п.
 	var gen_seen: Array[String] = []
 	var stack: Array[Node] = [world]
@@ -1380,3 +1395,342 @@ func _t15() -> void:
 				gen_seen.append(p)
 	chk(gen_seen.is_empty(),
 		"t15: в дереве мира нет ген-текстур (%d: %s)" % [gen_seen.size(), str(gen_seen)])
+
+# ------------------------------------------- T16 (c3): интеграция «Пещера v1» ---------
+## Вердикт «1 внедряем; 2 сундук широкий; 3 кострище-мох — под вопросом».
+## Пин-сид 42. Зеркальные пересчёты (wall/floor слот, FNV) переписаны здесь
+## НЕЗАВИСИМО от scripts/cave_art.gd — как BFS/2×2 в T3/T5.
+
+## Независимое зеркало CaveArt.wall_slot: направленные кромки только на
+## открытой грани массива => по вертикали не повторяются (аудит c2 F4).
+func _t16_wall_slot(rows: Array, x: int, y: int) -> int:
+	if _ch(rows, x, y + 1) != "#":
+		return 2   # W_BOT
+	if _ch(rows, x, y - 1) != "#":
+		return 1   # W_TOP
+	if _ch(rows, x + 1, y) != "#":
+		return 3   # W_CORNER_L
+	if _ch(rows, x - 1, y) != "#":
+		return 4   # W_CORNER_R
+	return 0       # W_BODY
+
+## Независимое зеркало FNV-1a + солей CaveArt (тот же канон, своя реализация).
+func _t16_frac(x: int, y: int, salt: int) -> float:
+	var xx := x * 31 + salt
+	var yy := y * 17 + salt * 7
+	var h := 2166136261
+	for b in [xx & 0xFF, (xx >> 8) & 0xFF, yy & 0xFF, (yy >> 8) & 0xFF]:
+		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
+	return float(h) / 4294967295.0
+
+## Независимое зеркало CaveArt.floor_slot.
+func _t16_floor_slot(rows: Array, x: int, y: int, idx: int) -> int:
+	if idx == 1:
+		return 1
+	if idx >= 10 and idx <= 12:
+		return 2
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			if _ch(rows, x + dx, y + dy) == "A":
+				return 2
+	if _t16_frac(x, y, 11) < 0.12:
+		return 3
+	return 0
+
+## bbox непрозрачных пикселей кадра (или Rect2i(0,0,0,0) для пустого).
+func _t16_bbox(img: Image) -> Rect2i:
+	var minx := img.get_width()
+	var miny := img.get_height()
+	var maxx := -1
+	var maxy := -1
+	for y in img.get_height():
+		for x in img.get_width():
+			if img.get_pixel(x, y).a > 0.5:
+				minx = mini(minx, x)
+				miny = mini(miny, y)
+				maxx = maxi(maxx, x)
+				maxy = maxi(maxy, y)
+	if maxx < 0:
+		return Rect2i(0, 0, 0, 0)
+	return Rect2i(minx, miny, maxx - minx + 1, maxy - miny + 1)
+
+func _t16() -> void:
+	if world == null or world.dungeon_zone == null:
+		chk(false, "t16: мир/пещера не построены")
+		return
+	var dz = world.dungeon_zone
+	# 0) таблицы — бит-в-бит (вердикт в): визуальная интеграция не трогала сетку
+	chk(dz.CHAR_TO_TILE == PIN_CAVE_CT, "t16: CHAR_TO_TILE пещеры бит-в-бит")
+	chk(dz.BLOCKING == PIN_CAVE_BLK, "t16: BLOCKING пещеры бит-в-бит")
+	var have_scripts := ResourceLoader.exists("res://scripts/cave_art.gd") \
+			and ResourceLoader.exists("res://tools_art/cave_paint.gd")
+	var paths := ["res://assets/cave/cave_floor_v1.png",
+			"res://assets/cave/cave_wall_v1.png",
+			"res://assets/cave/cave_props_v1.png"]
+	var ok_assets := true
+	for p in paths:
+		if not ResourceLoader.exists(p):
+			ok_assets = false
+	chk(ok_assets, "t16: атласы пещеры v1 на месте (assets/cave/)")
+	if not (have_scripts and ok_assets):
+		chk(false, "t16: cave_art/cave_paint или атласы отсутствуют — пины 1..9 не выполнимы")
+		return
+	var CA = load("res://scripts/cave_art.gd")
+	var CP = load("res://tools_art/cave_paint.gd")
+	var rows: Array = dz.map_rows
+	var origin: Vector2 = world.cave_zone.global_position
+	# 1) размеры атласов точные
+	var fimg: Image = (load(paths[0]) as Texture2D).get_image()
+	var wimg: Image = (load(paths[1]) as Texture2D).get_image()
+	var pimg: Image = (load(paths[2]) as Texture2D).get_image()
+	chk(fimg.get_size() == CA.FLOOR_SIZE and wimg.get_size() == CA.WALL_SIZE \
+			and pimg.get_size() == CA.ATLAS_SIZE,
+		"t16: размеры атласов 64x16/80x16/128x64 (%s/%s/%s)" \
+		% [str(fimg.get_size()), str(wimg.get_size()), str(pimg.get_size())])
+	# 2) alpha-trim: bbox силуэта == кадр региона (пустых полей нет — аудит c2 F2),
+	#    нижний ряд «стоячих» кадров — только OUTLINE (стопа-якорь)
+	var idxm: Dictionary = PAL.color_index()
+	var bad_tight := 0
+	var bad_foot := 0
+	for k in CA.REGIONS:
+		var r: Rect2 = CA.REGIONS[k]
+		var crop := pimg.get_region(Rect2i(int(r.position.x), int(r.position.y),
+				int(r.size.x), int(r.size.y)))
+		var bb := _t16_bbox(crop)
+		if bb != Rect2i(0, 0, crop.get_width(), crop.get_height()):
+			bad_tight += 1
+		if String(k) in ["ALTAR", "CHEST", "STALAG1", "STALAG2", "STALAG3"]:
+			var last := crop.get_height() - 1
+			var seen := 0
+			for x in crop.get_width():
+				var col := crop.get_pixel(x, last)
+				if col.a < 0.5:
+					continue
+				seen += 1
+				var info = idxm.get(PAL.key(col))
+				if info == null or int(info[1]) != PAL.T_OUTLINE:
+					bad_foot += 1
+			if seen == 0:
+				bad_foot += 1
+	chk(bad_tight == 0, "t16: кадры пропов alpha-trim’лены — силуэт касается всех сторон (%d)" % bad_tight)
+	chk(bad_foot == 0, "t16: стопа стоячих кадров — OUTLINE на нижней границе (%d)" % bad_foot)
+	# 3) вне регионов props-атласа пикселей нет (раскладка = единственный источник)
+	var outside := 0
+	for y in pimg.get_height():
+		for x in pimg.get_width():
+			if pimg.get_pixel(x, y).a <= 0.5:
+				continue
+			var inside := false
+			for k in CA.REGIONS:
+				var r2: Rect2 = CA.REGIONS[k]
+				if x >= int(r2.position.x) and x < int(r2.position.x + r2.size.x) \
+						and y >= int(r2.position.y) and y < int(r2.position.y + r2.size.y):
+					inside = true
+					break
+			if not inside:
+				outside += 1
+	chk(outside == 0, "t16: props-атлас чист вне регионов REGIONS (%d px)" % outside)
+	# 4) детерминизм: побайтовый in-process rebake == закоммиченные файлы
+	var eq_f: bool = CP.bake_floor_atlas().save_png_to_buffer() \
+			== FileAccess.get_file_as_bytes(paths[0])
+	var eq_w: bool = CP.bake_wall_atlas().save_png_to_buffer() \
+			== FileAccess.get_file_as_bytes(paths[1])
+	var eq_p: bool = CP.bake_props_atlas(CA.REGIONS, CA.ATLAS_SIZE)["img"] \
+			.save_png_to_buffer() == FileAccess.get_file_as_bytes(paths[2])
+	chk(eq_f and eq_w and eq_p,
+		"t16: rebake == committed md5 %s/%s/%s" % [
+			FileAccess.get_md5(paths[0]), FileAccess.get_md5(paths[1]),
+			FileAccess.get_md5(paths[2])])
+	# 5) тайл-источники и зеркальный пересчёт КАЖДОЙ клетки (вердикт в/б)
+	var tm: TileMapLayer = dz.tilemap
+	chk(tm != null and tm.tile_set.get_source(1) != null and tm.tile_set.get_source(2) != null,
+		"t16: tileset пещеры содержит визуальные источники 1/2")
+	var bad_map := 0
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			var ch := row[x]
+			if not PIN_CAVE_CT.has(ch):
+				continue
+			var idx := int(PIN_CAVE_CT[ch])
+			if idx == 3 and GameState.door_opened:
+				idx = 0
+			var src := tm.get_cell_source_id(Vector2i(x, y))
+			var co := tm.get_cell_atlas_coords(Vector2i(x, y))
+			if idx == 2:
+				if src != 2 or co.x != _t16_wall_slot(rows, x, y):
+					bad_map += 1
+			elif idx == 0 or idx == 1 or idx == 10 or idx == 11:
+				if x == dz.chest_tile.x and y == dz.chest_tile.y and GameState.has_amulet:
+					if src != 0 or co.x != 12:
+						bad_map += 1
+				elif src != 1 or co.x != _t16_floor_slot(rows, x, y, idx):
+					bad_map += 1
+			elif src != 0 or co.x != idx:
+				bad_map += 1
+	chk(bad_map == 0, "t16: рисунок каждой клетки = зеркальный пересчёт (ошибок %d)" % bad_map)
+	# 6) направленные кромки по факту тайлмапа: под WALL_BOT никогда нет стены
+	#    (однократная кромка, вертикального репита нет — аудит c2 F4)
+	var bot_n := 0
+	var bot_bad := 0
+	for y in rows.size():
+		for x in String(rows[y]).length():
+			if String(rows[y])[x] != "#":
+				continue
+			if tm.get_cell_source_id(Vector2i(x, y)) == 2 \
+					and tm.get_cell_atlas_coords(Vector2i(x, y)).x == 2:
+				bot_n += 1
+				if _ch(rows, x, y + 1) == "#":
+					bot_bad += 1
+	chk(bot_n > 0 and bot_bad == 0,
+		"t16: WALL_BOT однократен — подошва над проходимым, репита нет (%d клеток, %d)" % [bot_n, bot_bad])
+	# 7) пропы: слой CaveV1 — алтарь на каждой «A», сундук на «C», якоря стопой
+	#    на нижнюю границу клетки, z по V-01; сталактиты — над актёров
+	var layer: Node2D = world.cave_zone.get_node_or_null("CaveV1")
+	chk(layer != null, "t16: слой CaveV1 построен в пещере")
+	if layer == null:
+		return
+	var key_of := {}  # Rect2 региона -> имя
+	for k in CA.REGIONS:
+		key_of[CA.REGIONS[k]] = String(k)
+	var by_key := {}
+	for c in layer.get_children():
+		var spr := c as Sprite2D
+		if spr == null or not (spr.texture is AtlasTexture):
+			continue
+		var at := spr.texture as AtlasTexture
+		var kk: String = String(key_of.get(at.region, ""))
+		if kk == "":
+			continue
+		if not by_key.has(kk):
+			by_key[kk] = []
+		by_key[kk].append(spr)
+	var altar_cells: Array = []
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] == "A":
+				altar_cells.append(Vector2i(x, y))
+	var alt_n: Array = by_key.get("ALTAR", [])
+	var alt_bad := 0
+	for ac: Vector2i in altar_cells:
+		var want_bottom: float = origin.y + float(ac.y + 1) * 16.0
+		var want_x: float = origin.x + float(ac.x) * 16.0 + 8.0
+		var found := false
+		for s in alt_n:
+			var rr := _t15_rect(s)
+			if absf(rr.end.y - want_bottom) < 0.6 and absf(rr.get_center().x - want_x) < 0.6 \
+					and s.z_index == int(round(fposmod(rr.end.y, WS.YS_CYCLE))):
+				found = true
+				break
+		if not found:
+			alt_bad += 1
+	chk(alt_n.size() == altar_cells.size() and alt_bad == 0,
+		"t16: алтарь 1.6H на каждой «A» (стопа=граница клетки, z V-01) (%d/%d, bad %d)" \
+		% [alt_n.size(), altar_cells.size(), alt_bad])
+	# широкий сундук: визуальный слой >1 клетки; коллайдер клетки и grid — целы
+	var chst: Array = by_key.get("CHEST", [])
+	var ct: Vector2i = dz.chest_tile
+	var chest_spr: Sprite2D = null
+	if chst.size() == 1 and ct.x >= 0:
+		chest_spr = chst[0]
+		var rr := _t15_rect(chest_spr)
+		var ok_geom: bool = absf(rr.size.x - 33.0) < 0.6 \
+				and absf(rr.get_center().x - (origin.x + float(ct.x) * 16.0 + 8.0)) < 0.6 \
+				and absf(rr.end.y - (origin.y + float(ct.y + 1) * 16.0)) < 0.6
+		chk(ok_geom and not dz.cell_walkable(ct),
+			"t16: широкий сундук 33 px поверх клеточного коллайдера «C» (walkable=%s)" \
+			% str(dz.cell_walkable(ct)))
+		var space := get_world_2d().direct_space_state
+		var q := PhysicsPointQueryParameters2D.new()
+		q.position = origin + Vector2(float(ct.x) * 16.0 + 8.0, float(ct.y) * 16.0 + 8.0)
+		q.collision_mask = 2
+		q.collide_with_bodies = true
+		# «этаж» пещеры выключен (process DISABLED) — тела вне симуляции;
+		# включаем зону на время пробы и возвращаем как было.
+		world.cave_zone.process_mode = Node.PROCESS_MODE_INHERIT
+		await _frames(2)
+		var hits := space.intersect_point(q, 4)
+		var solid := false
+		for h in hits:
+			var col: Object = h.get("collider")
+			if col is StaticBody2D and world.cave_zone.is_ancestor_of(col as Node):
+				solid = true
+		world.cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
+		chk(solid, "t16: физика клетки сундука осталась (стандартный блок не изменён)")
+	else:
+		chk(false, "t16: широкий сундук не найден на клетке «C» (%d)" % chst.size())
+	# сталактиты: висячие, z выше потолка актёров, верх кадра = верх клетки-свода
+	var stalc_all: Array = by_key.get("STALC3", []) + by_key.get("STALC2", []) \
+			+ by_key.get("STALC1", [])
+	var stalc_ok := 0
+	for s in stalc_all:
+		var rr := _t15_rect(s)
+		var wx := int(round((rr.get_center().x - origin.x - 8.0) / 16.0))
+		var wy := int(round((rr.position.y - origin.y) / 16.0))
+		if s.z_index == CA.Z_STALC and _ch(rows, wx, wy) == "#" \
+				and _ch(rows, wx, wy + 1) in [".", ",", "A", "C"]:
+			stalc_ok += 1
+	chk(stalc_all.size() > 0 and stalc_ok == stalc_all.size() and int(CA.Z_STALC) > 480,
+		"t16: сталактиты над актёров (z=%s>480), верх на границе свода (%d/%d)" \
+		% [str(CA.Z_STALC), stalc_ok, stalc_all.size()])
+	# сталагмиты: в общем реестре дима, стопа на нижней границе клетки пола под «#»
+	var ysd: Array = world.get("_ys_props_dim")
+	var g_n := (by_key.get("STALAG1", []) as Array).size() \
+			+ (by_key.get("STALAG2", []) as Array).size() \
+			+ (by_key.get("STALAG3", []) as Array).size()
+	var g_ok := 0
+	for kk in ["STALAG1", "STALAG2", "STALAG3"]:
+		for s in by_key.get(kk, []):
+			if not ysd.has(s):
+				continue
+			var rr := _t15_rect(s)
+			var wx := int(round((rr.get_center().x - origin.x - 8.0) / 16.0))
+			var wy := int(round((rr.end.y - origin.y) / 16.0)) - 1
+			if _ch(rows, wx, wy) in [".", ","] and _ch(rows, wx, wy - 1) == "#" \
+					and s.z_index == int(round(fposmod(rr.end.y, WS.YS_CYCLE))):
+				g_ok += 1
+	chk(g_n > 0 and g_ok == g_n,
+		"t16: сталагмиты в реестре дима, стопа у нижней границы клетки (%d/%d)" % [g_ok, g_n])
+	# 8) живой дим (вердикт г): герой севернее стопы сундука >= 40% бокса -> 0.5,
+	#    южнее — ровно 1.0 (тот же контракт, что кроны/деревня)
+	if chest_spr != null:
+		var p = world.player
+		var p0: Vector2 = p.global_position
+		p.set_physics_process(false)
+		var cxg: float = origin.x + float(ct.x) * 16.0 + 8.0
+		var footg: float = origin.y + float(ct.y + 1) * 16.0
+		p.global_position = Vector2(cxg, footg - 10.0)
+		await _frames(24)
+		var a_dim: float = chest_spr.modulate.a
+		p.global_position = Vector2(cxg, footg + 20.0)
+		await _frames(24)
+		var a_near: float = chest_spr.modulate.a
+		p.global_position = p0
+		p.set_physics_process(true)
+		chk(a_dim > 0.35 and a_dim < 0.65 and a_near >= 0.995,
+			"t16: живой дим сундука — севернее %.2f, южнее %.2f" % [a_dim, a_near])
+	else:
+		chk(false, "t16: дим не проверен — сундука нет")
+	# 9) чистые комментарии (вердикт д): ни CJK, ни склеек в генераторе/модулях
+	var bad_src := 0
+	for fp in ["res://tools_art/sheet_cave.gd", "res://tools_art/cave_paint.gd",
+			"res://scripts/cave_art.gd"]:
+		var fa := FileAccess.open(fp, FileAccess.READ)
+		if fa == null:
+			bad_src += 1
+			continue
+		var src: String = fa.get_as_text()
+		for i in src.length():
+			var u := src.unicode_at(i)
+			if (u >= 0x3040 and u <= 0x30FF) or (u >= 0x3400 and u <= 0x4DBF) \
+					or (u >= 0x4E00 and u <= 0x9FFF) or (u >= 0xF900 and u <= 0xFAFF) \
+					or (u >= 0xFF01 and u <= 0xFF5E):
+				bad_src += 1
+				break
+		if src.contains("противInternal") or src.contains("уfooter") \
+				or src.contains("теньfoot-"):
+			bad_src += 1
+	chk(bad_src == 0, "t16: комментарии чистые — без CJK и склеек (%d файлов с дефектами)" % bad_src)
