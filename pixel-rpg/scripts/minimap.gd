@@ -11,7 +11,9 @@ extends Node
 ## CanvasItem-оверлеев на том же слое. Рамка — та же Kenney 9-slice
 ## assets/ui/panel_frame.png, что у окон hud/settings (region 32, поля 4); новых
 ## ассетов не рисуется. Тёмная палитра: фон почти чёрный, пол светлый «подсветкой»,
-## стены тонут.
+## стены тонут. Рамка — только КайМА: у StyleBox сердцевина непрозрачна, а Panel
+## рисуется после _draw радара, поэтому draw_center=false (t49) — фоном поля
+## считает paint().
 ##
 ## СОДЕРЖИМОЕ (текущая зона целиком, тумана войны нет): тайлы walk/wall кэшем
 ## ImageTexture (деревня — world.map_rows + CHAR_TO_TILE/BLOCKING, пещера —
@@ -39,7 +41,6 @@ extends Node
 
 const CFG_PATH := "user://minimap_cfg.json"
 const FRAME_PATH := "res://assets/ui/panel_frame.png"
-const BRONZE_PATH := "res://assets/ui/decor_minimap_bronze.png"
 const SIZE := 64.0          # весь радар с рамкой, px (внутреннее поле 64 - 2*FRAME)
 const FRAME := 4.0          # толщина 9-slice рамки (Kenney: регион 32, поля 4)
 const PAD := 6.0            # отступ от правого верхнего угла экрана (как HUD-полосы)
@@ -400,22 +401,17 @@ class _Radar extends Control:
 			flat.set_border_width_all(1)
 			flat.border_color = Color(0.35, 0.4, 0.5, 0.8)
 			sb = flat
+		# t49 (юзер-баг «мир виден, радар пустой» в окне): рамка обязана рисовать
+		# ТОЛЬКО кайму. Panel — ребёнок контрола радара, а дети CanvasItem рисуются
+		# ПОСЛЕ его _draw(): непрозрачная сердцевина 9-slice (panel_frame.png,
+		# 99.6 % пикселей с a=1) затягивала всю тайловую подложку и блипы — при
+		# зелёных данных и зелёном _draw. Фон внутреннего поля рисует paint()
+		# (C_BG по всему полю), поэтому центр StyleBox выключен и для фолбека.
+		sb.draw_center = false
 		_frame.add_theme_stylebox_override("panel", sb)
 		add_child(_frame)
-		# волна 3: бронзовое кольцо поверх деревянной рамы. Ребёнок радара с
-		# mouse_filter IGNORE — paint(), позиция и размеры радара не трогает;
-		# прозрачная дырка в текстуре равна внутреннему полю (tex r~56/128)
-		if ResourceLoader.exists(Minimap.BRONZE_PATH):
-			var ring := TextureRect.new()
-			ring.texture = load(Minimap.BRONZE_PATH)
-			ring.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			ring.stretch_mode = TextureRect.STRETCH_SCALE
-			ring.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-			ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			ring.set_anchors_preset(Control.PRESET_FULL_RECT)
-			add_child(ring)
-		else:
-			push_warning("Нет ассета: %s — миникарта без бронзового кольца" % Minimap.BRONZE_PATH)
+		# t52 снос (закон пользователя 13.11): ген-«бронзовое кольцо» снято —
+		# рамка миникарты остаётся легаси деревянной 9-slice panel_frame (+фолбек).
 
 	func _draw() -> void:
 		if mm != null:

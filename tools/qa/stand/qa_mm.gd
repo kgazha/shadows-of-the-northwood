@@ -11,6 +11,14 @@ extends Node2D
 ## зелёные не значат, что контрол рисуется — проверяем _radar.visible,
 ## is_visible_in_tree() и фактическое срабатывание _draw радара в деревне и в
 ## обеих ПРОЦЕДУРНЫХ зонах (cave/ashen), а также в фазе M-тумблера.
+##
+## t49 (второй юзер-баг того же класса: «мир виден, радар пустой», окно): стенд
+## подтверждал данные и вызов _draw, но НЕ подтверждал, что тайловую подложку
+## видно. В окне её целиком перекрывала непрозрачная сердцевина 9-slice рамки:
+## Panel — ребёнок радара, а дети CanvasItem рисуются ПОСЛЕ его _draw(). Фаза
+## _phase_backing закрывает дыру: непустой ИСТОЧНИК подложки (залит каждый тайл,
+## пол/стены различимы) в трёх зонах, блипы внутри поля + регресс POI, и аудит
+## детей радара — никто не имеет права рисовать непрозрачным ПОВЕРХ paint().
 
 const Main := "res://scenes/main.tscn"
 const SAVE_PATH := "user://save_morkheim.json"
@@ -102,6 +110,7 @@ func _ready() -> void:
 	await _phase_nozone()
 	await _phase_toggle()
 	await _phase_rebuild()
+	await _phase_backing()
 	var total: int = pass_n + fail_n
 	print("QA_MM %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -256,3 +265,103 @@ func _phase_rebuild() -> void:
 	chk(_poi_of(Minimap.C_PORTAL).size() == 1, "новый мир: портал на месте")
 	chk(_poi_of(Minimap.C_CHEST).is_empty(), "новый мир: взятый сундук не возродился")
 	chk(_bosses_in_ashen().is_empty(), "новый мир: мёртвая Ведьма не заспавнена")
+
+# ================================================== t49: подложку видно, не только собрана
+
+func _b8(v: float) -> int:
+	return int(round(v * 255.0))
+
+## Побайтовое сравнение: после 8-битной квантизации цвет тайла не равен константе
+## палитры (0.176 vs 45/255 -> float ==Color== Color лжёт), сравниваем байты ±2.
+func _close8(c: Color, k: Color) -> bool:
+	return absi(_b8(c.r) - _b8(k.r)) <= 2 and absi(_b8(c.g) - _b8(k.g)) <= 2 \
+		and absi(_b8(c.b) - _b8(k.b)) <= 2
+
+func _expected_grid() -> Vector2i:
+	if mm._zone == "ashen" and world.ashen_grid != null:
+		return Vector2i(int(world.ashen_grid.map_w), int(world.ashen_grid.map_h))
+	if mm._zone == "cave" and world.dungeon_zone != null:
+		return Vector2i(int(world.dungeon_zone.map_w), int(world.dungeon_zone.map_h))
+	return Vector2i(int(world.map_w), int(world.map_h))
+
+## Источник подложки и блипы ТЕКУЩЕЙ зоны: «непустая подложка» = залит КАЖДЫЙ
+## тайл, при этом проходимый пол различим от стен (иначе радар был бы чёрным
+## квадратом при зелёных размерах).
+func _backing(tag: String) -> void:
+	var exp := _expected_grid()
+	chk(bool(mm._zone_seen) and mm._grid_tex != null
+			and int(mm._grid_w) == exp.x and int(mm._grid_h) == exp.y,
+		"%s: подложка собрана из карты зоны (%dx%d)" % [tag, exp.x, exp.y])
+	var floor_px := 0
+	var painted := 0
+	var total := exp.x * exp.y
+	if mm._grid_tex != null:
+		var ti: Image = mm._grid_tex.get_image()
+		ti = ti.duplicate()
+		ti.convert(Image.FORMAT_RGBA8)
+		for y in ti.get_height():
+			for x in ti.get_width():
+				var c := ti.get_pixel(x, y)
+				if _close8(c, Minimap.C_FLOOR):
+					floor_px += 1
+					painted += 1
+				elif _close8(c, Minimap.C_WALL):
+					painted += 1
+	chk(floor_px > 0, "%s: источник непустой — проходимый пол %d px" % [tag, floor_px])
+	chk(painted > 0 and painted == total,
+		"%s: залит каждый тайл источника (%d/%d)" % [tag, painted, total])
+	var inb := 0
+	for p in mm._pois:
+		var t: Vector2i = p["t"]
+		if t.x >= 0 and t.y >= 0 and t.x < int(mm._grid_w) and t.y < int(mm._grid_h):
+			inb += 1
+	chk(mm._pois.size() > 0 and inb == mm._pois.size(),
+		"%s: POI %d/%d внутри поля — блипы не теряются" % [tag, inb, mm._pois.size()])
+	var ht: Vector2i = mm._tile_of(world.player.global_position, mm._zone_base(), float(world.TILE))
+	chk(ht.x >= 0 and ht.y >= 0 and ht.x < int(mm._grid_w) and ht.y < int(mm._grid_h),
+		"%s: герой в поле сетки (%s)" % [tag, str(ht)])
+
+## Аудит детей радара: никто не имеет права рисовать непрозрачным ПОВЕРХ paint().
+## Так и умер радар в окне: сердцевина 9-slice панели (panel_frame.png, 99.6 %
+## пикселей с a=1) рисуется StyleBox'ом, а Panel — ребёнок контрола радара, т.е.
+## после его _draw(). Кольцо волны 3 проверено тем же тестом — центр обязан быть
+## прозрачным.
+func _overlay_audit() -> void:
+	var covered: Array = []
+	var frame := false
+	var nine := false
+	for c in mm._radar.get_children():
+		if c is Panel:
+			frame = true
+			var sb: StyleBox = (c as Control).get_theme_stylebox("panel")
+			if sb != null and sb.draw_center:
+				covered.append("рамка рисует центр (draw_center=true)")
+			if sb is StyleBoxTexture:
+				var st := sb as StyleBoxTexture
+				nine = st.texture != null and st.texture_margin_left > 0.0 \
+					and st.texture_margin_top > 0.0
+		elif c is TextureRect:
+			var tex: Texture2D = (c as TextureRect).texture
+			if tex == null:
+				continue
+			var im: Image = tex.get_image().duplicate()
+			im.convert(Image.FORMAT_RGBA8)
+			var a := im.get_pixelv(Vector2(im.get_width() / 2.0, im.get_height() / 2.0)).a
+			if a > 0.5:
+				covered.append("%s непрозрачно в центре (a=%.2f)" % [String(c.name), a])
+	chk(frame, "у радара есть рамка-Panel (внешний вид контракта не теряем)")
+	chk(nine, "рамка осталась 9-slice с полями (кайма рисуется)")
+	chk(covered.is_empty(), "поле радара не перекрыто непрозрачным [%s]"
+		% ("чисто" if covered.is_empty() else ", ".join(PackedStringArray(covered))))
+
+func _phase_backing() -> void:
+	world.apply_area("village", true)
+	await _repoll()
+	_backing("деревня")
+	_overlay_audit()
+	world.apply_area("cave", true)
+	await _repoll()
+	_backing("пещера")
+	world.apply_area("ashen", true)
+	await _repoll()
+	_backing("Пепелище")
