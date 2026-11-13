@@ -23,14 +23,15 @@ extends Node2D
 ##  7. Стартовые тайлы мобов деревни проходимы и достижимы из spawn:
 ##     slimes[] (JSON, пин) + лучники world.gd [4,26],[44,26] + мглокрысы
 ##     glade_west world.gd [6,16],[9,16],[6,18],[10,18] — пин-факты из кода.
-##  8. t33 (V-01/V-02/V-07) общая глубина: дети VillageProps/GroveCanopy —
-##     абсолютный z = глобальный Y стопы (независимая формула rect); изба —
-##     герой южнее ПОВЕРХ, севернее ПОД; крона над «стоящим в роще» героем
-##     димится к alpha 0.5 и возвращается в 1.0 (в покое — ровно 1.0); NPC в
-##     динамической шкале. Порядок отрисовки — геометрия/коллайдеры не трогаются.
-##  9. t41 дим-контракт мелких пропов (знак/костёр/колодец): проп над героем при
-##     накрытии >= 40% бокса димится к 0.5±0.08; южнее стопы — ровно 1.0 и герой
-##     поверх (паттерн кроны inv8.4, порог YS_PROP_DIM_AT).
+##  8. t33 (V-01/V-02/V-07) общая глубина + t54 (вердикт «внедряем»): qwen-слои
+##     (VillageProps/GroveCanopy/Env4) сняты; деревню строит VillageV4 — кодоген-
+##     атлас assets/village/village_v4.png (лист v4, bake); костёр-POI перекрашен
+##     на v4-кадры fire/ash; изба — герой южнее стопы ПОВЕРХ, севернее ПОД; NPC
+##     в динамической шкале. Порядок отрисовки — геометрия/коллайдеры не трогаются.
+##  9. t41 дим-контракт мелких пропов на v4-пропах: реестр _ys_props_dim заполнен
+##     только спрайтами атласа деревни; указатель при накрытии >= 40% бокса героя
+##     димится к 0.5±0.08, южнее стопы — ровно 1.0 (кроны не интегрированы —
+##     _ys_canopies пуст).
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -429,12 +430,28 @@ func _inv8() -> void:
 	chk(w != null and w.player != null, "inv8: мир и герой построены")
 	if w == null or w.player == null:
 		return
-	# 8.1 t52 снос (закон 13.11): ген-пропы деревни/рощи и env4 сняты —
-	# слои VillageProps/GroveCanopy/Env4* в мире отсутствуют; YS-инфраструктура
-	# (_ys_canopies/_ys_props_dim) пуста и ждёт пропсы ручной прорисовки.
+	# 8.1 t52 снос (закон 13.11) + t54 вердикт «внедряем в игру»: qwen-пропы
+	# VillageProps/GroveCanopy/Env4* в мире отсутствуют; деревню строит слой
+	# VillageV4 — кодоген-атлас листа v4 (tools_art/sheet_village.gd, режим bake).
 	var gc = w.village_zone.get_node_or_null("GroveCanopy")
 	chk(w.get("village_props") == null and gc == null,
 		"inv8: t52 снос — VillageProps и GroveCanopy сняты")
+	var v4 = w.village_zone.get_node_or_null("VillageV4")
+	var v4_spr: Array = []
+	if v4 != null:
+		for c in v4.get_children():
+			var spr := c as Sprite2D
+			if spr != null and spr.texture is AtlasTexture:
+				v4_spr.append(spr)
+	chk(v4 != null and v4_spr.size() >= 3,
+		"inv8: t54 VillageV4 — слой со спрайтами атласа (%d)" % v4_spr.size())
+	var v4_tex_ok := 0
+	for e in v4_spr:
+		var t: Texture2D = ((e as Sprite2D).texture as AtlasTexture).atlas
+		if t != null and String(t.resource_path).ends_with("assets/village/village_v4.png"):
+			v4_tex_ok += 1
+	chk(not v4_spr.is_empty() and v4_tex_ok == v4_spr.size(),
+		"inv8: VillageV4 — все спрайты из village_v4.png (ген-текстур нет)")
 	var env4_any := false
 	for zone: Node2D in [w.cave_zone, w.ashen_zone]:
 		for lname: String in ["Env4CaveProps", "Env4AshenProps"]:
@@ -448,10 +465,20 @@ func _inv8() -> void:
 	chk(wsrc.contains("_ys_canopies") and not wsrc.contains("_build_village_props") \
 			and not wsrc.contains("_build_grove"),
 		"inv8: world.gd — билдеры ген-пропов сняты, YS-инфраструктура цела")
-	# 8.2 костёр — игровой POI (campfire.gd), с ген-пропами не уходил
+	# 8.2 костёр — игровой POI (campfire.gd); t54: визуал перекрашен на v4-атлас
 	var cfs: Array = w.get("campfires") if w.get("campfires") != null else []
-	chk(cfs.size() == 1 and w.has_method("campfire_near"),
-		"inv8: костёр-POI жив (%d шт., campfire_near есть)" % cfs.size())
+	var cf_v4 := false
+	if cfs.size() == 1:
+		var anim = cfs[0].get("_anim")
+		var fr: SpriteFrames = anim.sprite_frames if anim != null else null
+		if fr != null and fr.has_animation("fire") and fr.has_animation("ash") \
+				and fr.get_frame_count("fire") == 1 and fr.get_frame_count("ash") == 1:
+			var t0 = fr.get_frame_texture("fire", 0)
+			while t0 is AtlasTexture:
+				t0 = (t0 as AtlasTexture).atlas
+			cf_v4 = t0 != null and String(t0.resource_path).ends_with("village_v4.png")
+	chk(cfs.size() == 1 and w.has_method("campfire_near") and cf_v4,
+		"inv8: костёр-POI жив и перекрашен на v4-атлас fire/ash (%d шт.)" % cfs.size())
 	# 8.3 NPC — в динамической шкале (стопа + биас, смещение ноги => смещение z)
 	var npc: Node2D = null
 	for e in get_tree().get_nodes_in_group("ys_actor"):
@@ -467,6 +494,27 @@ func _inv8() -> void:
 		chk(z1 > 0 and absf(float(npc.z_index - z1 - 48)) <= 1.0 \
 			and absf(float(npc.z_index) - (npc.global_position.y + 10.0)) < 3.0,
 			"inv8: NPC в динамической шкале глубины (%d -> %d)" % [z1, npc.z_index])
+	# 8.4 t54 (V-01 на v4-избе): герой южнее стопы — ПОВЕРХ избы, севернее — ПОД.
+	var hut: Sprite2D = null
+	for e in v4_spr:
+		if ((e as Sprite2D).texture as AtlasTexture).region.size == Vector2(35, 36):
+			hut = e as Sprite2D
+	if hut == null:
+		chk(false, "inv8: изба v4 (35×36) не найдена в VillageV4")
+	else:
+		var pl: Node2D = w.player
+		var keep := pl.global_position
+		var hut_z := hut.z_index
+		var foot := Vector2(hut.global_position.x, hut.global_position.y + 18.0)
+		pl.global_position = Vector2(foot.x, foot.y + 10.0)
+		await _frames(2)
+		var z_s := pl.z_index
+		pl.global_position = Vector2(foot.x, foot.y - 46.0)
+		await _frames(2)
+		var z_n := pl.z_index
+		pl.global_position = keep
+		chk(hut_z > 0 and z_s > hut_z and z_n < hut_z,
+			"inv8: изба в шкале стоп: юг z %d>%d, север z %d<%d" % [z_s, hut_z, z_n, hut_z])
 
 # ---------------------------------------------------------------- инв. 7
 func _inv7() -> void:
@@ -481,29 +529,65 @@ func _inv7() -> void:
 		else:
 			chk(true, "inv7: старт моба %s (%d,%d) проходим и достижим" % [nm, x, y])
 
-# ---------------------------------------------------------------- инв. 9 (t52)
-## t52 снос (закон 13.11): мелкие ген-пропы деревни (знак/костёр-проп/колодец)
-## сняты — димить нечего: VillageProps нет, реестр дима _ys_props_dim пуст.
-## YS-контракт при пустом реестре не ломается: герой остаётся в динамической
-## шкале глубины (формула стопы+биаса живая).
+# ---------------------------------------------------------------- инв. 9 (t54)
+## t54 вердикт «внедряем в игру»: в деревне — кодоген-пропы v4. Реестр дима
+## заполнен ЧЕСТНО: только спрайты атласа assets/village/ (qwen в игре нет —
+## закон 13.11 действует); указатель — дим-контракт t41 (накрытие >= 40% бокса
+## героя => 0.5±0.08; южнее стопы — ровно 1.0). Кроны не интегрированы —
+## _ys_canopies по-прежнему пуст.
 func _inv9() -> void:
 	var w: Node2D = game_world
 	if w == null or w.get("player") == null:
 		chk(false, "inv9: мир не построен")
 		return
 	var pl: Node2D = w.get("player")
-	chk(w.get("village_props") == null, "inv9: VillageProps снесён (t52)")
+	chk(w.get("village_props") == null, "inv9: qwen VillageProps отсутствует (t52 снос)")
 	var ysd: Array = w.get("_ys_props_dim") if w.get("_ys_props_dim") != null else []
-	chk(ysd.is_empty(), "inv9: _ys_props_dim пуст — мелких пропов нет (%d)" % ysd.size())
+	var v4_n := 0
+	var sig := ""
+	for p in ysd:
+		var spr := p as Sprite2D
+		if spr == null or not (spr.texture is AtlasTexture):
+			continue
+		var t: Texture2D = (spr.texture as AtlasTexture).atlas
+		var pth := String(t.resource_path) if t != null else "null"
+		sig += "%s@%s " % [str((spr.texture as AtlasTexture).region.size), pth.get_file()]
+		if pth.contains("assets/village/"):
+			v4_n += 1
+	print("   реестр дима: %d [%s]" % [ysd.size(), sig])
+	chk(ysd.size() >= 3 and v4_n == ysd.size(),
+		"inv9: _ys_props_dim — только v4-пропы атласа (%d/%d)" % [v4_n, ysd.size()])
 	var yscan: Array = w.get("_ys_canopies") if w.get("_ys_canopies") != null else []
-	chk(yscan.is_empty(), "inv9: _ys_canopies пусты — крон нет (%d)" % yscan.size())
+	chk(yscan.is_empty(), "inv9: _ys_canopies пусты — кроны не интегрированы (%d)" % yscan.size())
 	pl.process_mode = Node.PROCESS_MODE_DISABLED
-	await _frames(8)
-	# герой — в той же шкале (t51: стопа + YS-биас 10, без пропов не ломается)
+	# указатель (13×45): t41 дим-контракт на реальном пропе v4
+	var sgn: Sprite2D = null
+	var v4 = w.village_zone.get_node_or_null("VillageV4")
+	if v4 != null:
+		for c in v4.get_children():
+			var spr := c as Sprite2D
+			if spr != null and spr.texture is AtlasTexture \
+					and (spr.texture as AtlasTexture).region.size == Vector2(13, 45):
+				sgn = spr
+	if sgn == null:
+		chk(false, "inv9: указатель v4 (13×45) не найден")
+	else:
+		var foot := Vector2(sgn.global_position.x, sgn.global_position.y + 22.5)
+		pl.global_position = Vector2(foot.x, foot.y - 16.0)
+		await _frames(24)
+		var a_dim := sgn.modulate.a
+		pl.global_position = Vector2(foot.x, foot.y + 18.0)
+		await _frames(24)
+		var a_south := sgn.modulate.a
+		pl.global_position = Vector2(foot.x, foot.y - 16.0)  # дальше только проверка шкалы
+		pl.process_mode = Node.PROCESS_MODE_INHERIT
+		chk(a_dim >= 0.42 and a_dim <= 0.58 and absf(a_south - 1.0) < 0.001,
+			"inv9: указатель димится при накрытии (a=%.3f), южнее стопы ровно 1.0 (a=%.3f)" \
+			% [a_dim, a_south])
+	# герой — в общей шкале глубины (стопа + YS-биас); кадры: z пересчитается в _ys_update
+	await _frames(3)
 	chk(absf(float(pl.z_index) - (pl.global_position.y + 10.0)) < 3.0,
-		"inv9: герой в шкале глубины при пустом реестре пропов (z=%d, y=%.0f)" \
-		% [pl.z_index, pl.global_position.y])
-	pl.process_mode = Node.PROCESS_MODE_INHERIT
+		"inv9: герой в шкале глубины (z=%d, y=%.0f)" % [pl.z_index, pl.global_position.y])
 
 ## Пересечение двух rect, доля от площади rect b (для гейта >=40% в inv9).
 func rect2_overlap_ratio_proxy(r: Rect2, b: Rect2) -> float:

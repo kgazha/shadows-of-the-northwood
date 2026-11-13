@@ -42,8 +42,9 @@ extends Node2D
 ##      (герой/мобы/NPC) — в динамической шкале z = round(fposmod(y,YS_CYCLE))
 ##      +YS_ACTOR_BIAS (южнее — глубже); цифры урона подняты над z-шкалой зон.
 ##      Только порядок отрисовки — геометрия бит-в-бит.
-##  T15 t52: контракт отсутствия — env4-реестров/VillageProps нет, _ys_props_dim
-##      пуст, в дереве мира ни одной ген-текстуры.
+##  T15 t52+t54: env4-реестров/VillageProps нет (контракт отсутствия); с вердикта
+##      «Деревня v4 — внедряем» реестр _ys_props_dim заполнен только кодоген-
+##      спрайтами атласа assets/village/; в дереве мира ни одной ген-текстуры.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -1347,10 +1348,20 @@ func _t15() -> void:
 		"t15: env4-реестров мира нет (_env4_cave_props/_env4_ashen_props)")
 	chk(world.get("village_props") == null,
 		"t15: VillageProps снесён (world.village_props == null)")
+	# t54 (вердикт «Деревня v4 — внедряем»): реестр дима заполнен — но ЧЕСТНО:
+	# только спрайты кодоген-атласа assets/village/ (закон 13.11: qwen нет).
 	var ysd: Array = world.get("_ys_props_dim")
-	chk(ysd != null and ysd.is_empty(),
-		"t15: реестр дима пропов пуст (_ys_props_dim = %d)" \
-		% (ysd.size() if ysd != null else -1))
+	var v4n := 0
+	if ysd != null:
+		for p in ysd:
+			var spr := p as Sprite2D
+			if spr != null and spr.texture is AtlasTexture:
+				var t: Texture2D = (spr.texture as AtlasTexture).atlas
+				if t != null and String(t.resource_path).contains("assets/village/"):
+					v4n += 1
+	chk(ysd != null and ysd.size() >= 3 and v4n == ysd.size(),
+		"t15: реестр дима = только v4-пропы кодоген-атласа (%d/%d)" \
+		% [v4n, ysd.size() if ysd != null else 0])
 	# в дереве мира нет ни одной ген-текстуры: art/, portraits/, env4_ и т.п.
 	var gen_seen: Array[String] = []
 	var stack: Array[Node] = [world]

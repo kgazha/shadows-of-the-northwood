@@ -15,9 +15,18 @@ extends SceneTree
 ##
 ## Запуск:
 ##   Godot --headless --path pixel-rpg -s res://tools_art/sheet_village.gd -- <out.png>
+##   — режим sheet (t53): лист-вердикт. Байт-воспроизводим: повторный запуск
+##     даёт идентичный PNG (детерминированный код + _hash без randi).
+##   Godot ... -- bake <out_dir>
+##   — режим bake (t54, вердикт «внедряем в игру»): печатает игровые атласы
+##     village_v4.png (пропы, regions — из VillageArt.REGIONS) и
+##     village_floor_v4.png (пол 16 px) в out_dir. Пропы — те же билдеры,
+##     что в листе (утверждён «как есть»); дополнены только «пеплом» костра
+##     (нужен POI-состоянием, та же геометрия, только лесные рампы) и полом.
 ## Выход 0 — все самопроверки PASS, иначе 1.
 
 const P := preload("res://scripts/pixel_palette.gd")
+const V4 := preload("res://scripts/village_art.gd")
 
 const H_HERO := 16  # мир. px, канон t51
 
@@ -27,8 +36,29 @@ var _idx := {}  # argb32 -> [ramp, tone]
 # ----------------------------------------------------------------------------- helpers
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
-	var out_path := String(args[0]) if args.size() > 0 else "res://tools_art/sheet_village.png"
 	_idx = P.color_index()
+	var mode := "sheet"
+	var target := "res://tools_art/sheet_village.png"
+	if args.size() > 0:
+		if String(args[0]) in ["sheet", "bake"]:
+			mode = String(args[0])
+			if args.size() > 1:
+				target = String(args[1])
+		else:
+			target = String(args[0])  # обратная совместимость CLI t53
+	if mode == "bake":
+		_bake(target)
+	else:
+		_sheet(target)
+	if _fails > 0:
+		print("SELF-CHECK: FAIL (%d)" % _fails)
+		quit(1)
+	else:
+		print("SELF-CHECK: PASS")
+		quit(0)
+
+
+func _sheet(out_path: String) -> void:
 	var sprites: Array = _build_all()
 	for s in sprites:
 		_canon_pass(s["img"])
@@ -36,12 +66,53 @@ func _init() -> void:
 	var sheet := _compose(sprites)
 	var err := sheet.save_png(out_path)
 	print("sheet saved: %s (%dx%d) err=%d" % [out_path, sheet.get_width(), sheet.get_height(), err])
-	if _fails > 0:
-		print("SELF-CHECK: FAIL (%d)" % _fails)
-		quit(1)
-	else:
-		print("SELF-CHECK: PASS")
-		quit(0)
+
+
+## t54: игровые атласы деревни. Раскладка — единственный источник истины
+## VillageArt.REGIONS/FLOOR_SLOTS; размер региона обязан равняться размеру
+## спрайта (самопроверка), чистота палитры и правила канона — как в листе.
+func _bake(out_dir: String) -> void:
+	var props: Array = [
+		{"name": "HUT", "canon": "2.4H", "img": _build_hut()},
+		{"name": "WELL", "canon": "1.8H", "img": _build_well()},
+		{"name": "CAMPFIRE", "canon": "~1.4H", "img": _build_campfire()},
+		{"name": "CAMPFIRE_ASH", "canon": "~1.4H", "img": _build_campfire_ash()},
+		{"name": "SIGN", "canon": "3.0H", "img": _build_sign()},
+	]
+	for s in props:
+		_canon_pass(s["img"])
+		_check_sprite(s)
+	var atlas := _im(V4.ATLAS_SIZE.x, V4.ATLAS_SIZE.y)
+	atlas.fill(Color(0, 0, 0, 0))
+	for s in props:
+		var key := String(s["name"])
+		if not V4.REGIONS.has(key):
+			_fails += 1
+			print("[FAIL] bake: нет региона для %s в VillageArt.REGIONS" % key)
+			continue
+		var reg: Rect2 = V4.REGIONS[key]
+		var img: Image = s["img"]
+		if int(reg.size.x) != img.get_width() or int(reg.size.y) != img.get_height():
+			_fails += 1
+			print("[FAIL] bake: регион %s %dx%d != спрайт %dx%d" % [key,
+					int(reg.size.x), int(reg.size.y), img.get_width(), img.get_height()])
+			continue
+		atlas.blit_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()),
+				Vector2i(int(reg.position.x), int(reg.position.y)))
+	var floors: Array = [
+		_build_floor_grass(), _build_floor_grass2(), _build_floor_flower(),
+		_build_floor_path(), _build_floor_water(),
+	]
+	var fatlas := _im(V4.FLOOR_SIZE.x, V4.FLOOR_SIZE.y)
+	for i in floors.size():
+		var f: Image = floors[i]
+		_check_floor(f, i)
+		fatlas.blit_rect(f, Rect2i(0, 0, 16, 16), Vector2i(i * 16, 0))
+	var e1 := atlas.save_png(out_dir + "/village_v4.png")
+	var e2 := fatlas.save_png(out_dir + "/village_floor_v4.png")
+	print("bake saved: %s/village_v4.png (%dx%d) err=%d; village_floor_v4.png (%dx%d) err=%d" % [
+		out_dir, atlas.get_width(), atlas.get_height(), e1,
+		fatlas.get_width(), fatlas.get_height(), e2])
 
 
 func C(rn: String, tone: int) -> Color:
@@ -506,6 +577,150 @@ func _build_pine() -> Image:
 	return img
 
 
+# ----------------------------------------------------------------------------- bake-дополнения (t54)
+## Пепел костра (POI-состояние «использован»): та же геометрия ( Logs-крест,
+## тренога, котелок, камни), пламя заменено пепельным холмиком. Только ЛЕСНЫЕ
+## рампы (PIXEL_STYLE §1: зональные материалы разделены — пепелищные ASH_* тут
+## запрещены), никаких FIRE/FIRE_HOT — огонь погас.
+func _build_campfire_ash() -> Image:
+	var img := _im(23, 23)
+	# брёвна крестом — прогоревшие, в теневых тонах коры
+	_line(img, 6, 20, 16, 18, C("BARK", P.T_DARK))
+	_line(img, 6, 21, 16, 19, C("BARK", P.T_OUTLINE))
+	_line(img, 17, 20, 7, 18, C("BARK", P.T_OUTLINE))
+	_line(img, 17, 21, 7, 19, C("BARK", P.T_DARK))
+	# тренога остаётся (ноги в тени — огонь не грел), связка и котелок целы
+	_line(img, 11, 1, 3, 20, C("BARK", P.T_MID))
+	_line(img, 12, 1, 4, 20, C("BARK", P.T_DARK))
+	_line(img, 12, 1, 19, 20, C("BARK", P.T_DARK))
+	_line(img, 13, 1, 20, 20, C("BARK", P.T_OUTLINE))
+	_line(img, 11, 2, 11, 17, C("BARK", P.T_DARK))
+	_rect(img, 9, 1, 13, 2, C("WOOD", P.T_DARK))
+	_px(img, 10, 1, C("WOOD", P.T_LIGHT))
+	_px(img, 11, 1, C("WOOD", P.T_LIGHT))
+	_rect(img, 10, 3, 12, 3, C("IRON", P.T_LIGHT))
+	_px(img, 10, 4, C("IRON", P.T_LIGHT))
+	_rect(img, 9, 4, 13, 4, C("IRON", P.T_MID))
+	_rect(img, 8, 5, 14, 9, C("IRON", P.T_MID))
+	_rect(img, 9, 10, 13, 10, C("IRON", P.T_DARK))
+	_rect(img, 10, 11, 12, 11, C("IRON", P.T_DARK))
+	_px(img, 8, 5, C("IRON", P.T_LIGHT))
+	_px(img, 9, 5, C("IRON", P.T_LIGHT))
+	_px(img, 8, 6, C("IRON", P.T_LIGHT))
+	_px(img, 15, 7, C("IRON", P.T_DARK))
+	# пепельный холмик вместо пламени: светлый пепел сверху (СЗ), тёмные оспинки
+	_px(img, 11, 13, C("STONE_WARM", P.T_LIGHT))
+	_rect(img, 10, 14, 12, 16, C("STONE_WARM", P.T_LIGHT))
+	_rect(img, 9, 17, 13, 18, C("STONE_WARM", P.T_MID))
+	_px(img, 10, 17, C("STONE_WARM", P.T_DARK))
+	_px(img, 12, 18, C("STONE_WARM", P.T_DARK))
+	_px(img, 11, 15, C("STONE_WARM", P.T_MID))
+	_px(img, 8, 12, C("STONE_WARM", P.T_DARK))  # остывшие ошметки
+	_px(img, 14, 11, C("STONE_WARM", P.T_DARK))
+	# камни у основания — те же позиции
+	_blob(img, 3, 21, 2.6, 1.6, "STONE")
+	_blob(img, 19, 21, 2.6, 1.6, "STONE")
+	return img
+
+
+## Пол 16 px: тайловые ПОВЕРХНОСТИ — канон «стопы/силуэта» к ним не применяется
+## (нижний ряд тайла не «открытая грань»: тайлы смежны). Самопроверка — чистота
+## палитры и полная непрозрачность.
+
+func _build_floor_grass() -> Image:
+	var img := _im(16, 16)
+	img.fill(C("GRASS", P.T_MID))
+	for y in 16:
+		for x in 16:
+			var h := _hash(x + 17, y * 3 + 5)
+			if h < 0.13:
+				_px(img, x, y, C("GRASS", P.T_LIGHT))
+			elif h > 0.93:
+				_px(img, x, y, C("GRASS", P.T_DARK))
+	_px(img, 3, 5, C("GRASS", P.T_DARK))
+	_px(img, 4, 5, C("GRASS", P.T_LIGHT))
+	_px(img, 11, 10, C("GRASS", P.T_DARK))
+	_px(img, 12, 10, C("GRASS", P.T_LIGHT))
+	return img
+
+
+func _build_floor_grass2() -> Image:
+	var img := _im(16, 16)
+	img.fill(C("GRASS", P.T_MID))
+	for y in 16:
+		for x in 16:
+			var h := _hash(x * 7 + 3, y + 11)
+			if h < 0.10:
+				_px(img, x, y, C("GRASS", P.T_LIGHT))
+			elif h > 0.95:
+				_px(img, x, y, C("LEAF", P.T_DARK))
+	# галечник
+	_rect(img, 11, 10, 12, 11, C("STONE_WARM", P.T_DARK))
+	_px(img, 11, 10, C("STONE_WARM", P.T_MID))
+	_px(img, 3, 12, C("STONE_WARM", P.T_DARK))
+	_px(img, 5, 3, C("GRASS", P.T_DARK))
+	_px(img, 6, 3, C("GRASS", P.T_LIGHT))
+	return img
+
+
+func _build_floor_flower() -> Image:
+	var img := _im(16, 16)
+	img.fill(C("GRASS", P.T_MID))
+	for y in 16:
+		for x in 16:
+			var h := _hash(x + 41, y * 5 + 3)
+			if h < 0.12:
+				_px(img, x, y, C("GRASS", P.T_LIGHT))
+			elif h > 0.94:
+				_px(img, x, y, C("GRASS", P.T_DARK))
+	for f: Array in [[4, 5], [11, 7], [7, 12]]:
+		var fx: int = int(f[0])
+		var fy: int = int(f[1])
+		_px(img, fx - 1, fy, C("CLOTH", P.T_MID))
+		_px(img, fx + 1, fy, C("CLOTH", P.T_MID))
+		_px(img, fx, fy - 1, C("CLOTH", P.T_LIGHT))
+		_px(img, fx, fy + 1, C("CLOTH", P.T_DARK))
+		_px(img, fx - 1, fy - 1, C("CLOTH", P.T_LIGHT))
+		_px(img, fx, fy, C("FIRE", P.T_LIGHT))  # сердцевина
+		_px(img, fx, fy + 2, C("LEAF", P.T_DARK))  # стебелек
+	return img
+
+
+func _build_floor_path() -> Image:
+	var img := _im(16, 16)
+	img.fill(C("PATH", P.T_MID))
+	for y in 16:
+		for x in 16:
+			var h := _hash(x * 3 + 29, y * 2 + 13)
+			if h < 0.16:
+				_px(img, x, y, C("PATH", P.T_DARK))
+			elif h > 0.94:
+				_px(img, x, y, C("PATH", P.T_LIGHT))
+	_rect(img, 2, 12, 3, 13, C("PATH", P.T_DARK))
+	_px(img, 2, 12, C("PATH", P.T_LIGHT))
+	_px(img, 12, 3, C("STONE_WARM", P.T_DARK))
+	_px(img, 13, 4, C("STONE_WARM", P.T_MID))
+	_px(img, 8, 8, C("PATH", P.T_DARK))
+	return img
+
+
+func _build_floor_water() -> Image:
+	var img := _im(16, 16)
+	img.fill(C("WATER", P.T_MID))
+	for x in 16:
+		if _hash(x, 1) > 0.35:
+			_px(img, x, 3, C("WATER", P.T_LIGHT))
+		if _hash(x, 2) > 0.45:
+			_px(img, x, 9, C("WATER", P.T_DARK))
+		if _hash(x, 3) > 0.55:
+			_px(img, x, 13, C("WATER", P.T_LIGHT))
+	_px(img, 4, 6, C("WATER", P.T_LIGHT))
+	_px(img, 11, 4, C("WATER", P.T_LIGHT))
+	_px(img, 13, 11, C("WATER", P.T_DARK))
+	_px(img, 2, 11, C("WATER", P.T_OUTLINE))
+	return img
+
+
 # ----------------------------------------------------------------------------- self-check
 func _check_sprite(s: Dictionary) -> void:
 	var img: Image = s["img"]
@@ -563,6 +778,24 @@ func _check_sprite(s: Dictionary) -> void:
 		_fails += 1
 		print("[FAIL] %s: нет подсветки СЗ (LIGHT сверху: %d)" % [nm, lt_top])
 	print("[spr] %-9s %2dx%-2d  %5s  colors:%d  light t/b: %d/%d" % [nm, w, h, String(s["canon"]), uniq.size(), lt_top, lt_bot])
+
+
+## Тайл пола: 16×16, полностью непрозрачен, чистая палитра (силуэт/СТОПА — не к тайлам).
+func _check_floor(img: Image, slot: int) -> void:
+	var foreign := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var col := img.get_pixel(x, y)
+			if col.a < 1.0:
+				foreign += 1
+				continue
+			if not _idx.has(P.key(col)):
+				foreign += 1
+	if foreign > 0:
+		_fails += 1
+		print("[FAIL] floor slot %d: %d px вне палитры/прозрачны" % [slot, foreign])
+	else:
+		print("[floor] slot %d 16x16 ok" % slot)
 
 
 # ----------------------------------------------------------------------------- sheet

@@ -84,6 +84,7 @@ var quest_marker: CanvasLayer  # t19: стрелка цели квеста (scri
 var near: Array = []
 var hint_label: Label
 var village_zone: Node2D
+var village_v4: Node2D  # t54: слой «Деревня v4» (VillageArt) — пропы кодоген-атласа
 # t52 снос: GroveCanopy/VillageProps/Env4Props/живая земля сняты (VISUAL_REBUILD
 # «план сноса»); y-sort списки ниже остаются пустыми до ручной прорисовки t53+.
 var _ys_canopies: Array = []   # Sprite2D крон — overhead-дим по герою (V-01/V-07); пусто с t52
@@ -190,6 +191,7 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_entities()
 	_build_campfires()
+	_build_village_v4()
 	_build_cave()
 	_build_cave_entrance()
 	_build_ashen()
@@ -260,6 +262,15 @@ func _build_tiles() -> void:
 	for i in 16:
 		src.create_tile(Vector2i(i, 0))
 	ts.add_source(src, 0)
+	# t54 (вердикт «Деревня v4 — внедряем»): пол деревни — v4-атлас кодогенерации
+	# (PixelPalette-рампы GRASS/PATH/WATER/CLOTH/FIRE, тот же модуль, что и пропы).
+	# Лес/деревня ходят по нему; «дикая» природа пещеры/Пепелища — своими атласами.
+	var v4src := TileSetAtlasSource.new()
+	v4src.texture = load(VillageArt.FLOOR_PATH)
+	v4src.texture_region_size = Vector2i(TILE, TILE)
+	for i in VillageArt.FLOOR_SIZE.x / TILE:
+		v4src.create_tile(Vector2i(i, 0))
+	ts.add_source(v4src, 1)
 	var layer := TileMapLayer.new()
 	layer.tile_set = ts
 	layer.z_index = -10
@@ -268,9 +279,16 @@ func _build_tiles() -> void:
 		var row := String(map_rows[y])
 		for x in map_w:
 			var ch := row[x]
-			if CHAR_TO_TILE.has(ch):
+			if VillageArt.FLOOR_SLOTS.has(ch):
+				layer.set_cell(Vector2i(x, y), 1, Vector2i(int(VillageArt.FLOOR_SLOTS[ch]), 0))
+			elif CHAR_TO_TILE.has(ch):
 				var idx := int(CHAR_TO_TILE[ch])
-				layer.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
+				if idx in [6, 7, 8, 13]:
+					# W/R/D («изба») и «s» (указатель) с t54 рисуются v4-спрайтами
+					# из атласа — под ними обычная трава; СЕТКА и BLOCKING бит-в-бит.
+					layer.set_cell(Vector2i(x, y), 1, Vector2i(0, 0))
+				else:
+					layer.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
 
 ## Глубина пропа по канону стоп (V-01): абсолютный z = глобальный Y нижнего края
 ## картинки (стопа). z_as_relative=false — радиус действия слоя (z 5) больше не
@@ -308,6 +326,11 @@ func _build_walls() -> void:
 			if not CHAR_TO_TILE.has(ch):
 				continue
 			var idx := int(CHAR_TO_TILE[ch])
+			if idx in [6, 7, 8]:
+				# t54: W/R/D — клетки избы в сетке (BFS-зеркало qa_vlg не трогать!),
+				# но ФИЗИКА теперь у самого спрайта избы (VillageArt: честный
+				# силуэт 35×32 вместо невидимых стен блока 96×64).
+				continue
 			if idx in BLOCKING:
 				var spec: Array = BLOCK_SHAPES.get(idx, [TILE, TILE, 0, 0])
 				var cs := CollisionShape2D.new()
@@ -407,6 +430,15 @@ func _build_campfires() -> void:
 		village_zone.add_child(cf)
 		cf.setup(self, String(id), CAMPFIRE_SPOTS[id])
 		campfires.append(cf)
+
+## t54 (вердикт пользователя «внедряем в игру»): художественный слой деревни
+## «Деревня v4» — кодоген-атласы листа t53 (docs/PIXEL_STYLE.md). Изба/колодец/
+## указатель — спрайты VillageArt; костёр-POI перекрашен на v4-кадры. Сетка,
+## CHAR_TO_TILE, коллайдеры мелких блокировщиков и POI — бит-в-бит (qa_vlg).
+func _build_village_v4() -> void:
+	village_v4 = VillageArt.build(self)
+	for cf in campfires:
+		VillageArt.restyle_campfire(cf)
 
 ## Ближайший живой (не использованный) костёр в зоне E — или null.
 func campfire_near() -> Node2D:
