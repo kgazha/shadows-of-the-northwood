@@ -54,6 +54,10 @@ extends Node2D
 ##      широкий сундук — визуальный слой над стандартным клеточным коллайдером;
 ##      сталактиты над актёров, сталагмиты в реестре дима; живой дим; чистые
 ##      комментарии генератора (без CJK и склеек).
+##  T16.10 c5 «факелы лучше»: состав 3..5, 2 кадра фликера (паттерн A_TORCH),
+##      монтаж на стене выше головы (z V-01, вне дима), пульс PointLight2D по
+##      паттерну _altar_light, детерминированная расстановка (зеркало),
+##      мох-кострище в дереве пещеры отсутствует (кадр — только в атласе).
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -1396,7 +1400,7 @@ func _t15() -> void:
 	chk(gen_seen.is_empty(),
 		"t15: в дереве мира нет ген-текстур (%d: %s)" % [gen_seen.size(), str(gen_seen)])
 
-# ------------------------------------------- T16 (c3): интеграция «Пещера v1» ---------
+# ------------------------------------------- T16 (c3+c5): интеграция «Пещера v1» -------
 ## Вердикт «1 внедряем; 2 сундук широкий; 3 кострище-мох — под вопросом».
 ## Пин-сид 42. Зеркальные пересчёты (wall/floor слот, FNV) переписаны здесь
 ## НЕЗАВИСИМО от scripts/cave_art.gd — как BFS/2×2 в T3/T5.
@@ -1734,3 +1738,138 @@ func _t16() -> void:
 				or src.contains("теньfoot-"):
 			bad_src += 1
 	chk(bad_src == 0, "t16: комментарии чистые — без CJK и склеек (%d файлов с дефектами)" % bad_src)
+	# 10) c5 факелы (вердикт «факелы лучше»): состав 3..5, два кадра фликера,
+	#     легальный настенный монтаж выше головы, пульс света, мох-кострища
+	#     в дереве пещеры нет, расстановка бит-детерминирована
+	if not (CA.REGIONS.has("TORCH1") and CA.REGIONS.has("TORCH2")):
+		chk(false, "t16: c5 — кадры TORCH1/TORCH2 не в REGIONS (поставка не на месте)")
+		return
+	var torches: Array = []
+	for c in layer.get_children():
+		if c is Sprite2D and c.get("t0") != null and c.get("t1") != null:
+			torches.append(c)
+	chk(torches.size() >= 3 and torches.size() <= 5,
+		"t16: состав факелов 3..5 (%d)" % torches.size())
+	var trh_ok := 0
+	var trh_cells: Array = []
+	for t in torches:
+		var s2 := t as Sprite2D
+		var a0 := s2.get("t0") as AtlasTexture
+		var a1 := s2.get("t1") as AtlasTexture
+		var lt: Object = s2.get("lit")
+		var rr := _t15_rect(s2)
+		var wx := int(round((rr.get_center().x - origin.x - 8.0) / 16.0))
+		# низ кронштейна — на 2 px выше верхней границы проходимой клетки
+		var wy := int(round((rr.end.y - origin.y + 2.0) / 16.0)) - 1
+		trh_cells.append(Vector2i(wx, wy))
+		var frames_ok: bool = a0 != null and a1 != null and a0 != a1 \
+				and a0.region == CA.REGIONS["TORCH1"] and a1.region == CA.REGIONS["TORCH2"]
+		var mount_ok: bool = _ch(rows, wx, wy) == "#" and _ch(rows, wx, wy + 1) in [".", ","] \
+				and absf(rr.end.y - (origin.y + float(wy + 1) * 16.0 - 2.0)) < 0.6
+		var depth_ok: bool = s2.z_index == int(round(fposmod(rr.end.y, WS.YS_CYCLE))) \
+				and not ysd.has(s2)
+		var light_ok: bool = lt is PointLight2D
+		if frames_ok and mount_ok and depth_ok and light_ok:
+			trh_ok += 1
+	chk(trh_ok == torches.size() and torches.size() > 0,
+		"t16: факелы — 2 кадра (TORCH1/2), стена над проходимым, выше головы," \
+				+ " z V-01, вне дима, со светом (%d/%d)" % [trh_ok, torches.size()])
+	# расстановка = независимое зеркало алгоритма (тот же контракт порядка)
+	var slots_a := _t16_torch_slots(rows, dz.chest_tile, dz.spawn_tile, dz.door_tile)
+	var slots_b := _t16_torch_slots(rows, dz.chest_tile, dz.spawn_tile, dz.door_tile)
+	var cells_eq: bool = slots_a == slots_b and slots_a.size() == torches.size()
+	if cells_eq:
+		for i in slots_a.size():
+			if slots_a[i] != trh_cells[i]:
+				cells_eq = false
+				break
+	chk(cells_eq,
+		"t16: расстановка факелов детерминирована и совпадает с зеркалом (%d/%d)" \
+				% [slots_a.size(), torches.size()])
+	# живой фликер + пульс: зона пещеры активна лишь мгновение пробы (паттерн
+	# физ-пробы сундука); кадры обязан показать оба, свет — ненулевой размах
+	if not torches.is_empty():
+		var ts0 := torches[0] as Sprite2D
+		world.cave_zone.process_mode = Node.PROCESS_MODE_INHERIT
+		var seen_frames := {}
+		var e_min := 99.0
+		var e_max := -99.0
+		# окно — НАСТОЯЩЕЕ время (в headless кадры могут идти быстрее реального):
+		# 1.3 c ≈ 45 % периода алтарного пульса (2.2 рад/с) => размах гарантирован
+		var t_end := Time.get_ticks_msec() + 1300
+		while Time.get_ticks_msec() < t_end:
+			await _frames(2)
+			var cur := ts0.texture as AtlasTexture
+			if cur != null:
+				seen_frames[cur.region.position.x] = true
+			var l2: Object = ts0.get("lit")
+			if l2 is PointLight2D:
+				e_min = minf(e_min, float(l2.energy))
+				e_max = maxf(e_max, float(l2.energy))
+		world.cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
+		chk(seen_frames.has(CA.REGIONS["TORCH1"].position.x) \
+				and seen_frames.has(CA.REGIONS["TORCH2"].position.x),
+			"t16: факел мигает двумя кадрами (паттерн A_TORCH T=0.25 c)")
+		chk(e_max - e_min > 0.15,
+			"t16: пульс света ненулевой (размах %.3f, амплитуда как у алтаря)" % (e_max - e_min))
+	# кострище-мох: кадр сохранён в атласе как искусство, но в дереве пещеры
+	# ни одного спрайта с регионом BRAZIER
+	var brz_n := 0
+	var stack: Array = [world.cave_zone]
+	while not stack.is_empty():
+		var nd: Node = stack.pop_back()
+		if nd is Sprite2D and (nd as Sprite2D).texture is AtlasTexture \
+				and ((nd as Sprite2D).texture as AtlasTexture).region == CA.REGIONS["BRAZIER"]:
+			brz_n += 1
+		for chd in nd.get_children():
+			stack.append(chd)
+	var brz_reg: Rect2 = CA.REGIONS["BRAZIER"]
+	var brz_px := 0
+	for y in int(brz_reg.size.y):
+		for x in int(brz_reg.size.x):
+			if pimg.get_pixel(int(brz_reg.position.x) + x, int(brz_reg.position.y) + y).a > 0.5:
+				brz_px += 1
+	chk(brz_n == 0 and brz_px > 0,
+			"t16: мох-кострища в дереве пещеры нет, кадр жив в атласе (%d px)" % brz_px)
+
+
+## Независимое зеркало расстановки факелов (тот же контракт: якоря сундук/вход/
+## дверь/алтари по карте, фиксированный список смещений, стена с проходимым
+## полом снизу, не более 5; смещения — дословная копия договора c5).
+func _t16_torch_slots(rows: Array, chest: Vector2i, spawn: Vector2i,
+		door: Vector2i) -> Array:
+	var dirs := [Vector2i(1, -1), Vector2i(-1, -1), Vector2i(1, 0), Vector2i(-1, 0),
+			Vector2i(0, -1), Vector2i(2, -1), Vector2i(-2, -1), Vector2i(2, 0),
+			Vector2i(-2, 0), Vector2i(1, -2), Vector2i(-1, -2), Vector2i(3, -1),
+			Vector2i(-3, -1), Vector2i(3, 0), Vector2i(-3, 0), Vector2i(2, -2),
+			Vector2i(-2, -2), Vector2i(3, -2), Vector2i(-3, -2), Vector2i(0, -2),
+			Vector2i(0, -3)]
+	var anchors: Array = []
+	if chest.x >= 0:
+		anchors.append(chest)
+	if spawn.x >= 0:
+		anchors.append(spawn)
+	if door.x >= 0:
+		anchors.append(door)
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] == "A":
+				anchors.append(Vector2i(x, y))
+	var out: Array = []
+	var used := {}
+	for an in anchors:
+		if out.size() >= 5:
+			break
+		for d in dirs:
+			var m := Vector2i(int(an.x) + d.x, int(an.y) + d.y)
+			if used.has(m):
+				continue
+			if _ch(rows, m.x, m.y) != "#":
+				continue
+			if not (_ch(rows, m.x, m.y + 1) in [".", ","]):
+				continue
+			used[m] = true
+			out.append(m)
+			break
+	return out

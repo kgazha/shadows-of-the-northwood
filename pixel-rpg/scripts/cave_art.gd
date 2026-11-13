@@ -1,4 +1,4 @@
-class_name CaveArt
+﻿class_name CaveArt
 extends RefCounted
 ## c3 «Пещера v1»: интеграция кодоген-арта пещеры по вердикту пользователя
 ## «1 внедряем; 2 сундук широкий» (docs/PIXEL_STYLE.md, docs/SCALE_CANON.md).
@@ -8,7 +8,8 @@ extends RefCounted
 ##   assets/cave/cave_floor_v1.png — пол 16 px (обычный/трещины/у алтаря/мох),
 ##   assets/cave/cave_wall_v1.png  — стена 16 px (тело/свод/подошва/углы L,R),
 ##   assets/cave/cave_props_v1.png — пропы (алтарь 13×25, широкий сундук 33×16,
-##                                   сталактиты/сталагмиты 0.5/0.75/1.2H).
+##                                   сталактиты/сталагмиты 0.5/0.75/1.2H,
+##                                   факел 9×10 в 2 кадрах — c5).
 ## REGIONS — источник истины и для игры, и для bake-режима инструмента; кадры
 ## alpha-trim’лены до силуэта (аудит c2 F2), стопа на нижней границе кадра.
 ##
@@ -24,7 +25,33 @@ extends RefCounted
 ##    перекрывать проходящего героя (вердикт/указание капитана);
 ##  - размещение детерминировано FNV-1a по клетке (копия world._env4_hash),
 ##    randi нет — мир воспроизводится бит-в-бит;
-##  - кострище-мох (BRAZIER) НЕ размещается: акцент ждёт отдельного вердикта.
+##  - кострище-мох (BRAZIER) НЕ размещается: по вердикту c5 («факелы лучше»)
+##    тёплый акцент пещеры — настенные факелы; кадр BRAZIER остаётся в атласе
+##    неиспользуемым искус (пин qa_lp: в дереве пещеры его нет).
+
+## Факел (c5, вердикт «факелы лучше»): 2 кадра фликера с периодом T_TORCH
+## (паттерн A_TORCH atmosphere.gd: смена кадра int(t/0.25)%2, глобальный синк)
+## + PointLight2D с пульсом по паттерну _altar_light (atmosphere.gd:177):
+## base 0.75, амплитуда 0.25, частота 2.2 рад/с; фаза — детерминирована
+## клеткой. Радиус/цвет света — как деревенский факел (_build_torches).
+const TORCH_MAX := 5               # верх по составу (acceptance: 3..5)
+const TORCH_FRAME_T := 0.25
+const TORCH_LIGHT_BASE := 0.75
+const TORCH_LIGHT_AMP := 0.25      # амплитуда как у алтаря
+const TORCH_LIGHT_FREQ := 2.2
+const TORCH_RANGE := 36.0
+const TORCH_COLOR := Color(1.0, 0.75, 0.45)
+## Порядок кандидатов вокруг якоря (сундук/вход/дверь/алтари): стена с
+## проходимой клеткой под нею; кольцо радиуса 3 (стена алтарного зала стоит
+## не ближе 2 клеток от «A»); фиксированный список => детерминизм без сида.
+const TORCH_DIRS := [
+	Vector2i(1, -1), Vector2i(-1, -1), Vector2i(1, 0), Vector2i(-1, 0),
+	Vector2i(0, -1), Vector2i(2, -1), Vector2i(-2, -1), Vector2i(2, 0),
+	Vector2i(-2, 0), Vector2i(1, -2), Vector2i(-1, -2), Vector2i(3, -1),
+	Vector2i(-3, -1), Vector2i(3, 0), Vector2i(-3, 0), Vector2i(2, -2),
+	Vector2i(-2, -2), Vector2i(3, -2), Vector2i(-3, -2), Vector2i(0, -2),
+	Vector2i(0, -3),
+]
 
 const ATLAS_PATH := "res://assets/cave/cave_props_v1.png"
 const FLOOR_PATH := "res://assets/cave/cave_floor_v1.png"
@@ -42,6 +69,8 @@ const REGIONS := {
 	"STALAG2": Rect2(97, 52, 11, 12),
 	"STALC1": Rect2(108, 56, 5, 8),
 	"STALAG1": Rect2(114, 56, 9, 8),
+	"TORCH1": Rect2(0, 25, 9, 10),
+	"TORCH2": Rect2(10, 25, 9, 10),
 }
 const ATLAS_SIZE := Vector2i(128, 64)
 const FLOOR_SIZE := Vector2i(64, 16)
@@ -162,6 +191,90 @@ static func _spr(parent: Node2D, atlas: Texture2D, key: String, foot: Vector2) -
 	return spr
 
 
+## Детерминированная расстановка факелов (c5): якоря — сундук, вход, дверь
+## (проходы в залы), затем алтари в порядке карты. Кандидат — стена '#' с
+## проходимым («.»/»,») полом ПОД собой (факел висит на стене, пламя в
+## клетке стены — проходимость не трогается). Фиксированный порядок якорей и
+## направлений => бит-детерминизм без randi. Не более TORCH_MAX штук.
+static func torch_slots(rows: Array, chest: Vector2i, spawn: Vector2i,
+		door: Vector2i) -> Array:
+	var anchors: Array = []
+	if chest.x >= 0:
+		anchors.append(chest)
+	if spawn.x >= 0:
+		anchors.append(spawn)
+	if door.x >= 0:
+		anchors.append(door)
+	for y in rows.size():
+		var row := String(rows[y])
+		for x in row.length():
+			if row[x] == "A":
+				anchors.append(Vector2i(x, y))
+	var out: Array = []
+	var used := {}
+	for an in anchors:
+		if out.size() >= TORCH_MAX:
+			break
+		for d in TORCH_DIRS:
+			var m := Vector2i(int(an.x) + d.x, int(an.y) + d.y)
+			if used.has(m):
+				continue
+			if char_at(rows, m.x, m.y) != "#":
+				continue
+			var below := char_at(rows, m.x, m.y + 1)
+			if below != "." and below != ",":
+				continue
+			used[m] = true
+			out.append(m)
+			break
+	return out
+
+
+## Текстура радиального света — тот же паттерн, что atmosphere._radial
+## (константы держим внутри CaveArt по контракту c5).
+static var _torch_rad: Texture2D = null
+
+
+static func _mk_torch_light() -> PointLight2D:
+	if _torch_rad == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.set_color(1, Color(1, 1, 1, 0))
+		var gt := GradientTexture2D.new()
+		gt.gradient = g
+		gt.fill = GradientTexture2D.FILL_RADIAL
+		gt.fill_from = Vector2(0.5, 0.5)
+		gt.fill_to = Vector2(0.5, 0.0)
+		gt.width = int(ceil(TORCH_RANGE * 2.0))
+		gt.height = gt.width
+		_torch_rad = gt
+	var l := PointLight2D.new()
+	l.texture = _torch_rad
+	l.color = TORCH_COLOR
+	l.energy = TORCH_LIGHT_BASE
+	l.texture_scale = 1.0
+	return l
+
+
+## Факел-спрайт: 2-кадровый фликер (паттерн A_TORCH atmosphere.gd — смена
+## текстуры int(t/T)%2, синхронно у всех) + синусный пульс своего света
+## (паттерн _altar_light). Живёт и тикает только когда зона пещеры активна
+## (PROCESS_MODE наследуется от зоны) — вне пещеры не светит и не крутится.
+class TorchSprite:
+	extends Sprite2D
+	var t0: Texture2D
+	var t1: Texture2D
+	var lit: PointLight2D
+	var phase := 0.0
+
+	func _process(_delta: float) -> void:
+		var tt := float(Time.get_ticks_msec()) / 1000.0
+		texture = t1 if int(tt / CaveArt.TORCH_FRAME_T) % 2 == 1 else t0
+		if lit != null:
+			lit.energy = CaveArt.TORCH_LIGHT_BASE \
+					+ CaveArt.TORCH_LIGHT_AMP * sin(tt * CaveArt.TORCH_LIGHT_FREQ + phase)
+
+
 ## Строит слой CaveV1 в контейнере пещеры; возвращает слой (или null, если
 ## v1-атласов нет — игра остаётся на легаси-dungeon_tiles). world — мир
 ## (duck-typed): нужны cave_zone, dungeon_zone, _ys_prop(), _ys_props_dim.
@@ -218,6 +331,28 @@ static func build(world) -> Node2D:
 				c.z_as_relative = false
 				c.z_index = Z_STALC
 				layer.add_child(c)
+	# факелы (c5, вердикт «факелы лучше»): тёплый акцент на стенах у сундука,
+	# входа и двери; кострище-мох не ставится (BRAZIER остаётся в атласе
+	# неиспользуемым искусом — пин qa_lp «в дереве пещеры его нет»).
+	var t_tex0 := _region(atlas, "TORCH1")
+	var t_tex1 := _region(atlas, "TORCH2")
+	for m in torch_slots(rows, dz.chest_tile, dz.spawn_tile, dz.door_tile):
+		var t := TorchSprite.new()
+		t.t0 = t_tex0
+		t.t1 = t_tex1
+		t.texture = t_tex0
+		# «стопа» кронштейна на 2 px выше верхней границы проходимой клетки
+		# под стеной: всё пламя — выше головы идущего героя; z — общая шкала
+		# V-01 от «стопы»; в дим-реестр НЕ идёт (на стене, героя не накрывает).
+		var tbottom := float(m.y + 1) * 16.0 - 2.0
+		t.position = Vector2(float(m.x) * 16.0 + 8.0, tbottom - 5.0)
+		t.phase = frac(m.x, m.y, 23) * TAU
+		layer.add_child(t)
+		var lt := _mk_torch_light()
+		lt.position = Vector2(0.0, -2.0)  # ядро пламени (верхние кадры)
+		t.add_child(lt)
+		t.lit = lt
+		world._ys_prop(t)
 	return layer
 
 

@@ -736,6 +736,66 @@ static func build_brazier() -> Image:
 	return img
 
 
+## Факел настенный (c5, вердикт «факелы лучше») — 9×10 ≈ 0.6H, ДВА кадра
+## фликера (кадр/тайминг — паттерн A_TORCH atmosphere.gd, T=0.25 c): кронштейн
+## IRON (чаша, монтажная пластина с костылями, ось, стопа), пламя FIRE с
+## горячим ядром FIRE_HOT. Кадр 1 — ровное пламя, ядро по центру; кадр 2 —
+## пламя склонилось вправо, основание ушло влево (тот же приём, что 2-кадровый
+## факел деревни). Композиция кадра плотная по всем четырём сторонам
+## (alpha-trim == кадр, пин tight в qa_lp).
+static func build_torch_1() -> Image:
+	var img := im(9, 10)
+	# пламя y0..3
+	px(img, 4, 0, C("FIRE", P.T_MID))
+	px(img, 3, 1, C("FIRE", P.T_LIGHT))
+	px(img, 4, 1, C("FIRE", P.T_MID))
+	px(img, 5, 1, C("FIRE", P.T_DARK))
+	px(img, 3, 2, C("FIRE", P.T_LIGHT))
+	px(img, 4, 2, P.FIRE_HOT)
+	px(img, 5, 2, C("FIRE", P.T_DARK))
+	px(img, 2, 3, C("FIRE", P.T_MID))
+	px(img, 3, 3, C("FIRE", P.T_LIGHT))
+	px(img, 4, 3, P.FIRE_HOT)
+	px(img, 5, 3, C("FIRE", P.T_MID))
+	px(img, 6, 3, C("FIRE", P.T_DARK))
+	# кронштейн y4..9: чаша, пластина с костылями, ось, стопа
+	rect(img, 3, 4, 5, 4, C("IRON", P.T_MID))
+	px(img, 2, 4, C("IRON", P.T_DARK))
+	px(img, 6, 4, C("IRON", P.T_DARK))
+	px(img, 2, 5, C("IRON", P.T_MID))
+	px(img, 6, 5, C("IRON", P.T_MID))
+	rect(img, 3, 5, 5, 5, C("IRON", P.T_DARK))
+	px(img, 0, 6, C("IRON", P.T_DARK))
+	px(img, 8, 6, C("IRON", P.T_DARK))
+	rect(img, 1, 6, 7, 6, C("IRON", P.T_MID))
+	rect(img, 2, 7, 6, 7, C("IRON", P.T_DARK))
+	px(img, 4, 8, C("IRON", P.T_MID))
+	rect(img, 3, 9, 5, 9, C("IRON", P.T_MID))
+	return img
+
+
+## Кадр 2: пламя склонилось вправо (остриё x5), основание сместилось.
+static func build_torch_2() -> Image:
+	var img := build_torch_1()
+	# сбить кадр 1 пламени (y0..3) и переложить со сдвигом
+	for y in range(0, 4):
+		for x in 9:
+			px(img, x, y, Color(0, 0, 0, 0))
+	px(img, 5, 0, C("FIRE", P.T_MID))
+	px(img, 4, 1, C("FIRE", P.T_LIGHT))
+	px(img, 5, 1, C("FIRE", P.T_MID))
+	px(img, 6, 1, C("FIRE", P.T_DARK))
+	px(img, 4, 2, C("FIRE", P.T_LIGHT))
+	px(img, 5, 2, P.FIRE_HOT)
+	px(img, 6, 2, C("FIRE", P.T_MID))
+	px(img, 3, 3, C("FIRE", P.T_MID))
+	px(img, 4, 3, P.FIRE_HOT)
+	px(img, 5, 3, C("FIRE", P.T_MID))
+	px(img, 6, 3, C("FIRE", P.T_DARK))
+	px(img, 2, 3, C("FIRE", P.T_LIGHT))
+	return img
+
+
 # ------------------------------------------------------------------ наборы
 ## Порядок тайлов пола в атласе cave_floor_v1 (индекс = слот).
 static func floor_tile_set() -> Array:
@@ -771,6 +831,8 @@ static func prop_set_canon() -> Array:
 		{"name": "STALAG2", "img": build_stalagmite_2()},
 		{"name": "STALC1", "img": build_stalactite_1()},
 		{"name": "STALAG1", "img": build_stalagmite_1()},
+		{"name": "TORCH1", "img": build_torch_1()},
+		{"name": "TORCH2", "img": build_torch_2()},
 	]
 	for s in props:
 		canon_pass(s["img"])
