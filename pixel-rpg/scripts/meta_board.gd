@@ -31,7 +31,6 @@ const TALENTS := [
 var root: Control                # полноэкранный корень; visible = «открыта»
 var dim: ColorRect
 var panel: PanelContainer
-var paper: PaperEdge             # t27 P0-2: кромка вне Container-раскладки панели
 var rows_box: VBoxContainer      # ряды талантов (пересобираются)
 var balance_lbl: Label
 var bless_lbl: Label
@@ -138,21 +137,8 @@ func _build() -> void:
 	if ResourceLoader.exists("res://assets/ui/panel_frame.png"):
 		panel.add_theme_stylebox_override("panel", _ui_frame_style(26.0))
 	center.add_child(panel)
-	# бумажная кромка пергамента — общий компонент t20 (scripts/paper_edge.gd,
-	# ex-внутренний класс Journal; те же марджины, что в журнале).
-	# t27 P0-2: НЕ ребёнок panel — PanelContainer укладывает всех детей в
-	# контент-прямоугольник, и кромка уезжала внутрь (перетягивала ряды).
-	# Кромка — сосед панели под root, повторяет её глобальный прямоугольник;
-	# размер доски динамический, поэтому синхронизация по panel.resized.
-	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		paper = PaperEdge.new()
-		paper.tex = load("res://assets/ui/decor_paper_edge.png")
-		paper.src_margin = 95.0
-		paper.dst_margin = 24.0
-		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		root.add_child(paper)
-		panel.resized.connect(_sync_paper)
+	# t52 снос (закон пользователя 13.11): ген-кромка пергамента снята — доска
+	# остаётся на код-панели HUD-стиля (9-slice panel_frame + тема), без картинок.
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)  # t27 P1-1: разделители +2
 	panel.add_child(vb)
@@ -162,8 +148,8 @@ func _build() -> void:
 	head.add_theme_color_override("font_color", Color(0.85, 0.55, 0.25))
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(head)
-	# строка баланса: иконка пепла (атлас item_icons, слот 3 = утверждённый
-	# вариант ash_v2 — вердикт пользователя) + счётчик
+	# строка баланса: иконка пепла (t52: код-заглушка UiIcons вместо ген-атласа)
+	# + счётчик
 	var bal_row := HBoxContainer.new()
 	bal_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	bal_row.add_theme_constant_override("separation", 4)
@@ -214,15 +200,6 @@ func _set_open(v: bool) -> void:
 	GameAudio.sfx("ui_confirm" if v else "ui_click")
 	if v:
 		_rebuild()
-		_sync_paper()
-
-## t27 P0-2: кромка — сосед панели под root; повторяет её глобальный прямоугольник.
-## Вызывается по panel.resized (пересборка рядов меняет высоту) и при открытии.
-func _sync_paper() -> void:
-	if paper == null or not is_instance_valid(paper):
-		return
-	paper.global_position = panel.global_position
-	paper.size = panel.size
 
 ## Пересборка рядов и счётчиков (после открытия и каждой покупки).
 func _rebuild() -> void:

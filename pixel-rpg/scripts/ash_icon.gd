@@ -1,25 +1,12 @@
 class_name AshIcon
 extends RefCounted
 ## t20: иконка Пепла для панелей мета-прогресса (экран смерти, Пепельная доска).
-## Источник — атлас assets/item_icons.png (t23, 96x16 RGBA, 6 слотов по 16px:
-## herb, mushroom, root, ASH, berry, glowcap). Слот 3 (x=48) сверен попиксельно
-## с art_gen/items/item_ash_v2.png — это УТВЕРЖДЁННЫЙ ВАРИАНТ ash_v2 (вердикт
-## пользователя, волна 4) — т.е. «подключить ash_v2» = показать именно этот слот.
-## NEAREST-фильтр: иконка рисуются в нативных 16px (или целых кратных) — пиксель-
-## арт не мылится; в отличие от фонов (PaperEdge/LINEAR) тут даунскейла нет.
+## t52 снос (закон пользователя 13.11): ген-атлас иконок предметов снят — пепел
+## рисуется кодом (UiIcons: контур+символ, 16 px). API прежнее: make()/make_rect().
 
-const ATLAS := "res://assets/item_icons.png"
-const SLOT := Rect2(48, 0, 16, 16)  # slot index 3 = "ash"
-
-## atlas-текстура слота пепла; null, если атлас не найден (вызывающие глушат).
+## код-заглушка слота пепла (16 px RGBA8, без картинок).
 static func make() -> Texture2D:
-	if not ResourceLoader.exists(ATLAS):
-		push_warning("Нет ассета: assets/item_icons.png — иконка пепла пропущена")
-		return null
-	var at := AtlasTexture.new()
-	at.atlas = load(ATLAS)
-	at.region = SLOT
-	return at
+	return UiIcons.item_icon("ash")
 
 ## Готовый TextureRect 16x16 (NEAREST, мышь не ест) для вставки в контейнеры.
 static func make_rect(px: int = 16) -> TextureRect:

@@ -25,7 +25,6 @@ static var I: RunSummary        # синглтон; назначает сам с
 var root: Control               # полноэкранный корень панели; visible = «открыта»
 var dim: ColorRect              # затемнение мира; клики мимо окна глушатся
 var panel: PanelContainer
-var paper: PaperEdge            # t27 P0-2: кромка вне Container-раскладки панели
 var stats_lbl: Label
 var kills_lbl: Label
 var bless_lbl: Label
@@ -107,21 +106,9 @@ func _build() -> void:
 	if ui_frame_tex != null:
 		panel.add_theme_stylebox_override("panel", _ui_frame_style(26.0))
 	center.add_child(panel)
-	# t20: бумажная кромка пергамента — общий компонент wave-3 (PaperEdge,
-	# те же марджины, что в журнале; панель расширена 200→232 и content 6→26,
-	# чтобы текст не залезал на кромку — урок t24).
-	# t27 P0-2: НЕ ребёнок PanelContainer (контейнер сдвигает детей в контент-
-	# прямоугольник, кромка не доставала до рамки) — сосед панели под root;
-	# высота панели динамическая -> синхронизация по panel.resized.
-	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		paper = PaperEdge.new()
-		paper.tex = load("res://assets/ui/decor_paper_edge.png")
-		paper.src_margin = 95.0
-		paper.dst_margin = 24.0
-		paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		root.add_child(paper)
-		panel.resized.connect(_sync_paper)
+	# t52 снос (закон пользователя 13.11): ген-кромка пергамента (PaperEdge на
+	# 999-пиксельном арте) снята — экран итогов остаётся на код-панели HUD-стиля
+	# (9-slice panel_frame + тема), без картинок.
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)  # t27 P1-1: разделители +2
 	panel.add_child(vb)
@@ -193,14 +180,6 @@ func _set_open(v: bool) -> void:
 	if v:
 		_acquire_lock()
 		_refresh()
-		_sync_paper()
-
-## t27 P0-2: кромка — сосед панели под root; повторяет её глобальный прямоугольник.
-func _sync_paper() -> void:
-	if paper == null or not is_instance_valid(paper):
-		return
-	paper.global_position = panel.global_position
-	paper.size = panel.size
 
 ## Снимок итогов t20 — в момент открытия (start_new_run ещё не вызывался,
 ## rs.* ещё живы). Значения из сейва — каноническим парсером GameState._num

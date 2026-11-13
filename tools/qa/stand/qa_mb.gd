@@ -175,21 +175,18 @@ func r6_death_screen() -> void:
 	await get_tree().process_frame
 	RunSummary.open()
 	check("R6: панель открылась на голом хосте (is_open)", RunSummary.is_open())
-	# t27 P0-2 (замена t20-пина «PaperEdge — ребёнок panel», ставшего структурно
-	# неверным): кромка — сосед панели под root и повторяет её глобальный
-	# прямоугольник (иначе PanelContainer сдвигает её в контент-область).
-	await get_tree().process_frame  # layout: rect панели зафиксирован, paper синхронизирован
-	var paper_ok := false
-	var paper_in_panel := false
+	# t52 снос (закон 13.11): ген-декор «бумажная кромка» снят — экран смерти
+	# живёт на чистых code-stylebox панелях. Пин новой нормы: PaperEdge не
+	# примонтирован ни соседом, ни ребёнком (класс жив, инстансов нет).
+	await get_tree().process_frame  # layout: rect панели зафиксирован
+	var paper_any := false
 	for c in rs.root.get_children():
 		if c is PaperEdge:
-			var pc := c as Control
-			paper_ok = pc.global_position.is_equal_approx(rs.panel.global_position) \
-				and pc.size.is_equal_approx(rs.panel.size)
+			paper_any = true
 	for c in rs.panel.get_children():
 		if c is PaperEdge:
-			paper_in_panel = true
-	check("R6: PaperEdge — сосед панели под root, rect == rect панели (t27 P0-2)", paper_ok and not paper_in_panel)
+			paper_any = true
+	check("R6: PaperEdge снесён — экран смерти без ген-кромки (t52)", not paper_any and rs.panel != null)
 	var st := rs.stats_lbl.text
 	check("R6: сид показан (Сид: 777)", st.contains("Сид: 777"))
 	check("R6: глубина/волна показана (Круг (глубь): 2)", st.contains("Круг (глубь): 2"))
@@ -204,19 +201,16 @@ func r6_death_screen() -> void:
 	# Esc-маршрут: 1-й Esc закрывает открытую доску, 2-й — «Вспыхнуть заново»
 	MetaBoard.open()
 	check("R6: доска открыта поверх экрана смерти", MetaBoard.is_open())
-	# t27 P0-2: кромка доски — сосед панели под root, rect == rect панели.
+	# t52 снос: и доска пепла — без ген-кромки (только code-stylebox панели).
 	await get_tree().process_frame
-	var bpaper_ok := false
-	var bpaper_in_panel := false
+	var bpaper_any := false
 	for c in rs.board.root.get_children():
 		if c is PaperEdge:
-			var bpc := c as Control
-			bpaper_ok = bpc.global_position.is_equal_approx(rs.board.panel.global_position) \
-				and bpc.size.is_equal_approx(rs.board.panel.size)
+			bpaper_any = true
 	for c in rs.board.panel.get_children():
 		if c is PaperEdge:
-			bpaper_in_panel = true
-	check("R6: PaperEdge доски — сосед панели, rect == rect панели (t27 P0-2)", bpaper_ok and not bpaper_in_panel)
+			bpaper_any = true
+	check("R6: PaperEdge доски снесён — доска без ген-кромки (t52)", not bpaper_any and rs.board.panel != null)
 	# t27 P0-1: eff-текст каждой строки доски непустой и ровно fmt % значение
 	# ранга (в бейзлайне fmt содержал одинарный '%' -> String formatting error
 	# -> две строки таблицы были битыми; пустоты/неотформатированных строк быть не должно)
@@ -386,10 +380,18 @@ func r7_infra_pins() -> void:
 	var pe := PaperEdge.new()
 	check("R7: global class_name PaperEdge доступен (вынесен из journal.gd)", pe != null)
 	pe.free()
-	check("R7: ассет бумажной кромки на месте", ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"))
+	check("R7: ген-ассет бумажной кромки снесён (t52, закон 13.11)", not ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"))
 	var ic := AshIcon.make()
-	check("R7: AshIcon.make() собрал AtlasTexture", ic is AtlasTexture)
-	check("R7: слот пепла = region (48,0,16,16) = утверждённый ash_v2 (slot 3)", ic != null and (ic as AtlasTexture).region == Rect2(48, 0, 16, 16))
+	check("R7: AshIcon.make() — код-иконка ImageTexture 16×16 (t52 стаб вместо ген-атласа)",
+		ic is ImageTexture and (ic as ImageTexture).get_width() == 16 and (ic as ImageTexture).get_height() == 16)
+	var ash_img: Image = (ic as ImageTexture).get_image() if ic is ImageTexture else null
+	var ash_ink := 0
+	if ash_img != null:
+		for yy in ash_img.get_height():
+			for xx in ash_img.get_width():
+				if ash_img.get_pixel(xx, yy).a > 0.0:
+					ash_ink += 1
+	check("R7: код-иконка пепла непустая (непрозрачных пикселей %d > 0)" % ash_ink, ash_ink > 0)
 	check("R7: доска — 4 таланта", MetaBoard.TALENTS.size() == 4)
 	var ok := true
 	for t in MetaBoard.TALENTS:

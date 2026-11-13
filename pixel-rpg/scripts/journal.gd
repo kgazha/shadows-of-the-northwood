@@ -39,7 +39,6 @@ var _panel: PanelContainer
 var _scroll: ScrollContainer
 var _list: VBoxContainer
 var _frame_tex: Texture2D
-var _paper: PaperEdge            # t27 P0-2: кромка вне Container-раскладки окна
 var _tab := TAB_QUESTS
 var _tab_btns: Array = []        # Button на вкладку (стилизация flat-тегми)
 var _ach_list: VBoxContainer     # список 12 строк достижений (вкладка TAB_ACHV)
@@ -121,28 +120,9 @@ func _ready() -> void:
 	vb.add_child(hint)
 	_panel.theme = th
 	_root.add_child(_panel)
-	# t27 P0-2: кромка — сосед панели под _root (не ребёнок PanelContainer!).
-	# PRESET_CENTER с offsets зеркала _panel — стартовый прямоугольник; если
-	# контент-минимум перерастает якорный бокс (9-px ступень: 276 -> 279),
-	# панель растёт и кромка догоняет её по panel.resized.
-	# t24-наследие: PaperEdge — масштабированный 9-patch с независимыми
-	# src/dst марджинами от нативной 999-текстуры; рисует только кольцо
-	# dst_margin от края, mouse IGNORE, контент (марджин 28) не трогает.
-	if ResourceLoader.exists("res://assets/ui/decor_paper_edge.png"):
-		_paper = PaperEdge.new()
-		_paper.name = "PaperEdge"
-		_paper.tex = load("res://assets/ui/decor_paper_edge.png")
-		_paper.src_margin = 95.0  # реальный край рамки: на срезе alpha=0 (t24_measure)
-		_paper.dst_margin = 24.0
-		_paper.set_anchors_preset(Control.PRESET_CENTER)
-		_paper.offset_left = -200
-		_paper.offset_right = 200
-		_paper.offset_top = -138
-		_paper.offset_bottom = 138
-		_paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_paper.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		_root.add_child(_paper)
-		_panel.resized.connect(_sync_paper)
+	# t52 снос (закон пользователя 13.11): ген-кромка окна (999-пиксельный арт)
+	# снята — окно журнала остаётся на код-панели HUD-стиля (9-slice panel_frame
+	# + тема); фон однотонный, фоновых картинок нет.
 	_tab_style()
 	close()  # стартовое состояние: скрыт, мышь насквозь
 	GameState.quest_changed.connect(func() -> void: _dirty = true)
@@ -176,7 +156,6 @@ func open() -> void:
 	_dirty = false
 	_rebuild()
 	_root.visible = true
-	_sync_paper()  # t27 P0-2: кромка = фактический rect окна (после ростa контента)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
 	for b in _tab_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
@@ -197,14 +176,6 @@ func toggle() -> void:
 
 func is_open() -> bool:
 	return _open
-
-## t27 P0-2: кромка — сосед панели под _root; повторяет её глобальный прямоугольник
-## (панель может перерасти якорный бокс, если минимум контента больше).
-func _sync_paper() -> void:
-	if _paper == null or not is_instance_valid(_paper):
-		return
-	_paper.global_position = _panel.global_position
-	_paper.size = _panel.size
 
 func select_tab(i: int) -> void:
 	if i < 0 or i >= TAB_TITLES.size() or i == _tab:
@@ -420,7 +391,7 @@ func _rebuild_talents() -> void:
 			var b := Button.new()
 			b.flat = true
 			# Фидбек: «у талантов нет иконок» — строка узла = procedural-иконка
-			# 8x8 (рисуется 16x16, nearest — как skill_icons в хотбаре) + имя +
+			# 8x8 (рисуется 16x16, nearest — как код-иконки UiIcons в хотбаре) + имя +
 			# ранг; палитра/стиль — как вкладка достижений (золото/приглушённый).
 			b.icon = Talents.icon_texture(id)
 			b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST

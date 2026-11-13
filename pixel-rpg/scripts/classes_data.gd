@@ -1,7 +1,7 @@
 extends RefCounted
 ## Статические данные спринта 2: 3 класса и 12 скиллов (по 4 каждому).
 ## Пороги разблокировки — уровни 1/2/3/4 (правка v1.1).
-## Иконки: assets/skill_icons.png — 192x16, 12 слотов 16x16 в ряд:
+## Иконки: код-атлас UiIcons.skill_atlas() (t52: 192x16, 12 слотов 16x16 в ряд:
 ## 0 power_strike, 1 whirlwind, 2 second_wind, 3 execute,
 ## 4 pierce, 5 volley, 6 mark, 7 rain, 8 firebolt, 9 frost_nova, 10 siphon, 11 firestorm.
 
@@ -39,7 +39,7 @@ const CLASSES := {
 }
 
 ## id скилла -> данные. level — требуемый уровень (правка v1.1: 1/2/3/4),
-## cd — кулдаун, сек; icon — слот в skill_icons.png.
+## cd — кулдаун, сек; icon — слот в код-атласе UiIcons (t52).
 const SKILLS := {
 	"power_strike": {"name": "Мощный удар", "level": 1, "cd": 4.0, "icon": 0,
 		"desc": "Мгновенно 2x урон цели в радиусе атаки. Без цели рядом не активируется и не тратится."},

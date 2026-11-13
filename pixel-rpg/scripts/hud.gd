@@ -16,24 +16,10 @@ const PORTRAITS := {"hero": 0, "elder": 40, "merchant": 80}
 const PORTRAIT_SIZE := 40
 # индекс портрета отшельника в portraits2.png (ассет рисует соседняя команда)
 const PORTRAITS2_INDEX := {"hermit": 0}
-# --- фичевые портреты «лица» (живописный арт, не атлас 40px) ---
-# world.gd передаёт в show_dialog() только реплики, dialog_id не приходит
-# (world.gd не правим) — ключом диалога служит поле who: в dialogues*.json все
-# реплики старейшины идут с who="elder" (ключи elder_quest/elder_progress/
-# elder_after_N и т.д.), поэтому маппинг — по префиксу ключа. Реплик
-# старейшины в intro нет (там только narr/hero) — слот скрыт.
-# Волна 3 «Живая стилистика»: портреты всех 7 говорящих NPC (112 px, полная
-# глубина цвета, без квантизации) — сгенерированный арт из D:\images\roguelike,
-# кроп по лицу, LANCZOS. narr остаётся безликим (маппинг по begins_with).
-const NPC_PORTRAITS := {
-	"elder": "res://assets/portraits/elder.png",
-	"merchant": "res://assets/portraits/merchant.png",
-	"smith": "res://assets/portraits/smith.png",
-	"farmer": "res://assets/portraits/farmer.png",
-	"hermit": "res://assets/portraits/hermit.png",
-	"witch": "res://assets/portraits/witch.png",
-	"hero": "res://assets/portraits/hero.png",
-}
+# t52 снос (закон пользователя 13.11): фичевые ген-портреты NPC 112 px сняты —
+# диалоги возвращаются к легаси-атласам 40 px (PORTRAITS/PORTRAITS2_INDEX);
+# кто без слота в атласе (smith/farmer/witch) — реплика безликая, фикс. слот
+# PORTRAIT_SLOT держит вёрстку (текст не прыгает). narr — безлик и был.
 const PORTRAIT_SLOT := 48  # фикс. ширина слота портрета в окне диалога, px
 
 const SLOT := 28.0  # размер слота иконки скилла
@@ -75,13 +61,10 @@ var on_end: Callable = Callable()
 var pending_ends: Array[Callable] = []
 var portraits_tex: Texture2D
 var portraits2_tex: Texture2D
-# --- фичевый портрет в окне диалога ---
+# --- слот портрета в окне диалога (t52: ген-рамка/ген-арт сняты, легаси 40px) ---
 var dlg_slot: Control           # фикс. отступ текста: слот всегда в layout
-var dlg_frame: PanelContainer   # рамка в тон окна, видна только с портретом
-var dlg_tex: TextureRect        # LINEAR-холст под живой арт 96–128 px
-var npc_tex := {}               # кэш ключ -> Texture2D|null
 # --- спринт 2 ---
-var skill_icons_tex: Texture2D
+var skill_atlas_tex: Texture2D   # t52: код-атлас UiIcons (12 слотов 16 px)
 var skill_panel: PanelContainer
 var skill_slots: Array = []     # словари {root, icon, cd, lvl_lbl}
 var potion_btn: Button          # зелье из трав (Q)
@@ -239,31 +222,11 @@ func setup(p_world: Node2D) -> void:
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	# Слот портрета слева от текста — ФИКСИРОВАННЫЙ отступ: без портрета пуст,
 	# но свои PORTRAIT_SLOT px в layout съедает, поэтому вёрстка текста не
-	# «прыгает», когда реплика старейшины сменяет безликую. Внутри два слоя:
-	# фичевая рамка с живым артом (LINEAR) и легаси-атласный портрет 40 px.
+	# «прыгает», когда реплика старейшины сменяет безликую (t52: фичевая
+	# ген-рамка со_live-артом снята — в слоте только легаси-портрет 40 px).
 	dlg_slot = Control.new()
 	dlg_slot.custom_minimum_size = Vector2(PORTRAIT_SLOT, PORTRAIT_SLOT)
 	dlg_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dlg_frame = PanelContainer.new()
-	# квадратная рамка 48x48 по центру слота (строка hbox выше — 56 px, FULL_RECT
-	# растягивал бы портрет по вертикали)
-	dlg_frame.set_anchors_preset(Control.PRESET_CENTER)
-	dlg_frame.offset_left = -PORTRAIT_SLOT / 2.0
-	dlg_frame.offset_top = -PORTRAIT_SLOT / 2.0
-	dlg_frame.offset_right = PORTRAIT_SLOT / 2.0
-	dlg_frame.offset_bottom = PORTRAIT_SLOT / 2.0
-	dlg_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dlg_frame.visible = false
-	if ui_frame_tex != null:
-		dlg_frame.add_theme_stylebox_override("panel", _ui_frame_style(2.0))
-	dlg_tex = TextureRect.new()
-	dlg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	dlg_tex.stretch_mode = TextureRect.STRETCH_SCALE
-	# живой (не-пиксельный) арт: сглажение вместо nearest из настроек проекта
-	dlg_tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	dlg_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dlg_frame.add_child(dlg_tex)
-	dlg_slot.add_child(dlg_frame)
 	# легаси-портрет из атласа 40 px — так же центрируется в слоте анкорами
 	# (dlg_slot — обычный Control, контейнером не растягивает)
 	portrait.set_anchors_preset(Control.PRESET_CENTER)
@@ -516,14 +479,7 @@ func _show_line() -> void:
 	var who := String(ln.get("who", "narr"))
 	dname.text = String(NAMES.get(who, who))
 	dtext.text = String(ln.get("text", ""))
-	# фичевый портрет по ключу диалога (префиксу who) — поверх легаси-атласа
-	var tex := _npc_portrait(who)
-	dlg_frame.visible = tex != null
-	if tex != null:
-		dlg_tex.texture = tex
-		portrait.visible = false
-		_typing_reset()
-		return
+	# t52: легаси-атлас 40 px — единственный источник портрета
 	var atlas: Texture2D = null
 	var px := -1
 	if PORTRAITS.has(who):
@@ -594,22 +550,6 @@ func _dlg_next_page_exists() -> bool:
 		return false
 	return dtext.get_line_count() > (dlg_page + 1) * per
 
-## Кэш-загрузка фичевого портрета: who начинается с ключа словаря -> Texture2D.
-## Нет ассета/ключа — null, слот скрыт (отступ фиксирован, вёрстка не прыгает).
-func _npc_portrait(who: String) -> Texture2D:
-	for key in NPC_PORTRAITS:
-		if not who.begins_with(String(key)):
-			continue
-		if not npc_tex.has(key):
-			var path := String(NPC_PORTRAITS[key])
-			if ResourceLoader.exists(path):
-				npc_tex[key] = load(path)
-			else:
-				push_warning("Нет ассета: %s — диалог без фичевого портрета" % path)
-				npc_tex[key] = null
-		return npc_tex[key]
-	return null
-
 func is_dialog_open() -> bool:
 	return panel.visible
 
@@ -649,10 +589,9 @@ func advance() -> void:
 # --- панель скиллов ---
 
 func _build_skill_panel(th: Theme) -> void:
-	if ResourceLoader.exists("res://assets/skill_icons.png"):
-		skill_icons_tex = load("res://assets/skill_icons.png")
-	else:
-		push_warning("Нет ассета: assets/skill_icons.png — панель скиллов без иконок")
+	# t52 снос (закон 13.11): ген-атлас иконок скиллов снят — временные
+	# код-заглушки UiIcons (контур+символ, 12 слотов по 16 px) до пиксель-прохода.
+	skill_atlas_tex = UiIcons.skill_atlas()
 	skill_panel = PanelContainer.new()
 	skill_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	# прижато к самому низу экрана, чтобы не закрывать поле боя
@@ -727,16 +666,8 @@ func _build_skill_panel(th: Theme) -> void:
 	potion_btn.offset_bottom = -4
 	potion_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	potion_btn.tooltip_text = "Лесное зелье: +3 HP (Q или клик)"
-	if ResourceLoader.exists("res://assets/item_icons.png"):
-		var hit := AtlasTexture.new()
-		hit.atlas = load("res://assets/item_icons.png")
-		hit.region = Rect2(0, 0, 16, 16) # слот 0 — трава (арт-волна 3)
-		potion_btn.icon = hit
-	elif ResourceLoader.exists("res://assets/tiles.png"):
-		var hat := AtlasTexture.new()
-		hat.atlas = load("res://assets/tiles.png")
-		hat.region = Rect2(11 * 16, 0, 16, 16)
-		potion_btn.icon = hat
+	# t52: ген-атлас иконок предметов снят — код-заглушка предмета (slot «herb»)
+	potion_btn.icon = UiIcons.item_icon("herb")
 	potion_btn.pressed.connect(_on_potion_pressed)
 	potion_btn.theme = th
 	potion_btn.visible = false
@@ -916,9 +847,9 @@ func refresh_skills() -> void:
 		var sd := Classes.skill(String(sids[i]))
 		var slot: Dictionary = skill_slots[i]
 		var icon: TextureRect = slot["icon"]
-		if skill_icons_tex != null:
+		if skill_atlas_tex != null:
 			var at := AtlasTexture.new()
-			at.atlas = skill_icons_tex
+			at.atlas = skill_atlas_tex
 			at.region = Rect2(int(sd.icon) * 16, 0, 16, 16)
 			icon.texture = at
 		var mc := int(sd.get("mana", 0))
