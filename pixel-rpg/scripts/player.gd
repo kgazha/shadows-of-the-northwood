@@ -16,29 +16,18 @@ const BOAR_DASH_TIME := 0.14   # длительность полёта рывк�
 const BOAR_STUN := 0.7         # оглушение цели, с
 const BOAR_STUN_BOSS := 0.35   # босс держит оглушение вдвое короче (канон brute)
 const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP воину (кламп по max_hp)
-# --- SCALE_CANON: рост героя = эталон H = 32 мир. px ---
-# Спрайт 16px: контент-стопы на +5 от центра кадра (замер assets/player.png и
-# class_*.png — бот-ряд 12..13). Рисуем кадр 16px × 2.0 = 32 px — это и есть
-# канонический рост (SCALE_CANON.md). Только визуально: коллайдер 10x8, скорости
-# и хитбоксы не тронуты. Якорь по стопам: ANIM_HOME = +5*(1−2.0) = −5 — ноги
-# на прежней линии, тень (atmosphere меряет низ кадров) следует за спрайтом сама.
-const VISUAL_SCALE := 2.0
-const ANIM_HOME := Vector2(0, -5.0)
-# t17: сгенерированный герой (art_gen hero v2, полная глубина цвета, без
-# квантизации). Тот же канон, что у пропсов env4: берём tight-кроп из
-# 1024-оригинала, экранная высота — scale'ом: s = 32/tex_h. Контент-стопы
-# кропа = нижний край текстуры, якорь — та же линия ног +5 (замер t17):
-# pos.y = +5 − 16 = −11. idle — статичный кадр; walk/attack регистрируются
-# в том же наборе (однокадровые) — их подхватит будущий анимационный проход.
-const GEN_HERO_IDLE := "res://assets/art/hero_idle.png"
-const GEN_HERO_WALK := "res://assets/art/hero_walk.png"
-const GEN_HERO_ATTACK := "res://assets/art/hero_attack.png"
-const GEN_CANON_H := 32.0
-const GEN_FOOT_LINE := 5.0
+# --- t51: возврат «до Крупного мира» — рост героя = клетка 16 px, зум 1 ---
+# Спрайт 16px рисуется 1:1 (масштаб-мультипликат H=32 снят по таблице
+# VISUAL_REBUILD.md §3). Коллайдер 10x8, скорости и хитбоксы — не тронуты.
+# ANIM_HOME = ZERO: спрайт возвращается в центр ноды (как было до волны 5),
+# контент-стопы 16px-кадра (+5) задаёт сама картинка.
+const VISUAL_SCALE := 1.0
+const ANIM_HOME := Vector2.ZERO
+# t52 снос (закон пользователя 13.11): ген-герой art_gen снят — герой снова
+# рисуется пиксельным листом класса (player.png-канон), код-арт без картинок gen.
 
-var gen_art := false
 var anim_home := ANIM_HOME
-var head_y := -17.0  # линия макушки (искры/цифры поднимаем вместе с головой)
+var head_y := -8.0  # линия макушки 16px-героя (искры/цифры поднимаем вместе с головой)
 
 var anim: AnimatedSprite2D
 var facing := "down"
@@ -83,32 +72,30 @@ func _ready() -> void:
 	cs.shape = sh
 	add_child(cs)
 	anim = AnimatedSprite2D.new()
-	# волна 5: герой крупнее только визуально — тело, коллайдер 10x8 и всё
-	# движение не тронуты
+	# t51: герой 1:1 (VISUAL_SCALE=1.0) — тело, коллайдер 10x8 и всё движение
+	# не тронуты мультипликатами
 	anim.scale = Vector2.ONE * VISUAL_SCALE
 	anim.position = ANIM_HOME
 	add_child(anim)
 	apply_class()
 	anim.play("down")
-	# тик регенерации — видимая искра над героем (SCALE_CANON: рост 32 px,
-	# макушка ~-17.5, искры/цифры подняты вместе с головой)
+	# тик регенерации — видимая искра над героем (t51 «было»: heal −12, spark −10,
+	# levelup −8 относительно позиции героя)
 	GameState.regen_hp_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			Fx.heal(global_position + Vector2(0, head_y - 7.0), world))
+			Fx.heal(global_position + Vector2(0, -12), world))
 	GameState.regen_mana_tick.connect(func() -> void:
 		if is_instance_valid(self):
-			_spark(global_position + Vector2(0, head_y - 7.0), Color(0.4, 0.65, 1.0, 0.9), 5.0))
+			_spark(global_position + Vector2(0, -10), Color(0.4, 0.65, 1.0, 0.9), 5.0))
 	GameState.leveled_up.connect(func(_l: int) -> void:
 		if is_instance_valid(self):
-			Fx.level_up(global_position + Vector2(0, head_y - 5.0), world))
+			Fx.level_up(global_position + Vector2(0, -8), world))
 
 func class_data() -> Dictionary:
 	return Classes.class_data(GameState.class_id)
 
 ## Вызвать после выбора/смены класса и загрузки сейва: перекрасить героя.
 func apply_class() -> void:
-	if _build_gen_frames():
-		return  # t17: сгенерированный герой — единый для всех классов
 	var path := String(class_data().sprites)
 	var tex: Texture2D = null
 	if ResourceLoader.exists(path):
@@ -118,35 +105,6 @@ func apply_class() -> void:
 		tex = load("res://assets/player.png")
 	if tex != null:
 		_build_frames(tex)
-
-## t17: набор hero_idle (+зарезервированные walk/attack) в те же имена анимаций.
-func _build_gen_frames() -> bool:
-	if not ResourceLoader.exists(GEN_HERO_IDLE):
-		return false
-	var idle := load(GEN_HERO_IDLE) as Texture2D
-	var fr := SpriteFrames.new()
-	fr.remove_animation("default")
-	for dir_name in ["down", "left", "right", "up"]:
-		_add_gen_anim(fr, dir_name, idle)  # покой = статичный канон-кадр
-		if ResourceLoader.exists(GEN_HERO_WALK):
-			_add_gen_anim(fr, "walk_" + dir_name, load(GEN_HERO_WALK))
-	if ResourceLoader.exists(GEN_HERO_ATTACK):
-		_add_gen_anim(fr, "attack", load(GEN_HERO_ATTACK))  # резерв аним-прохода
-	anim.sprite_frames = fr
-	var s := GEN_CANON_H / float(idle.get_height())
-	anim.scale = Vector2.ONE * s
-	anim_home = Vector2(0, GEN_FOOT_LINE - GEN_CANON_H / 2.0)
-	anim.position = anim_home
-	anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	gen_art = true
-	head_y = anim_home.y - GEN_CANON_H / 2.0  # макушка = верх tight-кропа
-	return true
-
-func _add_gen_anim(fr: SpriteFrames, name: String, tex: Texture2D) -> void:
-	fr.add_animation(name)
-	fr.set_animation_loop(name, true)
-	fr.set_animation_speed(name, 8.0)
-	fr.add_frame(name, tex, 0.0)
 
 func _build_frames(tex: Texture2D) -> void:
 	var fr := SpriteFrames.new()
@@ -292,20 +250,10 @@ func _set_facing_from(v: Vector2) -> void:
 		facing = "right" if v.x > 0 else "left"
 	else:
 		facing = "down" if v.y > 0 else "up"
-	_sync_gen_flip()
 
-## Ход: с ген-артом играем однокадровые walk_* (будущий аним-проход добавит
-## кадры — логика вызова уже готова); без него — прежнее поведение.
+## Ход: прежний листовой канон (4 направления, 3 кадра).
 func _play_walk() -> void:
-	var an := "walk_" + facing
-	if gen_art and anim.sprite_frames.has_animation(an):
-		anim.play(an)
-	else:
-		anim.play(facing)
-
-func _sync_gen_flip() -> void:
-	if gen_art:
-		anim.flip_h = facing == "left"  # арт смотрит вправо
+	anim.play(facing)
 
 ## Шаг: два сэмпла попеременно, лёгкий разброс темпа и высоты — не «швейная машинка».
 func _step_tick(delta: float) -> void:
@@ -394,7 +342,6 @@ func face_to(p: Vector2) -> void:
 		facing = "right" if d.x > 0 else "left"
 	else:
 		facing = "down" if d.y > 0 else "up"
-	_sync_gen_flip()
 
 func facing_dir() -> Vector2:
 	match facing:
@@ -605,7 +552,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 				# EXEC_HEAL HP (heal клампит по max_hp). Промах/не-добивание — без хила.
 				if tgt.get("hp") != null and int(tgt.get("hp")) <= 0:
 					GameState.heal(EXEC_HEAL)
-					Fx.heal(global_position + Vector2(0, -16), world)
+					Fx.heal(global_position + Vector2(0, -12), world)  # t51: было −12
 					GameState.toast.emit("+%d HP" % EXEC_HEAL)
 			else:
 				melee_hit(1.5, Vector2.INF, 13.0, tgt)
@@ -641,7 +588,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			GameState.toast.emit("Морозная нова!")
 		"siphon":
 			siphon_t = 5.0
-			Fx.heal(global_position + Vector2(0, -14), world)
+			Fx.heal(global_position + Vector2(0, -12), world)  # t51: было −8…−12, сводим к −12
 			GameState.toast.emit("Поглощение: попадания снарядов лечат")
 		"firestorm":
 			for k in 3:
@@ -665,7 +612,7 @@ func _skill_target() -> Node2D:
 ## Кулдаун и мана НЕ тратятся — скилл просто не активировался (п.6).
 func _no_target_reject() -> void:
 	GameAudio.sfx("ui_deny")
-	_spark(global_position + Vector2(0, -16), Color(1.0, 0.72, 0.3, 0.9), 5.0)  # t18: отказ = interact-фидбек, амбер (не красные «крови»)
+	_spark(global_position + Vector2(0, -10), Color(1.0, 0.72, 0.3, 0.9), 5.0)  # t18: отказ = interact-фидбек, амбер; t51: было −10
 	GameState.toast.emit("Нет цели рядом")
 
 ## Цель «Рывка вепря»: ближайший враг в собственном радиусе (шире радиуса атаки).
@@ -792,7 +739,7 @@ func take_damage(n: int, src := "") -> void:
 	GameState.entered_combat()  # реген «замолкает» на время боя
 	var _hp0 := GameState.hp  # число урона = реально снятые HP (после брони), не входящий урон
 	GameState.hurt(n)
-	DmgNumbers.spawn(global_position + Vector2(0, -24), maxi(0, _hp0 - GameState.hp), "normal")  # SCALE_CANON: макушка ~-17.5
+	DmgNumbers.spawn(global_position + Vector2(0, -12), maxi(0, _hp0 - GameState.hp), "normal")  # t51: было −12
 	Fx.hit(global_position + Vector2(0, -6), world)
 	Sfx.play("hurt")  # t31:глухой тёплый «в тело» (процедурный каталог)
 	# t18 «сочность»: hitstop + тряска; фатальный удар — тяжелее. Восстановление

@@ -7,41 +7,43 @@ extends Node2D
 ##  T1  таблицы символов бит-в-бит + монотонность перестройки против свежего
 ##      генераторного dict (только dig-символы -> ".", якоря/рамка целы).
 ##  T2  зал алтаря 5x6 (x±2, y-3..y+2): в верхних рядах нет стен (кроме
-##      защищённой ниши сундука); ранг не тронут; ширина пропов ≤ 5*16.
+##      защищённой ниши сундука); ранг не тронут; t52: ген-пропов нет —
+##      пины ENV4_* констант на ОТСУТСТВИЕ.
 ##  T3  все POI пещеры достижимы из spawn BFS с открытой дверью; сундук и
 ##      алтари НЕ достижимы с закрытой (гейт двери сохранён).
 ##  T4  Пепелище: монотонность, зал портала 5x6 (x±2, y-4..y+1), якорь=клетка P.
 ##  T5  проходы: каждая проходимая клетка обеих зон лежит в проходимом 2x2
 ##      ИЛИ вскрытие легально невозможно (тупик у рамки/защиты).
-##  T6  детерминизм: два мира на сиде 42 — бит-в-бит сетки и дампы слоёв
-##      живого пола (текстура/позиция/альфа/поворот); alpha ∈ [0.30,0.42];
-##      fail-safe: пустой набор ассетов -> слой не создаётся.
-##  T7  SCALE_CANON на рантайме: ЭКРАННЫЕ altar 51, portal 70; t22 (вердикт
-##      12.11): boulder 21, stones 24 px — текстуры 26/32 не перерезаны,
-##      масштаб скомпенсирован при установке, фильтр LINEAR (mips у boulder=0).
-##      (Т15/Т15b: алтарь/портал — текстуры >=3× экранных (полный кроп
-##      1024-исходника) со scale-компенсацией от фактической высоты,
-##      LINEAR_WITH_MIPMAPS и mips/generate=true; прочие пропы scale 1.0).
+##  T6  t52: слои «живой земли» (Cave/AshenFloorPaint, GroundPaint) и их
+##      билдеры снесены; детерминизм: два мира на сиде 42 — бит-в-бит дампы.
+##  T7  t52 «план сноса»: каталоги assets/art/ и assets/portraits/ удалены,
+##      ген-иконки/UI-декор (item/skill/talent_icons, decor_paper_edge,
+##      decor_minimap_bronze) — файл+.import отсутствуют; ENV4_* констант нет;
+##      ручные атласы (portraits.png/2, dungeon_tiles, tiles) на месте;
+##      default_texture_filter=0 не тронут.
 ##  T8  физ-проба: в центре КАЖДОЙ проходимой клетки обеих зон нет статических
 ##      коллайдеров (сетка <-> коллайдеры после перестройки согласованы).
 ##  T9  soak 2x5 сек (пещера+Пепелище, враги сняты): герой не застревает в
 ##      стенах (>30 кадров в блокирующей клетке), не вылетает за карту.
 ##  T10 миникарта: размер сетки-подложки = размер текущей зоны (динамический
 ##      пересчёт, не пиксель — пиксельные сигнатуры сверяет qa_mm).
-##  T11 t17 «живая стилистика»: герой и бестиарий — ген-ассеты (полный кроп
-##      1024-оригинала, RGBA8 >256 цветов, без квантизации), MD5-пины,
-##      LINEAR_WITH_MIPMAPS + полная мип-цепочка, ЭКРАННЫЕ высоты/линии стоп
-##      по канону t12 на живых объектах; Тенеплёт (wraith) не интегрирован.
+##  T11 t52: ген-листы актёров снесены; герой — AtlasTexture листа класса
+##      (class_warrior.png, 4 аним × 4 кадра 16 px, drawn 16/стопы 8, parent-фильтр);
+##      бестиарий — slime/mobs_*/brute листы (ярусы × TIERS.scale, Ведьма ×1.12);
+##      dungeon_tiles.png — MD5 после t52-реставрации клеток 6/7; Тенеплёт не
+##      интегрирован.
 ##  T12 t18 «сочность»: hitstop конечен и возвращает Engine.time_scale в
 ##      РЕАЛЬНОМ времени (обычный и смертельный удар), вспышки цели ≤0.1 с,
 ##      overshoot цифр 1.3 (qa_dn зелёный), тень по высоте актёра + воздушная
-##      фаза «Рывка вепря», «дыхание» env4-пропов (JuiceLight: алтарь/портал/
-##      сундук, спрайты неподвижны), шлейф кувырка, красный виньеточный импульс.
-##  T13 t33 «общая глубина» (V-03/V-04): дети слоёв Env4CaveProps/Env4AshenProps —
-##      абсолютный z = глобальный Y стопы (независимая формула rect); герой ЮЖНЕ
-##      алтаря/портала рисуется ПОВЕРХ (z_hero > z_prop), СЕВЕРНЕЕ — под; мобы и
-##      NPC участвуют в той же динамической шкале; цифры урона подняты над всей
-##      z-шкалой зон (100000). Только порядок отрисовки — геометрия бит-в-бит.
+##      фаза «Рывка вепря», «дыхание» легаси-проп-светов (atmo._prop_lights:
+##      сундук пещеры; env4-слоёв t52-сносом нет), шлейф кувырка, красный
+##      виньеточный импульс.
+##  T13 t33 «общая глубина» (V-03/V-04) + t52: env4-слои снесены; актёры
+##      (герой/мобы/NPC) — в динамической шкале z = round(fposmod(y,YS_CYCLE))
+##      +YS_ACTOR_BIAS (южнее — глубже); цифры урона подняты над z-шкалой зон.
+##      Только порядок отрисовки — геометрия бит-в-бит.
+##  T15 t52: контракт отсутствия — env4-реестров/VillageProps нет, _ys_props_dim
+##      пуст, в дереве мира ни одной ген-текстуры.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -397,27 +399,16 @@ func _t2(cave_raw: Dictionary) -> void:
 					print("   зал алтаря (", t, "): клетка (", dx, ",", dy, ")=", c)
 				if dy < t.y and CAVE_DIG.find(c) >= 0:
 					top_ok = false
-	# ширина алтаря/камней ≤ 5*16 — ЭКРАННАЯ (Т15/Т15b: алтарь в текстуре высокого
-	# разрешения живёт со scale-компенсацией, в зал проверяется картинка на экране, не пиксели файла)
-	var altar_tex: Texture2D = load(String(WS.ENV4_ART["altar"]))
-	var stones_tex: Texture2D = load(String(WS.ENV4_ART["stones"]))
+	# залы алтарей — POI-геометрия карты (t52: ген-картинок алтаря/камней нет)
 	chk(halls_ok, "T2: залы алтарей 5x6 без dig-символов (алтарей %d)" % altar_n)
 	chk(top_ok, "T2: верхние ряды залов (выше клетки алтаря) без стен")
-	var aw := int(ceil(_eff_w(altar_tex)))
-	var sw := int(ceil(_eff_w(stones_tex)))
-	chk(aw <= 5 * 16, "T2: экранная ширина алтаря %d ≤ 80" % aw)
-	chk(sw <= 5 * 16, "T2: экранная ширина камней %d ≤ 80" % sw)
-
-## Экранная ширина пропа: текстуры из ENV4_CANON_H / ENV4_PROP_CANON_H (t22)
-## масштабируются в канон.
-func _eff_w(tex: Texture2D) -> float:
-	var p := String(tex.resource_path)
-	var canon: float = float(WS.ENV4_CANON_H.get(p, 0.0))
-	if canon <= 0.0:
-		canon = float(WS.ENV4_PROP_CANON_H.get(p, 0.0))
-	if canon > 0.0:
-		return float(tex.get_width()) * canon / float(tex.get_height())
-	return float(tex.get_width())
+	# t52 «план сноса»: ген-пропов алтаря/камней нет — их картинок не существует;
+	# констант ENV4_* в world.gd тоже нет, зал остаётся POI-геометрией карты.
+	var wf2 := FileAccess.open("res://scripts/world.gd", FileAccess.READ)
+	var wsrc2: String = wf2.get_as_text() if wf2 != null else ""
+	chk(not wsrc2.contains("const ENV4_ART") and not wsrc2.contains("const ENV4_CANON_H") \
+		and not wsrc2.contains("const ENV4_PROP_CANON_H"),
+		"T2: ENV4-* константы снесены из world.gd")
 
 # ------------------------------------------------------------------ T3
 
@@ -495,9 +486,8 @@ func _t4(ashen_raw: Dictionary) -> void:
 				hall_ok = false
 				print("   зал портала: (", dx, ",", dy, ")=", _ch(rows, dx, dy))
 	chk(hall_ok, "T4: зал портала 5x6 без dig-символов")
-	var portal_tex: Texture2D = load(String(WS.ENV4_ART["portal"]))
-	var pw := int(ceil(_eff_w(portal_tex)))  # Т15/Т15b: экранная ширина (текст высокого разр. + scale)
-	chk(pw <= 5 * 16, "T4: экранная ширина портала %d ≤ 80" % pw)
+	# t52: ген-картинки портала снесена; портал остаётся игровым объектом на
+	# клетке «P» (POOL-проверки ниже), ширины картинок больше не пиним.
 	# POI Пепелища: spawn/портал/сундук/ведьма (meta генераторного dict — reshape
 	# его не двигает; ashen_zone dict не хранит)
 	var m: Dictionary = meta
@@ -541,56 +531,16 @@ func _t5() -> void:
 # ------------------------------------------------------------------ T6
 
 func _t6(snap1: String) -> void:
+	# t52 «план сноса»: слои «живой земли» (ген-патчи полов пещеры/Пепелища и
+	# деревенский GroundPaint) снесены — пол рендерится базовым тайловым атласом.
 	var layer_c = world.cave_zone.get_node_or_null("CaveFloorPaint")
 	var layer_a = world.ashen_zone.get_node_or_null("AshenFloorPaint")
-	chk(layer_c != null and layer_c.get_child_count() > 0, "T6: CaveFloorPaint построен (%d)" % (layer_c.get_child_count() if layer_c != null else -1))
-	chk(layer_a != null and layer_a.get_child_count() > 0, "T6: AshenFloorPaint построен (%d)" % (layer_a.get_child_count() if layer_a != null else -1))
-	# t35 (V-05): структура бейка — по одному ребёнку, текстура без пути; деревенская
-	# «живая земля» — тоже единый запечённый спрайт (раньше — сотни детей без пина).
 	var layer_v = world.village_zone.get_node_or_null("GroundPaint")
-	var bake_ok := true
-	for layer: Node2D in [layer_c, layer_a, layer_v]:
-		if layer == null or layer.get_child_count() != 1:
-			bake_ok = false
-			continue
-		var spr := layer.get_child(0) as Sprite2D
-		if spr == null or spr.texture == null or String(spr.texture.resource_path) != "" or not spr.has_meta("gp_amax"):
-			bake_ok = false
-	chk(bake_ok, "T6: V-05 — все три слоя «живой земли» запечены единственным спрайтом (cave=%d ashen=%d village=%s)" % [
-		layer_c.get_child_count() if layer_c != null else -1,
-		layer_a.get_child_count() if layer_a != null else -1,
-		str(layer_v.get_child_count()) if layer_v != null else "нет"])
-	var alpha_ok := true
-	var lin_ok := true
-	for layer: Node2D in [layer_c, layer_a]:
-		if layer == null:
-			continue
-		for c in layer.get_children():
-			var spr := c as Sprite2D
-			if spr == null:
-				continue
-			if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
-				lin_ok = false
-			# t35 (V-05): слой запечён в одну ImageTexture — пер-патч alpha живёт
-			# в текстуре, её верхняя граница — meta gp_amax (макс alpha специки).
-			# Канон [0.30,0.42] пинится по ней; сам спрайт-носитель немодулирован
-			# (modulate=1), как и положено «стеклу» поверх мира.
-			if spr.texture != null and String(spr.texture.resource_path) == "":
-				if not spr.has_meta("gp_amax") or spr.modulate.a != 1.0:
-					alpha_ok = false
-				elif spr.get_meta("gp_amax") < 0.299 or spr.get_meta("gp_amax") > 0.4201:
-					alpha_ok = false
-			elif spr.modulate.a < 0.299 or spr.modulate.a > 0.4201:
-				alpha_ok = false
-	chk(alpha_ok, "T6: alpha патчей ∈ [0.30, 0.42] (бейк — meta gp_amax, несущий спрайт немодулирован)")
-	chk(lin_ok, "T6: все патчи LINEAR")
-	# fail-safe: несуществующие ассеты -> слой не создаётся
-	var probe := Node2D.new()
-	add_child(probe)
-	var fake_rows: Array = ["....", "...."]
-	world._build_zone_floor_paint(probe, fake_rows, ["res://assets/art/__нет_такого__.png"], "X")
-	chk(probe.get_child_count() == 0, "T6: fail-safe — без ассетов слой не создаётся")
-	probe.queue_free()
+	chk(layer_c == null and layer_a == null and layer_v == null,
+		"T6: слои «живой земли» снесены (cave/ashen paint + GroundPaint)")
+	chk(not world.has_method("_build_zone_floor_paint") \
+		and not world.has_method("_build_ground_paint") and not world.has_method("_gp_bake"),
+		"T6: билдеры ген-полов удалены из world.gd")
 	# второй мир — тот же сид: снимок бит-в-бит
 	world.queue_free()
 	await _frames(5)
@@ -602,109 +552,31 @@ func _t6(snap1: String) -> void:
 # ------------------------------------------------------------------ T7
 
 func _t7() -> void:
-	# Т15/Т15b «миниатюрная картина»: алтарь/портал — текстуры высокого
-	# разрешения (>=3× экранных), ЭКРАННЫЕ высоты по-прежнему канон 51/70
-	# (scale-компенсация в _env4_place от фактической высоты),
-	# фильтр LINEAR_WITH_MIPMAPS и мипы в импорте; прочие пропы — как жили
-	# (scale 1.0, LINEAR). Проектный default_texture_filter=0 не тронут.
-	var altar: Texture2D = load(String(WS.ENV4_ART["altar"]))
-	var portal: Texture2D = load(String(WS.ENV4_ART["portal"]))
-	var boulder: Texture2D = load(String(WS.ENV4_ART["boulder"]))
-	var stones: Texture2D = load(String(WS.ENV4_ART["stones"]))
-	chk(altar.get_height() >= 3 * 51, "T7: altar texture_h=%d ≥ 3×экранной (51)" % altar.get_height())
-	chk(portal.get_height() >= 3 * 70, "T7: portal texture_h=%d ≥ 3×экранной (70)" % portal.get_height())
-	chk(boulder.get_height() == 26, "T7: boulder tex_h=26 (текстура не перерезана; экран 21 — ниже)")
-	chk(stones.get_height() == 32, "T7: stones tex_h=32 (текстура не перерезана; экран 24 — ниже)")
-	var eff_ok := true    # экранная высота 51/70 на живых спрайтах
-	var filt_ok := true   # LINEAR_WITH_MIPMAPS на этих двух
-	var plain_ok := true  # остальные: scale 1.0 и прежний LINEAR
-	var n_altar := 0
-	var n_portal := 0
-	var n_boulder := 0
-	var boulder_ok := true  # t22: валуны — экран 21 px, LINEAR
-	for layer_name: String in ["Env4CaveProps", "Env4AshenProps"]:
-		for zone: Node2D in [world.cave_zone, world.ashen_zone]:
-			var l = zone.get_node_or_null(NodePath(layer_name))
-			if l == null:
-				continue
-			for c in l.get_children():
-				var spr := c as Sprite2D
-				if spr == null or spr.texture == null:
-					continue
-				var p := String(spr.texture.resource_path)
-				if p.ends_with("env4_altar.png"):
-					n_altar += 1
-					if absf(float(spr.texture.get_height()) * spr.scale.y - 51.0) > 0.05:
-						eff_ok = false
-					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS:
-						filt_ok = false
-				elif p.ends_with("env4_portal.png"):
-					n_portal += 1
-					if absf(float(spr.texture.get_height()) * spr.scale.y - 70.0) > 0.05:
-						eff_ok = false
-					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS:
-						filt_ok = false
-				elif p.ends_with("env4_boulder.png"):
-					# t22: валун — экран 21 px (scale-компенсация), фильтр LINEAR
-					n_boulder += 1
-					if absf(float(spr.texture.get_height()) * spr.scale.y - 21.0) > 0.05:
-						boulder_ok = false
-					if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
-						boulder_ok = false
-				else:
-					if spr.scale != Vector2.ONE or spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
-						plain_ok = false
-	chk(n_altar >= 5 and eff_ok, "T7: экранные алтари (5 шт.) — высота 51 px, scale скомпенсирован")
-	chk(n_portal >= 1, "T7: портал в сцене (%d)" % n_portal)
-	chk(filt_ok, "T7: спрайты алтаря/портала — TEXTURE_FILTER_LINEAR_WITH_MIPMAPS")
-	chk(n_boulder >= 5 and boulder_ok, "T7: валуны — ЭКРАННАЯ высота 21 px (t22), LINEAR (%d шт.)" % n_boulder)
-	chk(plain_ok, "T7: прочие пропы env4 (сундуки) не тронуты (scale 1.0, LINEAR)")
-	# t22: кластеры камней деревни — ЭКРАННАЯ высота 24 px (scale-компенсация,
-	# ножки на нижней границе клеток), фильтр LINEAR (не MIPMAPS)
-	var n_stones := 0
-	var stones_ok := true
-	if world.village_props != null:
-		for c in world.village_props.get_children():
-			var spr := c as Sprite2D
-			if spr == null or spr.texture == null:
-				continue
-			if not String(spr.texture.resource_path).ends_with("env4_stones.png"):
-				continue
-			n_stones += 1
-			if absf(float(spr.texture.get_height()) * spr.scale.y - 24.0) > 0.05:
-				stones_ok = false
-			if spr.texture_filter != CanvasItem.TEXTURE_FILTER_LINEAR:
-				stones_ok = false
-	chk(n_stones >= 1 and stones_ok, "T7: кластеры камней — ЭКРАННАЯ высота 24 px (t22), LINEAR (%d шт.)" % n_stones)
-	var ai: Array = _ctex_mip_info(String(WS.ENV4_ART["altar"]))
-	var pi: Array = _ctex_mip_info(String(WS.ENV4_ART["portal"]))
-	var bi: Array = _ctex_mip_info(String(WS.ENV4_ART["boulder"]))
-	var am: int = int(ai[2]) if ai.size() == 3 else -1
-	var pm: int = int(pi[2]) if pi.size() == 3 else -1
-	var bm: int = int(bi[2]) if bi.size() == 3 else -1
-	# полная мип-цепочка: полных дополнительных уровней floor(log2(max_side));
-	# для канона 3× это уже >=7 (как в t15), для полного разрешения — больше
-	var need_a: int = int(floor(log(float(maxi(altar.get_width(), altar.get_height()))) / log(2.0)))
-	var need_p: int = int(floor(log(float(maxi(portal.get_width(), portal.get_height()))) / log(2.0)))
-	var mip_ok: bool = ai.size() == 3 and pi.size() == 3 and bi.size() == 3 and \
-		int(ai[0]) == altar.get_width() and int(ai[1]) == altar.get_height() and \
-		int(pi[0]) == portal.get_width() and int(pi[1]) == portal.get_height() and \
-		am >= need_a and pm >= need_p and bm == 0
-	chk(mip_ok, "T7: мип-цепочка полная в .ctex (altar доп.мипов=%d≥%d, portal=%d≥%d, boulder-контроль=%d)" % [am, need_a, pm, need_p, bm])
-	var imp_ok := true
-	for key: String in ["altar", "portal"]:
-		var ipath := String(WS.ENV4_ART[key]) + ".import"
-		var f := FileAccess.open(ipath, FileAccess.READ)
-		if f == null:
-			imp_ok = false
-			print("   QA_LP: не читается %s" % ipath)
-			continue
-		var t := f.get_as_text()
-		f.close()
-		if not t.contains("mipmaps/generate=true"):
-			imp_ok = false
-			print("   QA_LP: в %s нет mipmaps/generate=true" % ipath)
-	chk(imp_ok, "T7: .import алтаря/портала — mipmaps/generate=true")
+	# t52 «план сноса»: контракт GREEN = ОТСУТСТВИЕ ген-ресурсов на диске и в
+	# реестре. Каталог assets/art/ (env4/полы/герой/мобы/деревня/роща) снесён,
+	# ген-портреты (assets/portraits/), ген-иконки и UI-декор удалены; вместо
+	# иконок — код-заглушки UiIcons (ImageTexture, без файлов). Проектный
+	# default_texture_filter=0 (nearest) не тронут — канон полной глубины цвета
+	# без 8-битной квантизации живёт в LINEAR-ренстере тайлов (t51).
+	chk(DirAccess.open("res://assets/art") == null,
+		"T7: каталог ген-ассетов res://assets/art/ снесён")
+	chk(DirAccess.open("res://assets/portraits") == null,
+		"T7: каталог ген-портретов res://assets/portraits/ снесён")
+	for gone_path: String in ["res://assets/item_icons.png",
+			"res://assets/skill_icons.png", "res://assets/talent_icons.png",
+			"res://assets/ui/decor_paper_edge.png",
+			"res://assets/ui/decor_minimap_bronze.png"]:
+		chk(not ResourceLoader.exists(gone_path) and not FileAccess.file_exists(gone_path + ".import"),
+			"T7: %s — файл и .import удалены" % gone_path)
+	var wf7 := FileAccess.open("res://scripts/world.gd", FileAccess.READ)
+	var wsrc7: String = wf7.get_as_text() if wf7 != null else ""
+	chk(not wsrc7.contains("const ENV4_ART") and not wsrc7.contains("const ENV4_CANON_H") \
+		and not wsrc7.contains("const ENV4_PROP_CANON_H"),
+		"T7: константы ENV4_* снесены из world.gd")
+	# легаси-атласы ручной отрисовки, на которые опирается игра, — живы
+	for keep_path: String in ["res://assets/portraits.png", "res://assets/portraits2.png",
+			"res://assets/dungeon_tiles.png", "res://assets/tiles.png"]:
+		chk(ResourceLoader.exists(keep_path), "T7: ручной ассет на месте: %s" % keep_path)
 	var dflt: int = int(ProjectSettings.get_setting(
 		"rendering/textures/canvas_textures/default_texture_filter"))
 	chk(dflt == 0, "T7: проектный default_texture_filter=0 (nearest) не изменён")
@@ -851,45 +723,23 @@ func _t10() -> void:
 
 # ------------------------------------------------------------------ T11
 
-# t17 «Живая стилистика»: герой (idle/walk/attack) и бестиарий (slime,
-# swarmling, archer, rotspawn t1–t3, гром, ведьма) — полные tight alpha-кропы
-# 1024-оригиналов art_gen БЕЗ квантизации (RGBA8, >256 цветов). Пиплайн кроя
-# (scratch_cm/t17_cut_actors.py) пинит MD5 1024-источников своими assert'ами;
-# здесь пиним MD5 привезённых PNG (цепочка «источник→кроп» замывается ими),
-# а при доступности art_gen (прогон не только в battery-стейдже) сверяем и
-# MD5 источников. Экранные высоты и линии стоп — канон t12 VISUAL_SCALE,
-# линии замерены эмпирически по старым спрайтам: tight-кроп => контент-стопы
-# на нижней строке текстуры => anim.position.y = foot − canon/2.
-# Тенеплёт (wraith) в игру НЕ интегрирован (решение пользователя).
-const T11_ART := [
-	{"n": "hero_idle.png", "src": "hero/hero_idle_v2.png",
-	 "sm": "0edcc9365ee110497261c355803e1fa5", "am": "28c43254198b7b5a5a4ee898636b912e",
-	 "w": 513, "h": 1460},
-	{"n": "hero_walk.png", "src": "hero/hero_walk_v2.png",
-	 "sm": "3f2f987e55723f61c240af2954d6c046", "am": "7670e1c89bbe3f209a47bb701f4162fd",
-	 "w": 762, "h": 1374},
-	{"n": "hero_attack.png", "src": "hero/hero_attack_v2.png",
-	 "sm": "5800b97db70698428d3f8bbe0c35ae9c", "am": "39486e46acb80b8ca9e62976fb772f72",
-	 "w": 904, "h": 1283},
-	{"n": "mob_slime.png", "src": "monsters/slime_v2.png",
-	 "sm": "d1a0e568180bfeafbf4416f56d456f85", "am": "855e4d9ae83bb918d01ac1e90801f82b",
-	 "w": 566, "h": 528},
-	{"n": "mob_swarmling.png", "src": "monsters/swarmling_v1.png",
-	 "sm": "4c1851723013fa3e0920a27dba22ef67", "am": "908be54128e450423991e6e2c832e7b1",
-	 "w": 698, "h": 356},
-	{"n": "mob_archer.png", "src": "monsters/archer_v2.png",
-	 "sm": "8a0e31c7cd396d4711d6130d26dc7133", "am": "de4563c0f71bd335bfa2065afab996f2",
-	 "w": 438, "h": 979},
-	{"n": "mob_rotspawn.png", "src": "monsters/rotspawn_v2.png",
-	 "sm": "e328cce23cd94340da01ecec26b3299c", "am": "e25521cb98cdb693aa77c1bc24084e74",
-	 "w": 686, "h": 872},
-	{"n": "mob_grom.png", "src": "monsters/grom_v2.png",
-	 "sm": "7c61ec9c937e8a871024899fcc2b0394", "am": "32c8d9fa970a752ff57517a8f9efcdb4",
-	 "w": 812, "h": 773},
-	{"n": "mob_witch.png", "src": "monsters/witch_v2.png",
-	 "sm": "4d262d411a3153ac497d448d87db7033", "am": "208385b8eed7c91b5ab5b0be51537a1a",
-	 "w": 497, "h": 974},
+# t52 «план сноса» (закон пользователя 13.11): весь qwen-image ген-арт (assets/art/:
+# герой-листы, бестиарий, роща, деревня, env4, полы) снят с игры. Актёры — ручные
+# пиксельные листы (t51, мир 16 px): герой — лист класса class_warrior.png
+# (48×64: кадры 16 px, ряды down/left/right/up, колонки [0,1,0,2], 4 кадра/аним),
+# слизень — slime.png (2 кадра bob), мглокрыс/лучник — mobs_swarmling/mobs_archer.png
+# ({idle,walk,act}_{dirs}, idle 2 кадра), гнидень/Гром/Ведьма — brute.png
+# (32 px кадры × TIERS.scale; Ведьма ×1.12). Фильтры — INHERITED (проектный
+# nearest; мипмапсов на листах нет). dungeon_tiles.png после восстановления
+# клеток 6/7 из доген-блоба пинится MD5. Тенеплёт (wraith) не интегрирован.
+const T11_GEN_GONE := [
+	"hero_idle.png", "hero_walk.png", "hero_attack.png",
+	"mob_slime.png", "mob_swarmling.png", "mob_archer.png",
+	"mob_rotspawn.png", "mob_grom.png", "mob_witch.png",
 ]
+# Канонический MD5 dungeon_tiles.png после t52-восстановления клеток 6/7
+# (каменные плиты) из предген-блоба 8fb87cb^; ниже — сверка hex_encode().
+const T11_DUNGEON_MD5 := "be38cea964639e25db2f5cb97bd8d538"
 
 func _t11_md5(path: String) -> String:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -904,108 +754,64 @@ func _t11_md5(path: String) -> String:
 	return hc.finish().hex_encode()
 
 func _t11() -> void:
-	# --- 1. статика ассетов: MD5 / глубина цвета / импорт / мипы ---
-	var ag_base: String = ProjectSettings.globalize_path("res://") + "../art_gen/"
-	for a: Dictionary in T11_ART:
-		var rp := "res://assets/art/" + String(a["n"])
-		var m_ok: bool = _t11_md5(rp) == String(a["am"])
-		var has_src: bool = FileAccess.file_exists(ag_base + String(a["src"]))
-		if has_src:
-			m_ok = m_ok and _t11_md5(ag_base + String(a["src"])) == String(a["sm"])
-		chk(m_ok, "T11: %s — MD5 канон%s" % [a["n"], " (+1024-источник)" if has_src else ""])
-	for a: Dictionary in T11_ART:
-		var rp := "res://assets/art/" + String(a["n"])
-		var tex := load(rp) as Texture2D
-		var ok_tex: bool = tex != null and tex.get_width() == int(a["w"]) and tex.get_height() == int(a["h"])
-		var imp_ok := true
-		var f := FileAccess.open(rp + ".import", FileAccess.READ)
-		if f == null:
-			imp_ok = false
-		else:
-			var t := f.get_as_text()
-			f.close()
-			imp_ok = t.contains("mipmaps/generate=true")
-		var ci: Array = _ctex_mip_info(rp)
-		var need: int = int(floor(log(float(maxi(int(a["w"]), int(a["h"])))) / log(2.0)))
-		var mip_ok: bool = ci.size() == 3 and int(ci[0]) == int(a["w"]) and int(ci[1]) == int(a["h"]) and int(ci[2]) >= need
-		chk(ok_tex and imp_ok and mip_ok,
-			"T11: %s — %dx%d, mipmaps/generate=true, мип-цепочка полная (доп.=%d≥%d)" % [
-				a["n"], a["w"], a["h"], int(ci[2]) if ci.size() == 3 else -1, need])
-	for a: Dictionary in T11_ART:
-		var f := FileAccess.open("res://assets/art/" + String(a["n"]), FileAccess.READ)
-		var ok := false
-		var ncol := 0
-		var capped := false
-		if f != null:
-			var img := Image.new()
-			if img.load_png_from_buffer(f.get_buffer(f.get_length())) == OK \
-					and img.get_format() == Image.FORMAT_RGBA8:
-				# подсчёт уникальных RGBA8-палитр по сырым байтам (get_used_colors()
-				# в Godot 4 нет); скан обрывается на 4096 — 8-битной квантизации
-				# хватило бы 256, порог 4096 подтверждает полную глубину с запасом
-				var d := img.get_data()
-				var seen := {}
-				var i := 0
-				while i + 3 < d.size() and seen.size() <= 4096:
-					seen[d[i] | (d[i + 1] << 8) | (d[i + 2] << 16) | (d[i + 3] << 24)] = true
-					i += 4
-				ncol = seen.size()
-				capped = i + 3 < d.size()
-				ok = ncol > 256
-			f.close()
-		chk(ok, "T11: %s — RGBA8, %s цветов (полная глубина, без квантизации)" % [
-			a["n"], ("%d+" % ncol) if capped else ("%d" % ncol)])
-	# --- 2. живой герой: канон 32, линия стоп 5.0, анимы, flip ---
+	# --- 1. статика: ген-листы снесены с диска; ручной канон полов пинится MD5 ---
+	for n: String in T11_GEN_GONE:
+		chk(not FileAccess.file_exists("res://assets/art/" + n) \
+			and not ResourceLoader.exists("res://assets/art/" + n),
+			"T11: ген-лист %s снесён с диска" % n)
+	chk(_t11_md5("res://assets/dungeon_tiles.png") == T11_DUNGEON_MD5,
+		"T11: dungeon_tiles.png — MD5 канон t52 (клетки 6/7 восстановлены)")
+	# --- 2. живой герой: пиксельный лист класса (t51 мир 16 px), канон 16/8 ---
 	var p = world.player
-	var hero_ok: bool = p != null and p.gen_art and p.anim != null
-	chk(hero_ok, "T11: герой на ген-арте (gen_art)")
+	var hero_ok: bool = p != null and p.get("gen_art") == null and p.anim != null
+	chk(hero_ok, "T11: герой на пиксельном листе класса (флага gen_art нет)")
 	if hero_ok:
 		var pa: AnimatedSprite2D = p.anim
+		var f0: Texture2D = pa.sprite_frames.get_frame_texture("down", 0)
+		chk(f0 is AtlasTexture \
+				and String((f0 as AtlasTexture).atlas.resource_path).ends_with("class_warrior.png"),
+			"T11: герой — AtlasTexture листа class_warrior.png")
+		var row_of := {"down": 0, "left": 1, "right": 2, "up": 3}
+		var reg_ok := true
+		var cols := [0, 1, 0, 2]
+		for dir_name: String in row_of.keys():
+			if not pa.sprite_frames.has_animation(dir_name) \
+					or pa.sprite_frames.get_frame_count(dir_name) != 4 \
+					or not pa.sprite_frames.get_animation_loop(dir_name):
+				reg_ok = false
+				continue
+			for fi in 4:
+				var ft: Texture2D = pa.sprite_frames.get_frame_texture(dir_name, fi)
+				if not (ft is AtlasTexture) or (ft as AtlasTexture).region \
+						!= Rect2(cols[fi] * 16, int(row_of[dir_name]) * 16, 16, 16):
+					reg_ok = false
+		chk(reg_ok, "T11: герой — 4 аним × 4 кадра, regions 16 px по рядам/колонкам листа")
 		var idle: Texture2D = pa.sprite_frames.get_frame_texture("down", 0)
-		chk(idle != null and String(idle.resource_path).ends_with("hero_idle.png"),
-			"T11: герой — hero_idle.png в рабочих анимах")
 		var drawn_h: float = float(idle.get_height()) * pa.scale.x
 		var foot_h: float = pa.position.y + drawn_h / 2.0
-		chk(absf(drawn_h - 32.0) <= 0.05 and absf(foot_h - 5.0) <= 0.01,
-			"T11: герой drawn=%.3f (канон 32), стопы=%.3f (линия 5.0)" % [drawn_h, foot_h])
-		chk(pa.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS,
-			"T11: герой — TEXTURE_FILTER_LINEAR_WITH_MIPMAPS")
-		var names_ok := true
-		for an: String in ["down", "up", "left", "right", "walk_down", "walk_up", "walk_left", "walk_right", "attack"]:
-			if not pa.sprite_frames.has_animation(an) or pa.sprite_frames.get_frame_count(an) != 1:
-				names_ok = false
-		var walk_tex: Texture2D = pa.sprite_frames.get_frame_texture("walk_down", 0) if pa.sprite_frames.has_animation("walk_down") else null
-		var atk_tex: Texture2D = pa.sprite_frames.get_frame_texture("attack", 0) if pa.sprite_frames.has_animation("attack") else null
-		chk(names_ok and walk_tex != null and String(walk_tex.resource_path).ends_with("hero_walk.png") \
-				and atk_tex != null and String(atk_tex.resource_path).ends_with("hero_attack.png"),
-			"T11: герой — 9 аним по 1 кадру, walk/attack на своих листах (резерв аним-прохода)")
-		var facing0: String = String(p.facing)
-		p.facing = "left"
-		p._sync_gen_flip()
-		var fl: bool = pa.flip_h
-		p.facing = "right"
-		p._sync_gen_flip()
-		var fr_: bool = pa.flip_h
-		p.facing = facing0
-		p._sync_gen_flip()
-		chk(fl and not fr_, "T11: герой — flip_h по facing (арт смотрит вправо)")
+		chk(absf(drawn_h - 16.0) <= 0.001 and absf(foot_h - 8.0) <= 0.001 \
+				and pa.scale == Vector2.ONE and pa.position == Vector2.ZERO,
+			"T11: герой drawn=%.3f (канон 16), стопы=%.3f (центр ноды, t51)" % [drawn_h, foot_h])
+		chk(pa.texture_filter == CanvasItem.TEXTURE_FILTER_PARENT_NODE,
+			"T11: герой — фильтр INHERIT/parent (проектный nearest)")
 	else:
-		chk(false, "T11: герой — hero_idle.png в рабочих анимах (нет ген-арта)")
-		chk(false, "T11: герой — канон 32 / линия стоп 5.0 (нет ген-арта)")
-		chk(false, "T11: герой — LINEAR_WITH_MIPMAPS (нет ген-арта)")
-		chk(false, "T11: герой — 9 аним по 1 кадру (нет ген-арта)")
-		chk(false, "T11: герой — flip_h по facing (нет ген-арта)")
+		chk(false, "T11: герой — AtlasTexture class_warrior.png (нет аним/героя)")
+		chk(false, "T11: герой — 4 аним × 4 кадра по регионам листа (нет аним/героя)")
+		chk(false, "T11: герой — канон 16 / стопы 8 (нет аним/героя)")
+		chk(false, "T11: герой — фильтр INHERITED (нет аним/героя)")
 	# --- 3. живой бестиарий: setup-спавн вдали, проверки по месту, free ---
-	_t11_mob("слизень", "res://scripts/slime.gd", "mob_slime.png", 22.0, 7.0625, {})
-	_t11_mob("мглокрыс", "res://scripts/mob_swarmling.gd", "mob_swarmling.png", 18.0, 7.5, {})
-	_t11_mob("лучник", "res://scripts/mob_archer.gd", "mob_archer.png", 24.0, 8.5, {})
-	# brute.gd: var boss := true по умолчанию — ярусных мобов world.gd переводит
+	# t52 (ручные листы, t51 мир 16 px): мелочь — кадры 16 px (drawn 16, стопы 8);
+	# brute.png 32 px × TIERS.scale {0.72,0.85,1.0} (Гром 1.0), Ведьма ×1.12.
+	_t11_mob("слизень", "res://scripts/slime.gd", "slime.png", "walk", 2, 16.0, 8.0, {})
+	_t11_mob("мглокрыс", "res://scripts/mob_swarmling.gd", "mobs_swarmling.png", "idle_down", 2, 16.0, 8.0, {})
+	_t11_mob("лучник", "res://scripts/mob_archer.gd", "mobs_archer.png", "idle_down", 2, 16.0, 8.0, {})
+	# brute.gd: var boss := true по умолчанию — world.gd переводит ярусных мобов
 	# в boss=false до setup; здесь воспроизводим канонический порядок
-	_t11_mob("гнидень ярус1", "res://scripts/brute.gd", "mob_rotspawn.png", 29.0, 8.50178125, {"boss": false, "tier": 1})
-	_t11_mob("гнидень ярус2", "res://scripts/brute.gd", "mob_rotspawn.png", 35.0, 10.26000625, {"boss": false, "tier": 2})
-	_t11_mob("гнидень ярус3", "res://scripts/brute.gd", "mob_rotspawn.png", 42.0, 12.3125, {"boss": false, "tier": 3})
-	_t11_mob("Гром", "res://scripts/brute.gd", "mob_grom.png", 52.0, 15.2440476, {"boss": true})
-	_t11_mob("Ведьма Пепелища", "res://scripts/mob_boss2.gd", "mob_witch.png", 51.0, 13.91375, {})
+	_t11_mob("гнидень ярус1", "res://scripts/brute.gd", "brute.png", "walk", 2, 23.04, 11.52, {"boss": false, "tier": 1})
+	_t11_mob("гнидень ярус2", "res://scripts/brute.gd", "brute.png", "walk", 2, 27.2, 13.6, {"boss": false, "tier": 2})
+	_t11_mob("гнидень ярус3", "res://scripts/brute.gd", "brute.png", "walk", 2, 32.0, 16.0, {"boss": false, "tier": 3})
+	_t11_mob("Гром", "res://scripts/brute.gd", "brute.png", "walk", 2, 32.0, 16.0, {"boss": true})
+	_t11_mob("Ведьма Пепелища", "res://scripts/mob_boss2.gd", "brute.png", "walk", 2, 35.84, 17.92, {})
 	# --- 4. Тенеплёт не интегрирован ---
 	var wraith_art := ""
 	var d := DirAccess.open("res://assets/art")
@@ -1023,9 +829,12 @@ func _t11() -> void:
 			f2.close()
 	chk(wraith_ref == "", "T11: зоны не ссылаются на mob_wraith (Тенеплёт не спавнится)")
 
-func _t11_mob(tag: String, script_path: String, tex_name: String, canon: float, foot: float, cfg: Dictionary) -> void:
+func _t11_mob(tag: String, script_path: String, tex_name: String, anim_name: String, \
+		frames_expected: int, canon: float, foot: float, cfg: Dictionary) -> void:
 	# спавн по каноническому пути (new -> add_child -> setup), далеко от героя;
-	# проверки синхронные (setup строит anim сразу), free() — до физ-кадра
+	# проверки синхронные (setup строит anim сразу), free() — до физ-кадра.
+	# t52: кадры — AtlasTexture ручных листов (res://assets/*.png), фильтр
+	# INHERITED (проектный nearest), якорь — центр ноды (стопа = drawn/2).
 	var m = load(script_path).new()
 	for k: String in cfg:
 		m.set(k, cfg[k])
@@ -1034,25 +843,25 @@ func _t11_mob(tag: String, script_path: String, tex_name: String, canon: float, 
 	var ok := true
 	var a: AnimatedSprite2D = m.get("anim")
 	var tex: Texture2D = null
-	if a == null:
+	if a == null or a.sprite_frames == null or not a.sprite_frames.has_animation(anim_name):
 		ok = false
 	else:
-		# Флаг gen_art есть не у всех (у slime его нет — одиночный спрайт без
-		# флажка), и bool(Variant(Nil)) падает в Godot 4.7.2. Проверяем более
-		# надёжный критерий: фактическую играющий аним: slime/brute — "walk",
-		# swarmling/archer — "idle_down" (у своих листов свои наборы имён)
-		var an := String(a.animation)
-		tex = a.sprite_frames.get_frame_texture(an, 0) if a.sprite_frames.has_animation(an) else null
-		ok = tex != null and String(tex.resource_path).ends_with(tex_name) \
-			and a.sprite_frames.get_frame_count(an) == 1 \
-			and absf(float(tex.get_height()) * a.scale.x - canon) <= 0.05 \
-			and absf(a.position.y + canon / 2.0 - foot) <= 0.01 \
-			and a.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		tex = a.sprite_frames.get_frame_texture(anim_name, 0)
+		ok = tex is AtlasTexture \
+			and String((tex as AtlasTexture).atlas.resource_path).ends_with(tex_name) \
+			and a.sprite_frames.get_frame_count(anim_name) == frames_expected \
+			and String(a.animation) == anim_name
+		if ok:
+			var dh0 := float(tex.get_height()) * a.scale.x
+			ok = absf(dh0 - canon) <= 0.05 \
+				and absf(a.position.y + dh0 / 2.0 - foot) <= 0.01 \
+				and a.texture_filter == CanvasItem.TEXTURE_FILTER_PARENT_NODE
 	if not ok:
-		print("   QA_LP: %s — провал ген-проверки (anim=%s)" % [tag, a])
+		print("   QA_LP: %s — провал проверки аним-листа (anim=%s)" % [tag, a])
 	var dh := (float(tex.get_height()) * a.scale.x) if (a != null and tex != null) else -1.0
-	var fh := (a.position.y + canon / 2.0) if a != null else -1.0
-	chk(ok, "T11: %s — %s, drawn=%.3f (канон %.1f), стопы=%.5f" % [tag, tex_name, dh, canon, fh])
+	var fh := (a.position.y + dh / 2.0) if a != null else -1.0
+	chk(ok, "T11: %s — %s, \"%s\" %d к., drawn=%.3f (канон %.2f), стопы=%.5f" % [
+		tag, tex_name, anim_name, frames_expected, dh, canon, fh])
 	m.free()
 
 # ------------------------------------------------------------------ T12
@@ -1143,7 +952,10 @@ func _t12() -> void:
 				pop_ok = true
 	chk(pop_ok, "T12: метка урона рождается с масштабом overshoot (%.1f)" % DmgNumbers.POP_FROM)
 
-	# 2) тени по высоте актёра: герой (32 px канон) vs слайм (22 px)
+	# 2) тени по высоте актёра. t51 (мир 16 px, делитель канона 32→16): герой и
+	#    слизень одного канона (16 px) — обе тени в канон-масштабе; отношение
+	#    «тень растёт по высоте» проверяем удвоенным слизнем (32 px → тень 2.0,
+	#    пересканирование атмосферы идёт каждые SCAN_PERIOD=0.5 с реала)
 	var sl := _t12_slime()
 	if sl == null:
 		sl = _t12_spawn_slime(Vector2i(28, 13))
@@ -1151,9 +963,19 @@ func _t12() -> void:
 	var sh_s := sl.get_node_or_null("AtmoShadow") as Sprite2D
 	chk(sh_p != null and sh_p.scale.x >= 0.9 and sh_p.scale.x <= 1.1,
 		"T12: тень героя — канон-масштаб (%.2f)" % (sh_p.scale.x if sh_p != null else -1.0))
-	chk(sh_s != null and sh_s.scale.x < sh_p.scale.x - 0.12 and sh_s.scale.x >= 0.55,
-		"T12: тень мелкого моба меньше геройской (%.2f < %.2f)" % [
-			sh_s.scale.x if sh_s != null else -1.0, sh_p.scale.x if sh_p != null else -1.0])
+	chk(sh_s != null and sh_s.scale.x >= 0.9 and sh_s.scale.x <= 1.1,
+		"T12: тень 16px-слизня — канон-масштаб, как у героя (%.2f)" % (
+			sh_s.scale.x if sh_s != null else -1.0))
+	var sl_big := _t12_spawn_slime(Vector2i(40, 20))
+	var big_a: AnimatedSprite2D = sl_big.get("anim")
+	if big_a != null:
+		big_a.scale = big_a.scale * 2.0
+	await _t12_rt(0.7)
+	var sh_b := sl_big.get_node_or_null("AtmoShadow") as Sprite2D
+	chk(sh_b != null and sh_p != null and sh_b.scale.x >= 1.9 and sh_b.scale.x <= 2.1 \
+			and sh_b.scale.x > sh_p.scale.x + 0.5,
+		"T12: тень растёт по высоте актёра (%.2f против геройской %.2f)" % [
+			sh_b.scale.x if sh_b != null else -1.0, sh_p.scale.x if sh_p != null else -1.0])
 
 	# 3) hitstop: dip есть, восстановление в РЕАЛЬНОМ времени ≤0.4 с (гарантия)
 	Engine.time_scale = 1.0
@@ -1239,40 +1061,29 @@ func _t12() -> void:
 	await _t12_rt(0.4)
 	chk(_t12_ghosts() == 0, "T12: шлейф погас — узлов не осталось")
 
-	# 9) «дыхание» env4-пропов: алтарь/портал/сундук + пульс/bob при неподвижном спрайте
-	var altar: Array = []
-	var portal: Array = []
-	var chests: Array = []
-	_t12_lights(world.cave_zone, "env4_altar.png", altar)
-	_t12_lights(world.ashen_zone, "env4_portal.png", portal)
-	_t12_lights(world.cave_zone, "env4_chest.png", chests)
-	chk(not altar.is_empty(), "T12: алтарям пещеры живёт свет JuiceLight (%d)" % altar.size())
-	chk(not portal.is_empty(), "T12: порталу Пепелища живёт свет JuiceLight (%d)" % portal.size())
-	chk(not chests.is_empty(), "T12: сундукам живёт свет JuiceLight (%d)" % chests.size())
-	# отсчёт пульса — от ПЕРВОГО сэмпла каждого света (базы у пропов разные)
-	var all_l: Array = []
-	for grp in [altar, portal, chests]:
-		for it in grp:
-			all_l.append(it["light"])
-	var e_first := {}
-	var y_first := {}
-	for lt in all_l:
-		e_first[lt] = (lt as Light2D).energy
-		y_first[lt] = (lt as Node2D).position.y
-	var spr0: Vector2 = (altar[0]["spr"] as Node2D).position if not altar.is_empty() else Vector2.INF
-	var e_dev := 0.0
-	var y_dev := 0.0
-	# Сэмпл — РЕАЛЬНЫМ таймером: в headless физ-кадры идут быстрее реального
-	# времени, а «дыхание» считает фазу по реальным мсек (Time.get_ticks_msec).
-	for i in 9:
-		for lt in all_l:
-			e_dev = maxf(e_dev, absf((lt as Light2D).energy - float(e_first[lt])))
-			y_dev = maxf(y_dev, absf((lt as Node2D).position.y - float(y_first[lt])))
-		await _t12_rt(0.25)
-	chk(e_dev > 0.02 and y_dev > 0.4,
-		"T12: пульс %.3f и bob %.2f px живые" % [e_dev, y_dev])
-	chk(spr0 != Vector2.INF and (altar[0]["spr"] as Node2D).position == spr0,
-		"T12: спрайт алтаря неподвижен — дышит только свет")
+	# 9) t52 снос (закон 13.11): env4-пропы сняты — «дыхание» алтаря/портала/
+	# env4-сундука вместе с их JuiceLight нет. Инфраструктура дышит дальше:
+	# легасовы света в реестре атмосферы (золотой свет сундука пещеры) живые.
+	var atmo = world.get_node_or_null("Atmo")
+	var pls: Array = atmo.get("_prop_lights") if atmo != null else []
+	var env4_gone: bool = world.cave_zone.get_node_or_null("Env4CaveProps") == null \
+			and world.ashen_zone.get_node_or_null("Env4AshenProps") == null
+	chk(pls.size() >= 1 and env4_gone,
+		"T12: env4-слои сняты, легасовый реестр atmosphere жив (%d)" % pls.size())
+	if not pls.is_empty():
+		var lt: Light2D = pls[0]["light"]
+		var e0: float = lt.energy
+		var y0: float = (lt as Node2D).position.y
+		var e_dev := 0.0
+		var y_dev := 0.0
+		for i in 6:
+			e_dev = maxf(e_dev, absf(lt.energy - e0))
+			y_dev = maxf(y_dev, absf((lt as Node2D).position.y - y0))
+			await _t12_rt(0.25)
+		chk(e_dev > 0.02 and y_dev > 0.2,
+			"T12: легасовый свет дышит — пульс %.3f bob %.2f px" % [e_dev, y_dev])
+	else:
+		chk(false, "T12: легасовых светов нет — дыхание не проверено")
 
 	# 10) финал: тряска обнулена, время = 1 (никаких залипаний после боя)
 	await _t12_rt(0.45)
@@ -1316,28 +1127,22 @@ func _t13() -> void:
 	world.queue_free()
 	await _frames(5)
 	world = await _spawn_world()
-	# 1) дети слоёв пропсов — абсолютная глубина по стопе (независимая формула)
-	var n_prop := 0
-	var bad_rel := 0
-	var bad_z := 0
-	for zone: Node2D in [world.cave_zone, world.ashen_zone]:
-		for lname: String in ["Env4CaveProps", "Env4AshenProps"]:
-			var l = zone.get_node_or_null(NodePath(lname))
-			if l == null:
-				continue
-			for c in l.get_children():
-				var spr := c as Sprite2D
-				if spr == null or spr.texture == null:
-					continue
-				n_prop += 1
-				if spr.z_as_relative:
-					bad_rel += 1
-				if spr.z_index != int(round(fposmod(_spr_rect(spr).end.y, WS.YS_CYCLE))):
-					bad_z += 1
-	chk(n_prop >= 8, "T13: env4-пропов в сцене %d" % n_prop)
-	chk(bad_rel == 0, "T13: все дети env4-слоёв — абсолютный z (z_as_relative=false)")
-	chk(bad_z == 0, "T13: z env4-пропов == глобальный Y стопы (%d/%d)" % [n_prop - bad_z, n_prop])
-	# 2) актёры участвуют: моб (деревенский слизень) двигает z вместе с ногами
+	# 1) t52: ген-слои env4-пропов снесены; инфраструктура YS-глубины сохранена
+	var gcav_l = world.cave_zone.get_node_or_null(NodePath("Env4CaveProps"))
+	var gas_l = world.ashen_zone.get_node_or_null(NodePath("Env4AshenProps"))
+	chk(gcav_l == null and gas_l == null,
+		"T13: env4-слои пропсов снесены (cave/ashen)")
+	var wsrc13: String = ""
+	var wf13 := FileAccess.open("res://scripts/world.gd", FileAccess.READ)
+	if wf13 != null:
+		wsrc13 = wf13.get_as_text()
+	chk(wsrc13.contains("_ys_canopies") and wsrc13.contains("YS_ACTOR_BIAS") \
+		and not wsrc13.contains("_build_village_props"),
+		"T13: YS-инфраструктура цела, ген-построители удалены из world.gd")
+	# 2) актёры участвуют: моб (деревенский слизень) двигает z вместе с ногами.
+	# Процесс моба глушим — ИИ/физика не сдвигают ноги между телепортом и сверкой;
+	# z сверяется НА ТОЧНО с формулой от фактической y. Регресс на «статический z
+	# из тайла спавна» ловится: после переноса статический z не совпадёт.
 	var mob: Node2D = null
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if is_instance_valid(e) and (e as Node2D).get_parent() == world.village_zone:
@@ -1346,47 +1151,73 @@ func _t13() -> void:
 	if mob == null:
 		chk(false, "T13: мобиль деревни не найден")
 	else:
-		var z1: int = mob.z_index
-		var y1: float = mob.global_position.y
-		mob.global_position = Vector2(mob.global_position.x, mob.global_position.y + 64.0)
+		mob.process_mode = Node.PROCESS_MODE_DISABLED
+		mob.global_position += Vector2(0.0, 100.0)
 		await _frames(4)
-		# z следует за ногами: сместился на 64 — вырос минимум на 60 (микродвижение
-		# ИИ и int-усечение дают запас), и сам z в пределах 3 px от формулы стопы
-		chk(z1 > 0 and mob.z_index >= z1 + 60 and mob.global_position.y > y1 \
-			and absf(float(mob.z_index) - (round(fposmod(mob.global_position.y, WS.YS_CYCLE)) + WS.YS_ACTOR_BIAS)) < 3.0,
-			"T13: моб в динамической шкале глубины (%d -> %d)" % [z1, mob.z_index])
-	# 3) пещера: алтарь — южнее герой поверх, севернее — под
+		var z_s: int = mob.z_index
+		var fy_s: int = int(round(fposmod(mob.global_position.y, WS.YS_CYCLE))) + WS.YS_ACTOR_BIAS
+		chk(z_s == fy_s, "T13: моб (юг) — z == формула ног точно (%d == %d)" % [z_s, fy_s])
+		mob.global_position -= Vector2(0.0, 200.0)
+		await _frames(4)
+		var z_n: int = mob.z_index
+		var fy_n: int = int(round(fposmod(mob.global_position.y, WS.YS_CYCLE))) + WS.YS_ACTOR_BIAS
+		chk(z_n == fy_n and z_n < z_s and z_s - z_n == 200,
+			"T13: моб в динамической шкале глубины (%d -> %d при -200 px)" % [z_s, z_n])
+		mob.process_mode = Node.PROCESS_MODE_INHERIT
+	# 3) пещера: герой в динамической шкале — z == формула стопы; южнее — глубже
+	# (t52: ген-алтаря больше нет, сверка — с независимой формулой YS).
+	# Физика героя глушим: телепорты не откатываются collision-разрешением,
+	# world._ys_update пересчитывает z от фактических ног в любом process_mode.
 	world.apply_area("cave")
 	await _frames(20)
-	var altar := _biggest_prop(world.cave_zone, "Env4CaveProps", "env4_altar.png")
-	if altar == null:
-		chk(false, "T13: алтарь пещеры не найден")
-	else:
-		var ra := _spr_rect(altar)
-		world.player.global_position = Vector2(ra.get_center().x, ra.end.y + 22.0)
-		await _frames(4)
-		chk(world.player.z_index > altar.z_index,
-			"T13: герой южнее алтаря — ПОВЕРХ (%d > %d)" % [world.player.z_index, altar.z_index])
-		world.player.global_position = Vector2(ra.get_center().x, ra.position.y + ra.size.y * 0.4)
-		await _frames(4)
-		chk(world.player.z_index < altar.z_index,
-			"T13: герой севернее алтаря — ПОД (%d < %d)" % [world.player.z_index, altar.z_index])
-	# 4) Пепелище: портал — та же пара
+	world.player.process_mode = Node.PROCESS_MODE_DISABLED
+	# Якорь y=600: пробы ставятся в середине цикла YS (0..4800) — у нулевой y
+	# «северный» телепорт заворачивал бы fposmod в хвост цикла (z~4770), а
+	# движок отрезает z>4096 (канон YS, не предмет t52).
+	var pp0: Vector2 = world.player.global_position
+	world.player.global_position = Vector2(pp0.x, 600.0)
+	await _frames(2)
+	var zc_south := -1
+	var zc_north := -1
+	world.player.global_position += Vector2(0.0, 96.0)
+	await _frames(4)
+	zc_south = world.player.z_index
+	chk(world.player.z_index \
+		== int(round(fposmod(world.player.global_position.y, WS.YS_CYCLE))) + WS.YS_ACTOR_BIAS,
+		"T13: герой пещеры (юг) — z по формуле стопы (%d)" % world.player.z_index)
+	world.player.global_position -= Vector2(0.0, 192.0)
+	await _frames(4)
+	zc_north = world.player.z_index
+	chk(world.player.z_index \
+		== int(round(fposmod(world.player.global_position.y, WS.YS_CYCLE))) + WS.YS_ACTOR_BIAS,
+		"T13: герой пещеры (север) — z по формуле стопы (%d)" % world.player.z_index)
+	chk(zc_south - zc_north == 192,
+		"T13: порядок глубины: южнее — z больше ровно на разницу ног (%d > %d)" % [zc_south, zc_north])
+	world.player.process_mode = Node.PROCESS_MODE_INHERIT
+	# 4) Пепелище: та же пара проверок на живой постройке ashen
 	world.apply_area("ashen")
 	await _frames(20)
-	var portal := _biggest_prop(world.ashen_zone, "Env4AshenProps", "env4_portal.png")
-	if portal == null:
-		chk(false, "T13: портал Пепелища не найден")
-	else:
-		var rp := _spr_rect(portal)
-		world.player.global_position = Vector2(rp.get_center().x, rp.end.y + 22.0)
-		await _frames(4)
-		chk(world.player.z_index > portal.z_index,
-			"T13: герой южнее портала — ПОВЕРХ (%d > %d)" % [world.player.z_index, portal.z_index])
-		world.player.global_position = Vector2(rp.get_center().x, rp.position.y + rp.size.y * 0.4)
-		await _frames(4)
-		chk(world.player.z_index < portal.z_index,
-			"T13: герой севернее портала — ПОД (%d < %d)" % [world.player.z_index, portal.z_index])
+	world.player.process_mode = Node.PROCESS_MODE_DISABLED
+	var pp1: Vector2 = world.player.global_position
+	world.player.global_position = Vector2(pp1.x, 600.0)
+	await _frames(2)
+	var za_south := -1
+	var za_north := -1
+	world.player.global_position += Vector2(0.0, 96.0)
+	await _frames(4)
+	za_south = world.player.z_index
+	chk(world.player.z_index \
+		== int(round(fposmod(world.player.global_position.y, WS.YS_CYCLE))) + WS.YS_ACTOR_BIAS,
+		"T13: герой Пепелища (юг) — z по формуле стопы (%d)" % world.player.z_index)
+	world.player.global_position -= Vector2(0.0, 192.0)
+	await _frames(4)
+	za_north = world.player.z_index
+	chk(world.player.z_index \
+		== int(round(fposmod(world.player.global_position.y, WS.YS_CYCLE))) + WS.YS_ACTOR_BIAS,
+		"T13: герой Пепелища (север) — z по формуле стопы (%d)" % world.player.z_index)
+	chk(za_south - za_north == 192,
+		"T13: порядок глубины Пепелища — ровно на разницу ног (%d > %d)" % [za_south, za_north])
+	world.player.process_mode = Node.PROCESS_MODE_INHERIT
 	# 5) цифры урона над всей z-шкалой зон (иначе высокий z пропов прятал бы их).
 	# Хост DmgNumbers живёт на current_scene (в стенде это корень харнесса, не мир)
 	# — тот же путь, что в T12; мир поднимает его fallback'ом по current_scene.
@@ -1438,7 +1269,9 @@ func _t14() -> void:
 	# 4) grace: стартовый рой у спавна — ровно 2 особи (общий испуг с 1-й смерти)
 	var rats := 0
 	for c in world.village_zone.get_children():
-		if String(c.get("swarm_id")) == "glade_west":
+		# c.get() на узле без свойства даёт Nil — String(Nil) падает скриптовым
+		# эррором; сравниваем Variant напрямую (Nil != "glade_west" безопасно).
+		if c.get("swarm_id") == "glade_west":
 			rats += 1
 	chk(rats == 2, "T14: старт-рой glade_west = 2 особи (было 4)")
 	# 4b) t39 grace: блуждание крыса/слайма привязано к дому (канон лучника
@@ -1469,14 +1302,10 @@ func _t14() -> void:
 	chk(not sl.contains("Ash.add") and not sl.contains("Ash.spend"),
 		"T14: пепел с киллов = 0 (loot.gd не вызывает Ash)")
 
-# ------------------------------------------------------- T15 (t48): env4-дим ----
-## Дим-контракт t41, распространённый на env4-пропы (алтари пещеры, портал и
-## сундук Пепелища — всё, что ставит _env4_place). Семантика — проба D t47:
-## герой «за» пропом (y = низ rect пропа − 13 → канонный бокс 16×32 целиком под
-## картинкой), 90 кадров штатного _ys_update. Ожидание: alpha ≤ 0.5; южнее
-## стопы — ровно 1.0; скачок за кадр в норме лерпа delta*8 (без фликера);
-## пропы чужой зоны/этажа не гаснут. На HEAD 46e6725 (env4 не в _ys_props_dim)
-## пины дима — RED: alpha остаётся 1.000.
+# --------------------------------------------- T15 (t52): снос ген-пропсов ------
+## t52 «план сноса»: env4-пропы, VillageProps и ген-текстуры удалены из мира.
+## Контракт GREEN — отсутствие: реестров нет, _ys_props_dim пуст, в дереве мира
+## ни одной ген-текстуры (art/, portraits/, env4_, cottage, grove).
 
 func _t15_spr(layer: Node, suffix: String) -> Sprite2D:
 	if layer == null:
@@ -1511,73 +1340,32 @@ func _t15() -> void:
 	if world == null or world.player == null:
 		chk(false, "t15: мир не построен")
 		return
-	var cave: Node = world.get("_env4_cave_props")
-	var ashen: Node = world.get("_env4_ashen_props")
-	chk(cave != null and ashen != null, "t15: слои env4 (пещера/Пепелище) на месте")
-	if cave == null or ashen == null:
-		return
-	var altar := _t15_spr(cave, "env4_altar.png")
-	var portal := _t15_spr(ashen, "env4_portal.png")
-	var chest := _t15_spr(ashen, "env4_chest.png")
-	chk(altar != null and portal != null and chest != null,
-		"t15: алтарь/портал/сундук env4 найдены")
-	if altar == null or portal == null or chest == null:
-		return
-	# структурно: каждый env4-спрайт — в реестре дима _ys_props_dim (корень F1)
+	# t52 «план сноса»: env4-пропов и ген-слоёв нет — контракт GREEN = отсутствие.
+	var cave = world.get("_env4_cave_props")
+	var ashen = world.get("_env4_ashen_props")
+	chk(cave == null and ashen == null,
+		"t15: env4-реестров мира нет (_env4_cave_props/_env4_ashen_props)")
+	chk(world.get("village_props") == null,
+		"t15: VillageProps снесён (world.village_props == null)")
 	var ysd: Array = world.get("_ys_props_dim")
-	var reg := 0
-	var tot := 0
-	for layer: Node in [cave, ashen]:
-		for c in layer.get_children():
-			if c is Sprite2D and (c as Sprite2D).texture != null:
-				tot += 1
-				if ysd != null and ysd.has(c):
-					reg += 1
-	chk(ysd != null and tot >= 10 and reg == tot,
-		"t15: env4-спрайты зарегистрированы в _ys_props_dim (%d/%d)" % [reg, tot])
-	# герой за алтарём: физика героя и мобов выключена (без выталкивания/урона)
-	for n in get_tree().get_nodes_in_group("enemy"):
-		var e := n as Node
-		if e != null:
-			e.process_mode = Node.PROCESS_MODE_DISABLED
-	var pl := world.player as Node2D
-	pl.process_mode = Node.PROCESS_MODE_DISABLED
-	var r := _t15_rect(altar)
-	pl.global_position = Vector2(r.get_center().x, r.end.y - 13.0)
-	var max_step := 0.0
-	var prev := altar.modulate.a
-	for i in 90:
-		await _frames(1)
-		max_step = maxf(max_step, absf(altar.modulate.a - prev))
-		prev = altar.modulate.a
-	print("   t15 METRIC altar alpha=%.3f max_step=%.4f z=%d hz=%d" % [
-		altar.modulate.a, max_step, altar.z_index, pl.z_index])
-	chk(altar.z_index > pl.z_index,
-		"t15: алтарь нарисован над героем (z %d > %d)" % [altar.z_index, pl.z_index])
-	chk(altar.modulate.a <= 0.5 + 0.001,
-		"t15: алтарь пещеры над героем димится ≤0.5 (alpha=%.3f)" % altar.modulate.a)
-	# чужая зона не гаснет: изба деревни при герое в пещере — ровно 1.0
-	var cottage := _t15_spr(world.get("village_props"), "village_cottage.png")
-	chk(cottage == null or is_equal_approx(cottage.modulate.a, 1.0),
-		"t15: изба деревни при герое в пещере не гаснет (alpha=%.3f)" \
-		% (cottage.modulate.a if cottage != null else 1.0))
-	# южнее стопы — дим выключен, ровно 1.0
-	pl.global_position = Vector2(r.get_center().x, r.end.y + 22.0)
-	await _frames(50)
-	chk(is_equal_approx(altar.modulate.a, 1.0),
-		"t15: южнее алтаря alpha ровно 1.0 (alpha=%.3f)" % altar.modulate.a)
-	# портал Пепелища (coverage 1.00) и env4-сундук (0.53) — тот же контракт
-	r = _t15_rect(portal)
-	pl.global_position = Vector2(r.get_center().x, r.end.y - 13.0)
-	await _frames(90)
-	chk(portal.modulate.a <= 0.5 + 0.001,
-		"t15: портал Пепелища над героем ≤0.5 (alpha=%.3f)" % portal.modulate.a)
-	r = _t15_rect(chest)
-	pl.global_position = Vector2(r.get_center().x, r.end.y - 13.0)
-	await _frames(90)
-	chk(chest.modulate.a <= 0.5 + 0.001,
-		"t15: env4-сундук Пепелища (cov 0.53) ≤0.5 (alpha=%.3f)" % chest.modulate.a)
-	# фликер: шаг лерпа delta*8 при 1/60 — ≤ 0.5*(8/60)≈0.0667, снап ≤0.02
-	chk(max_step <= 0.08,
-		"t15: без фликера — max |Δalpha|/кадр %.4f ≤ 0.08" % max_step)
-	pl.process_mode = Node.PROCESS_MODE_INHERIT
+	chk(ysd != null and ysd.is_empty(),
+		"t15: реестр дима пропов пуст (_ys_props_dim = %d)" \
+		% (ysd.size() if ysd != null else -1))
+	# в дереве мира нет ни одной ген-текстуры: art/, portraits/, env4_ и т.п.
+	var gen_seen: Array[String] = []
+	var stack: Array[Node] = [world]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		var spr := n as Sprite2D
+		if spr != null and spr.texture != null:
+			var t: Texture = spr.texture
+			while t is AtlasTexture:
+				t = (t as AtlasTexture).atlas
+			var p := "" if t == null else String(t.resource_path)
+			if p.contains("assets/art/") or p.contains("assets/portraits/") \
+					or p.contains("env4_") or p.contains("village_cottage") or p.contains("grove_"):
+				gen_seen.append(p)
+	chk(gen_seen.is_empty(),
+		"t15: в дереве мира нет ген-текстур (%d: %s)" % [gen_seen.size(), str(gen_seen)])

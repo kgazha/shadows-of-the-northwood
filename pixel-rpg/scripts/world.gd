@@ -28,110 +28,13 @@ const CAVE_BLOCK_SHAPES := {
 	11: [13, 12, 0, 1],   # алтарный сундук: корпус без углов
 }
 const DZ := preload("res://scripts/dungeon_zone.gd")
-## Рощи «t»: визуал кластеров деревьев — ОДИН спрайт кроны на кластер вместо
-## сетки тайлов 16px. Меняется только картинка: геометрия карты, блокируемость
-## клеток и коллайдеры-стволы (BLOCK_SHAPES[5]) остаются ровно как были, а под
-## клетками рощи рисуется подстилка ('T'), чтобы от дерева не осталось дыры.
-const GROVE_ART := "res://assets/art/tree_grove_%d.png"
-const GROVE_VARIANTS := 6
-## Кластер крупнее — это «стена» деревьев по рамке карты, а не роща: один спрайт
-## на несколько сотен клеток был бы абсурден, такие кластеры остаются тайлами.
-const GROVE_MAX_TREES := 8
-## Деревенские пропсы («живая стилистика», волна 3): НАД тайловой отрисовкой —
-## один спрайт на объект (изба/колодец/указатель/костёр). Меняется только
-## картинка: CHAR_TO_TILE, BLOCK_SHAPES, коллайдеры и тайлы (миникарта читает
-## атласы) остаются бит-в-бит; под пропсом рисуется прежний тайл. Как и рощи —
-## fail-safe: нет ассета → соответствующие клетки остаются тайловыми.
-const VILLAGE_ART_COTTAGE := "res://assets/art/village_cottage.png"
-const VILLAGE_ART_WELLS := [
-	"res://assets/art/village_well_1.png",
-	"res://assets/art/village_well_2.png",
-]
-const VILLAGE_ART_SIGNPOST := "res://assets/art/village_signpost.png"
-const VILLAGE_ART_CAMPFIRE := "res://assets/art/village_campfire.png"
-## Изба — связный «R»/«W»/«D» кластер (крыша/стены/дверь). Меньше 4 клеток —
-## не постройка; больше 64 — стена частокола, не изба (один спрайт не положим).
-const COTTAGE_MIN_CELLS := 4
-const COTTAGE_MAX_CELLS := 64
-## Окружение волны 4 («живая стилистика», одобрено в art_gen/VERDICTS.txt): ОДИН
-## спрайт над существующим якорем — деревенские валуны и камни, сундуки
-## (деревня/пещера), алтари пещеры, выходной портал Пепелища. Меняется только
-## картинка: CHAR_TO_TILE, коллайдеры, миникарта и тайловая логика — бит-в-бит;
-## под пропсом — прежние тайлы и интерактаблы. Паттерн VillageProps: fail-safe —
-## нет ассета → якорь остаётся тайловой отрисовкой.
-const ENV4_ART := {
-	"chest": "res://assets/art/env4_chest.png",
-	"altar": "res://assets/art/env4_altar.png",
-	"portal": "res://assets/art/env4_portal.png",
-	"stones": "res://assets/art/env4_stones.png",
-	"boulder": "res://assets/art/env4_boulder.png",
-}
-## Т15/Т15b «миниатюрная картина»: алтарь и портал — текстуры полного разрешения
-## исходника (полный альфа-кроп 1024-оригиналов, Т15b; вариант 3× 153/210 сохранён
-## в scratch_cm/t15_shots/keep_3x). ЭКРАННЫЙ размер остаётся каноническим:
-## scale = H-канон / ФАКТИЧЕСКАЯ высота текстуры (не захардкожен), на эти же
-## спрайты ставится TEXTURE_FILTER_LINEAR_WITH_MIPMAPS (в .import этих
-## двух файлов mipmaps/generate=true). Проектный default_texture_filter=0 (nearest)
-## не тронут; остальные пропы — scale 1.0 и прежний LINEAR.
-const ENV4_CANON_H := {
-	"res://assets/art/env4_altar.png": 51.0,
-	"res://assets/art/env4_portal.png": 70.0,
-}
-## t22 (вердикт 12.11 15:49, SCALE_CANON): экранная высота камней/валунов —
-## кластер 1.0H→0.75H (32→24 px), одиночный валун 0.8H→0.65H (26→21 px).
-## Текстуры НЕ перерезаны (храним facts и mips-пинки Т7): scale = канон /
-## фактическая высота текстуры при установке; НОЖКИ не съезжают — формула
-## низа (y1+1)*TILE+2 − tex_h*s*0.5 уже компенсирована в _add_prop/_env4_place.
-## Фильтр остаётся LINEAR (не MIPMAPS — это НЕ 3×-ассеты, Т7 «boulder-контроль
-## мипов=0» должен остаться истинным).
-const ENV4_PROP_CANON_H := {
-	"res://assets/art/env4_stones.png": 24.0,
-	"res://assets/art/env4_boulder.png": 21.0,
-}
-## Камни «r»: кластер 2..6 клеток — «валуны мха»; одинокий в стороне от воды —
-## одинокий валун («r» у воды — колодец village_props, не трогаем). Кластер
-## крупнее 6 — осыпь, остаётся тайловой (как «стена» деревьев у крон).
-const ENV4_STONE_MIN_CELLS := 2
-const ENV4_STONE_MAX_CELLS := 6
-## «Живая земля» и «прочерченные тропы» (волна 5): визуальный слой z=-5 — над
-## базовыми тайлами (-10) и водой (-9), ПОД сущностями/маркерами (0) и кронами
-## (5): слой не закрывает NPC, лут, цифры урона и персонажей. Мягкие разнотонные
-## патчи на «g»/«f»/«G» (мох/хвоя/листва/прогалина/трава) и сегменты тропы с
-## РАСПЛЫВЧАТЫМИ краями на «d» (маска непрозрачна до границы клетки, перо 3–4 px
-## сверх — соседние сегменты перекрываются на 2–3 px, швов нет). Паттерн
-## GroveCanopy/VillageProps: меняется только картинка; CHAR_TO_TILE, коллайдеры,
-## миникарта — бит-в-бит. Fail-safe: нет ассетов → прежний рендер.
-const GROUND_ART := [
-	"res://assets/art/ground_moss_1.png",
-	"res://assets/art/ground_moss_2.png",
-	"res://assets/art/ground_needles_1.png",
-	"res://assets/art/ground_leaves_1.png",
-	"res://assets/art/ground_clearing_1.png",
-	"res://assets/art/ground_grass_1.png",
-]
-const PATH_ART := [
-	"res://assets/art/path_worn_1.png",
-	"res://assets/art/path_needles_1.png",
-	"res://assets/art/path_pebbles_1.png",
-]
-## Плотность патчей земли: ~55% кандидатов (h % 20 < 11). Детерминировано хэшем
-## клетки, без randi — два прогона рисуют побитово идентичный слой.
-const GROUND_PAINT_DENSITY := 11
-## Т14 «живой пол» пещеры/Пепелища: мягкие патчи, перерезанные из ОДОБРЁННЫХ
-## внутриигровых атласов dungeon_tiles.png / ashen_tiles.png (полные глубина
-## цвета и LINEAR, без квантизации). Тот же слой z=-5, что у деревенской
-## «живой земли»: под сущностями, над тайлами. Fail-safe: нет ассетов → слой
-## не создаётся (прежний рендер).
-const CAVE_FLOOR_ART := [
-	"res://assets/art/ground_cave_1.png",
-	"res://assets/art/ground_cave_2.png",
-	"res://assets/art/ground_cave_3.png",
-]
-const ASHEN_FLOOR_ART := [
-	"res://assets/art/ground_ashen_1.png",
-	"res://assets/art/ground_ashen_2.png",
-	"res://assets/art/ground_ashen_3.png",
-]
+## t52 СНОС арт-волны 3 (закон пользователя 13.11, VISUAL_REBUILD.md «план
+## сноса»): весь qwen-image ген-арт убран из игры — рощи (GroveCanopy),
+## деревенские пропсы (VillageProps), env4-пропы, «живая земля»/тропы и
+## «живые полы» пещеры/Пепелища. Мир = базовый пиксельный атлас + ручные
+## актёры + код-арт UI. ИНФРАСТРУКТУРА y-sort (ниже) СОХРАНЕНА: списки
+## _ys_canopies/_ys_props_dim пусты, механика ждёт пропсы ручной прорисовки
+## (t53+). Коллайдеры, CHAR_TO_TILE, POI (костёр/сундук/портал) — бит-в-бит.
 ## V-01..V-04 (волна «Тени-3»): ОБЩЕЕ пространство глубины актёров и пропсов.
 ## Слой-«пятёрка» (GroveCanopy/VillageProps/Env4Props) упорядочивал пропсы только
 ## МЕЖДУ СОБОЙ и всегда рисовался поверх актёров (z 0): герой «съедался» избами,
@@ -145,15 +48,12 @@ const ASHEN_FLOOR_ART := [
 ## z = fposmod(Y, 4800). Этажи разнесены на 4800 px при высоте карты ≤480 px,
 ## в одном кадре двух «этажей» не бывает — свёртка в локальную глубину безопасна.
 const YS_CYCLE := 4800.0         # шаг «этажей» зон == CAVE_OFFSET.y (ASHEN — кратно)
-const YS_ACTOR_BIAS := 10        # визуальная стопа актёра ниже центра ноды (герой ~11, NPC ~10, мобы ~8)
+const YS_ACTOR_BIAS := 8         # t51 (16px-мир): стопа актёра ≈ +8 ниже центра ноды (узел в центре 16px-кадра)
 const YS_CANOPY_DIM_AT := 0.5    # крона «растворяется», когда закрывает >= 50% бокса героя (крона над героем)
 const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нависании (паттерн Glimpse/T3)
 const YS_PROP_DIM_AT := 0.4      # t41: мелкий проп деревни димится, когда накрывает >= 40% бокса героя
                                  # (порог ниже крон: пропы мелкие, цель — hero visibility на тяжёлых тайлах)
 const YS_HUD_Z := 4000           # цифры урона поверх любой глубины: локальная y зон ≤ 480 << 4000 ≤ 4096
-## Плотность живого пола пещер: ~70% floor-клеток (h % 20 < 14) — подземелью
-## нужна связная «дышащая» поверхность, а не островки.
-const ZONE_FLOOR_PAINT_DENSITY := 14
 const CAVE_OFFSET := Vector2(0, 4800.0)      # «этаж» пещеры в общих координатах
 const CAVE_ENTRANCE_TILE := Vector2i(40, 17) # вход в пещеру в лесу (тайл проходим: T)
 const ASHEN_OFFSET := Vector2(0, 9600.0)     # «этаж» Пепелища в общих координатах
@@ -184,17 +84,10 @@ var quest_marker: CanvasLayer  # t19: стрелка цели квеста (scri
 var near: Array = []
 var hint_label: Label
 var village_zone: Node2D
-var grove_art: Array = []   # спрайты крон рощ (assets/art/tree_grove_*.png)
-var _groves: Array = []     # рощи: Array[Array[Vector2i]] — 8-связные кластеры «t»
-var _grove_cells := {}      # клетки «t» под кронами: на базовом слое там подстилка
-var village_props: Node2D   # визуальный слой пропсов деревни (z 5, «живая» картинка)
-var _cf_props: Array = []   # [{"spr": Sprite2D, "cf": Node}] — погасший костёр прячем
-var _env4_props: Array = [] # [{"spr": Sprite2D, "live": Callable}] — прячем по геймплейному состоянию
-var _env4_cave_props: Node2D   # визуальный слой пропсов пещеры (z 5, как village_props)
-var _env4_ashen_props: Node2D  # визуальный слой пропсов Пепелища (z 5)
-var ground_paint: Node2D       # «живая земля» деревни (z -5): патчи + тропа (волна 5)
-var _ys_canopies: Array = []   # Sprite2D крон GroveCanopy — overhead-дим по герою (V-01/V-07)
-var _ys_props_dim: Array = []  # t41: Sprite2D мелких пропов деревни (_add_prop) — дим-контракт по герою
+# t52 снос: GroveCanopy/VillageProps/Env4Props/живая земля сняты (VISUAL_REBUILD
+# «план сноса»); y-sort списки ниже остаются пустыми до ручной прорисовки t53+.
+var _ys_canopies: Array = []   # Sprite2D крон — overhead-дим по герою (V-01/V-07); пусто с t52
+var _ys_props_dim: Array = []  # Sprite2D мелких пропов — дим-контракт по герою; пусто с t52
 var cave_zone: Node2D
 var dungeon_zone  # scripts/dungeon_zone.gd (типизирован слабо — API: setup/spawn_world_pos/map_w/map_h)
 var ashen_zone: Node2D
@@ -294,17 +187,13 @@ func _ready() -> void:
 	add_child(ashen_zone)
 	_build_tiles()
 	_build_walls()
-	_build_grove_canopy()
 	_spawn_player()
 	_spawn_entities()
 	_build_campfires()
-	_build_village_props()
 	_build_cave()
 	_build_cave_entrance()
 	_build_ashen()
 	_build_ashen_entrance()
-	_build_env4_props()
-	_build_ground_paint()
 	atmosphere = load("res://scripts/atmosphere.gd").new()
 	add_child(atmosphere)
 	atmosphere.setup(self)
@@ -364,7 +253,6 @@ func tile_to_world(t: Vector2i) -> Vector2:
 	return Vector2((t.x + 0.5) * TILE, (t.y + 0.5) * TILE + 2.0)
 
 func _build_tiles() -> void:
-	_grove_init()
 	var ts := TileSet.new()
 	var src := TileSetAtlasSource.new()
 	src.texture = load("res://assets/tiles.png")
@@ -382,67 +270,7 @@ func _build_tiles() -> void:
 			var ch := row[x]
 			if CHAR_TO_TILE.has(ch):
 				var idx := int(CHAR_TO_TILE[ch])
-				if ch == "t" and _grove_cells.has(Vector2i(x, y)):
-					idx = int(CHAR_TO_TILE["T"])  # под кроной — земля, дерево рисует спрайт
 				layer.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
-
-## ---- Рощи («t»): визуал кластера деревьев одним спрайтом кроны ----------
-
-## 8-связные группы «t» размером 2..GROVE_MAX_TREES клеток — это рощи.
-## Порядок обхода детерминирован (строка за строкой), как и во всём мире D3.
-func _grove_clusters() -> Array:
-	var seen := {}
-	var out: Array = []
-	for y in map_h:
-		var row := String(map_rows[y])
-		for x in map_w:
-			if row[x] != "t" or seen.has(Vector2i(x, y)):
-				continue
-			seen[Vector2i(x, y)] = true
-			var stack: Array = [Vector2i(x, y)]
-			var comp: Array = []
-			while not stack.is_empty():
-				var c: Vector2i = stack.pop_back()
-				comp.append(c)
-				for dy in range(-1, 2):
-					for dx in range(-1, 2):
-						if dx == 0 and dy == 0:
-							continue
-						var n := c + Vector2i(dx, dy)
-						if n.x < 0 or n.y < 0 or n.x >= map_w or n.y >= map_h:
-							continue
-						if seen.has(n) or String(map_rows[n.y])[n.x] != "t":
-							continue
-						seen[n] = true
-						stack.append(n)
-			if comp.size() >= 2 and comp.size() <= GROVE_MAX_TREES:
-				out.append(comp)
-	return out
-
-
-func _grove_load_art() -> void:
-	if not grove_art.is_empty():
-		return
-	for i in GROVE_VARIANTS:
-		var p := GROVE_ART % i
-		if ResourceLoader.exists(p):
-			grove_art.append(load(p))
-
-
-## Готовит рощи до сборки тайлов: без ассетов крон ничего не трогаем (иначе
-## вместо леса осталась бы голая подстилка).
-func _grove_init() -> void:
-	_groves.clear()
-	_grove_cells.clear()
-	_grove_load_art()
-	if grove_art.is_empty():
-		push_warning("world: нет assets/art/tree_grove_*.png — рощи остаются тайловыми")
-		return
-	_groves = _grove_clusters()
-	for comp in _groves:
-		for c in comp:
-			_grove_cells[c] = true
-
 
 ## Глубина пропа по канону стоп (V-01): абсолютный z = глобальный Y нижнего края
 ## картинки (стопа). z_as_relative=false — радиус действия слоя (z 5) больше не
@@ -458,665 +286,14 @@ func _ys_prop(spr: Sprite2D) -> void:
 	spr.z_index = int(round(fposmod(spr.to_global(foot_local).y, YS_CYCLE)))
 
 
-## Один спрайт на рощу: центр — центр bbox кластера (та же сетка, что и
-## tile_to_world), з — по канону стоп (_ys_prop: нога ствола = низ bbox кроны),
-## линейная фильтрация — новые ассеты не должны выглядеть «пиксельно»; старые
-## тайлы при этом остаются nearest. Вариант и отражение — хеш от якоря кластера,
-## без randi. V-07: кронный bbox на 12% шире кластера («fit-overhead», запись в
-## SCALE_CANON.md) — при нависании над героем крона димится к alpha 0.5
-## (_ys_update), герой различим; с юга от стопы герой рисуется поверх кроны.
-func _build_grove_canopy() -> void:
-	if _groves.is_empty():
-		return
-	var root := Node2D.new()
-	root.name = "GroveCanopy"
-	root.z_index = 5
-	# волна 5: тот же Y-порядок внутри слоя, что у VillageProps — южная крона
-	# перекрывает северную, а не наоборот
-	root.y_sort_enabled = true
-	village_zone.add_child(root)
-	for comp in _groves:
-		var x0: int = comp[0].x
-		var x1: int = comp[0].x
-		var y0: int = comp[0].y
-		var y1: int = comp[0].y
-		for c in comp:
-			x0 = mini(x0, c.x)
-			x1 = maxi(x1, c.x)
-			y0 = mini(y0, c.y)
-			y1 = maxi(y1, c.y)
-		var bw := float(x1 - x0 + 1) * TILE
-		var bh := float(y1 - y0 + 1) * TILE
-		# берём варианты, у которых форма кроны близка к форме кластера: иначе
-		# широкая крона нависает над узкой рощей на пару клеток вбок
-		var pool: Array = []
-		var best := 0
-		var bestd := INF
-		for i in grove_art.size():
-			var t: Texture2D = grove_art[i]
-			var d := absf(log((float(t.get_width()) / float(t.get_height())) / (bw / bh)))
-			if d < bestd:
-				bestd = d
-				best = i
-			if d <= 0.28:
-				pool.append(i)
-		if pool.is_empty():
-			pool.append(best)
-		var h := posmod(x0 * 7349 + y0 * 9151, 1000)
-		var tex: Texture2D = grove_art[int(pool[h % pool.size()])]
-		var k: float = maxf(bw * 1.12 / float(tex.get_width()), bh * 1.12 / float(tex.get_height()))
-		k = clampf(k, 0.5, 1.45)
-		var spr := Sprite2D.new()
-		spr.texture = tex
-		spr.centered = true
-		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-		spr.flip_h = posmod(x1 * 3571 + y1 * 7919, 2) == 0
-		spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE, (y0 + y1 + 1) * 0.5 * TILE + 2.0)
-		spr.scale = Vector2(k, k)
-		root.add_child(spr)
-		# V-01/V-07: глубина по стопе bbox (низ ствола), overhead-дим по герою
-		_ys_prop(spr)
-		_ys_canopies.append(spr)
-
-
-## ---- Пропсы деревни (избы/колодцы/указатель/костёр) -----------------------
-
-## 8-связные кластеры клеток, чей символ входит в chars (row-major обход —
-## детерминирован, как _grove_clusters). Возвращает Array[Array[Vector2i]]
-## кластеров размером min_size..max_size.
-func _map_clusters(chars: String, min_size: int, max_size: int) -> Array:
-	var seen := {}
-	var out: Array = []
-	for y in map_h:
-		var row := String(map_rows[y])
-		for x in map_w:
-			if not chars.contains(row[x]) or seen.has(Vector2i(x, y)):
-				continue
-			seen[Vector2i(x, y)] = true
-			var stack: Array = [Vector2i(x, y)]
-			var comp: Array = []
-			while not stack.is_empty():
-				var c: Vector2i = stack.pop_back()
-				comp.append(c)
-				for dy in range(-1, 2):
-					for dx in range(-1, 2):
-						if dx == 0 and dy == 0:
-							continue
-						var n := c + Vector2i(dx, dy)
-						if n.x < 0 or n.y < 0 or n.x >= map_w or n.y >= map_h:
-							continue
-						if seen.has(n) or not chars.contains(String(map_rows[n.y])[n.x]):
-							continue
-						seen[n] = true
-						stack.append(n)
-			if comp.size() >= min_size and comp.size() <= max_size:
-				out.append(comp)
-	return out
-
-func _map_char(x: int, y: int) -> String:
-	if x < 0 or y < 0 or x >= map_w or y >= map_h:
-		return ""
-	return String(map_rows[y])[x]
-
-## Есть ли ch в 8-окрестности (САМА клетка (x,y) не считается — иначе «r» на
-## камне всегда было бы «есть соседний r» и одиночный колодец не нашёлся бы).
-func _near_char(x: int, y: int, ch: String) -> bool:
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
-			if dx == 0 and dy == 0:
-				continue
-			if _map_char(x + dx, y + dy) == ch:
-				return true
-	return false
-
-func _village_art(p: String) -> Texture2D:
-	return load(p) if ResourceLoader.exists(p) else null
-
-## Спрайт-проп: по центру bbox клеток [x0..x1], низ — на нижней границе
-## последних клеток (те же +2, что у tile_to_world/GroveCanopy), LINEAR.
-## flip_h — хеш координат (позирует однообразных объектов), без randi.
-## k — визуальный масштаб под bbox кластера (паттерн GroveCanopy): низ
-## по-прежнему стоит на нижней границе, масштабом меняется только картинка.
-func _add_prop(tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i, k := 1.0) -> Sprite2D:
-	var path := String(tex.resource_path)
-	if ENV4_PROP_CANON_H.has(path):
-		# t22: экранный канон важнее позирующего k (низ фиксирован формулой ниже)
-		k = float(ENV4_PROP_CANON_H[path]) / float(maxi(1, tex.get_height()))
-	var spr := Sprite2D.new()
-	spr.texture = tex
-	spr.centered = true
-	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	spr.flip_h = posmod(seed_c.x * 3571 + seed_c.y * 7919, 2) == 0
-	spr.scale = Vector2(k, k)
-	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
-		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * k * 0.5)
-	village_props.add_child(spr)
-	_ys_prop(spr)  # V-01: глубина по стопе, а не «слой поверх всех»
-	_ys_props_dim.append(spr)  # t41: проп под дим-контракт «не тонь в герое»
-	return spr
-
-## Слой пропсов деревни (узел z_index=5, но дети — абсолютная глубина по стопе,
-## _ys_prop/V-01: порядок «стопа к стопе» с актёрами, а не «слой поверх всех»;
-## в деревне кроны с пропсами не пересекаются). Полностью fail-safe: без любого
-## ассета его клетки просто остаются тайловой отрисовкой (она не менялась).
-## Геометрия, коллайдеры, миникарта — не затронуты.
-func _build_village_props() -> void:
-	village_props = Node2D.new()
-	village_props.name = "VillageProps"
-	village_props.z_index = 5
-	# Волна 5: порядок рисования детей по Y — южный (ближний) дом честно перекрывает
-	# северный, «дом поверх дома» больше нет. Сортировка внутри слоя (z 5 общий).
-	village_props.y_sort_enabled = true
-	village_zone.add_child(village_props)
-	var missing: Array = []
-	# Избы: кластер «R»/«W»/«D» (крыша/стены/дверь ручной постройки) — один
-	# спрайт на кластер, низ по нижней границе стен, центр по bbox. SCALE_CANON:
-	# ассет 96×77 = 2.4H; k — точное покрытие bbox (без нависающих 12%: иначе
-	# стандартный кластер 6×4 рисовался бы 86 px вместо канонических 77).
-	# Маленький кластер рисуется пропорционально меньше, большой — больше,
-	# кламп как у крон.
-	var cottage := _village_art(VILLAGE_ART_COTTAGE)
-	if cottage == null:
-		missing.append(VILLAGE_ART_COTTAGE)
-	else:
-		for comp in _map_clusters("RDW", COTTAGE_MIN_CELLS, COTTAGE_MAX_CELLS):
-			var x0: int = comp[0].x
-			var x1: int = comp[0].x
-			var y0: int = comp[0].y
-			var y1: int = comp[0].y
-			for c in comp:
-				x0 = mini(x0, c.x)
-				x1 = maxi(x1, c.x)
-				y0 = mini(y0, c.y)
-				y1 = maxi(y1, c.y)
-			var bw := float(x1 - x0 + 1) * TILE
-			var bh := float(y1 - y0 + 1) * TILE
-			var k := maxf(bw / float(cottage.get_width()), bh / float(cottage.get_height()))
-			k = clampf(k, 0.5, 1.45)
-			_add_prop(cottage, x0, x1, y0, y1, Vector2i(x0, y0), k)
-	# Колодцы: одиночные валуны «r» впритык к воде — там деревня и ставила
-	# сруб колодца у озера. Коллайдер валуна (11x10) уже жмёт центр клетки —
-	# «твёрдость» колодца физически та же, что была у камня.
-	var wells: Array = []
-	for p in VILLAGE_ART_WELLS:
-		var t := _village_art(p)
-		if t != null:
-			wells.append(t)
-	if wells.is_empty():
-		missing.append_array(VILLAGE_ART_WELLS)
-	else:
-		var ki := 0
-		for y in map_h:
-			var row := String(map_rows[y])
-			for x in map_w:
-				if row[x] != "r" or not _near_char(x, y, "w"):
-					continue
-				if _near_char(x, y, "r"):
-					continue  # только ОДИНОЧНЫЙ камень: группа — это гряда, не колодец
-				_add_prop(wells[ki % wells.size()], x, x, y, y, Vector2i(x, y))
-				ki += 1
-	# Указатели: каждый «s» — свой столб (коллайдер 6x5 у земли не двигается).
-	var sign := _village_art(VILLAGE_ART_SIGNPOST)
-	if sign == null:
-		missing.append(VILLAGE_ART_SIGNPOST)
-	else:
-		for y in map_h:
-			var row2 := String(map_rows[y])
-			for x in map_w:
-				if row2[x] == "s":
-					_add_prop(sign, x, x, y, y, Vector2i(x, y))
-	# Костёр: живописный треножник с котелком на месте CAMPFIRE_SPOTS. Старый
-	# 16px-огонь campfire.gd остаётся узлом (зона E, аналитика), но закрыт
-	# спрайтом; когда костёр использован — пропс прячем, и снова виден прежний
-	# пепел (кампус геймплейных состояний campfire.gd не трогаем).
-	var cf_tex := _village_art(VILLAGE_ART_CAMPFIRE)
-	if cf_tex == null:
-		missing.append(VILLAGE_ART_CAMPFIRE)
-	else:
-		for cf in campfires:
-			var t: Vector2i = CAMPFIRE_SPOTS.get(cf.camp_id, Vector2i(-1, -1))
-			if t.x < 0:
-				continue
-			var spr := _add_prop(cf_tex, t.x, t.x, t.y, t.y, t)
-			spr.visible = not cf.used
-			_cf_props.append({"spr": spr, "cf": cf})
-	if not missing.is_empty():
-		var names := ""
-		for p in missing:
-			names += String(p) + " "
-		push_warning("world: нет ассетов %s— эти пропсы деревни остаются тайловыми" % names)
-
-## ---- Окружение волны 4: валуны/камни, сундуки, алтари, портал -------------
-
-## FNV-1a по клетке: детерминированный (без randi) выбор варианта и flip_h —
-## мир воспроизводится бит-в-бит (D3), независимо от порядка создания узлов.
+## FNV-1a по клетке: общий хэш-хелпер детерминизма (без randi) — мир
+## воспроизводится бит-в-бит (D3). t52: после сноса пропсов остаётся как
+## первоисточник канонической копии из procgen-секции ниже.
 func _env4_hash(x: int, y: int) -> int:
 	var h := 2166136261
 	for b in [x & 0xFF, (x >> 8) & 0xFF, y & 0xFF, (y >> 8) & 0xFF]:
 		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
 	return h
-
-func _env4_tex(key: String) -> Texture2D:
-	var p: String = ENV4_ART[key]
-	return load(p) if ResourceLoader.exists(p) else null
-
-## Та же раскладка, что у _add_prop (центр по bbox клеток, низ — на нижней
-## границе с +2 как у tile_to_world), но родитель — слой своей зоны.
-## Т15/Т15b: для путей из ENV4_CANON_H экранный размер жёстко канонический —
-## scale = канон / фактическая высота текстуры (Т15b — полное разрешение);
-## фильтр LINEAR_WITH_MIPMAPS (даунсэмпл «миниатюрной картины» с трилинейкой и
-## мипами), остальные — прежний LINEAR.
-func _env4_place(parent: Node2D, tex: Texture2D, x0: int, x1: int, y0: int, y1: int, seed_c: Vector2i) -> Sprite2D:
-	var spr := Sprite2D.new()
-	spr.texture = tex
-	spr.centered = true
-	var path := String(tex.resource_path)
-	var s := 1.0
-	if ENV4_CANON_H.has(path):
-		s = float(ENV4_CANON_H[path]) / float(maxi(1, tex.get_height()))
-		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	else:
-		if ENV4_PROP_CANON_H.has(path):
-			# t22: валуны пещеры («B») — экранная высота 21 px, фильтр преждний
-			s = float(ENV4_PROP_CANON_H[path]) / float(maxi(1, tex.get_height()))
-		spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	spr.scale = Vector2(s, s)
-	spr.flip_h = (_env4_hash(seed_c.x, seed_c.y) >> 16) & 1 == 1
-	spr.position = Vector2((x0 + x1 + 1) * 0.5 * TILE,
-		float((y1 + 1) * TILE) + 2.0 - float(tex.get_height()) * s * 0.5)
-	parent.add_child(spr)
-	_ys_prop(spr)  # V-03/V-04: алтари/портал/сундуки — глубина по стопе
-	# t48 (F1 t47): env4-пропы — та же семья пропов, что и деревенские: дим-контракт
-	# t41 (YS_PROP_DIM_AT → YS_CANOPY_DIM_ALPHA, юг без дима). Rect-гейт в _ys_update
-	# сам различает зоны/этажи: картинка чужой зоны в 4800 px от героя не пересекает
-	# его бокс — пропы неактивной зоны остаются ровно 1.0.
-	_ys_props_dim.append(spr)
-	return spr
-
-## Пропс, прячущийся по геймплейному состоянию: live() пересчитывается на
-## каждый stats_changed — открытый сундук/исчезнувший узел снимают картинку,
-## и снова виден прежний тайл/спрайт (паттерн погасшего костра).
-func _env4_track(spr: Sprite2D, live: Callable) -> void:
-	_env4_props.append({"spr": spr, "live": live})
-	spr.visible = bool(live.call())
-
-func _sync_env4_props() -> void:
-	for p in _env4_props:
-		var spr: Sprite2D = p["spr"]
-		if is_instance_valid(spr):
-			spr.visible = bool((p["live"] as Callable).call())
-
-## Слой пропсов пещеры/Пепелища (узел z_index=5; дети — абсолютная глубина по
-## стопе, _ys_prop/V-03/V-04: «стопа к стопе» с актёрами, как у VillageProps).
-## Полностью fail-safe: без любого ассета его якоря
-## просто остаются тайловой отрисовкой (она не менялась). Геометрия,
-## коллайдеры, миникарта, тайловая логика — не затронуты.
-func _build_env4_props() -> void:
-	var missing: Array = []
-	# — Деревня: кластеры камней и одинокие валуны на «r» (колодцы не трогаем:
-	# это одиночные «r» впритык к воде, их рисует village_props).
-	var stones := _env4_tex("stones")
-	if stones == null:
-		missing.append("stones")
-	else:
-		for comp in _map_clusters("r", ENV4_STONE_MIN_CELLS, ENV4_STONE_MAX_CELLS):
-			var x0: int = comp[0].x
-			var x1: int = comp[0].x
-			var y0: int = comp[0].y
-			var y1: int = comp[0].y
-			for c in comp:
-				x0 = mini(x0, c.x)
-				x1 = maxi(x1, c.x)
-				y0 = mini(y0, c.y)
-				y1 = maxi(y1, c.y)
-			_add_prop(stones, x0, x1, y0, y1, Vector2i(x0, y0))
-	var boulder := _env4_tex("boulder")
-	if boulder == null:
-		missing.append("boulder")
-	else:
-		for y in map_h:
-			var row := String(map_rows[y])
-			for x in map_w:
-				if row[x] != "r" or _near_char(x, y, "r") or _near_char(x, y, "w"):
-					continue  # группа — гряда (stones), у воды — колодец
-				_add_prop(boulder, x, x, y, y, Vector2i(x, y))
-	# Деревенские сундуки: те же якоря, что у interactable.gd (meta["chests"]);
-	# прячем по открытию (обе схемы uid из D4 — зонная и легаси-координатная).
-	var chest := _env4_tex("chest")
-	if chest == null:
-		missing.append("chest")
-	else:
-		for e: Array in meta.get("chests", []):
-			var t := Vector2i(int(e[0]), int(e[1]))
-			var uid := "chest@village:%d,%d" % [t.x, t.y]
-			var uid_legacy := "chest@%d,%d" % [t.x, t.y]
-			var spr := _add_prop(chest, t.x, t.x, t.y, t.y, t)
-			_env4_track(spr, func() -> bool: return not (GameState.chest_used(uid) or GameState.chest_used(uid_legacy)))
-	# — Пещера: алтари на каждой клетке «A»; алтарный сундук на якоре
-	# dungeon_zone.chest_tile — прячем по взятию амулета (тот же предикат,
-	# по которому dungeon_zone красит тайл 11 -> 12).
-	_env4_cave_props = Node2D.new()
-	_env4_cave_props.name = "Env4CaveProps"
-	_env4_cave_props.z_index = 5
-	_env4_cave_props.y_sort_enabled = true  # волна 5: порядок по Y внутри слоя
-	cave_zone.add_child(_env4_cave_props)
-	if dungeon_zone != null:
-		var altar := _env4_tex("altar")
-		if altar == null:
-			missing.append("altar")
-		else:
-			for cy in dungeon_zone.map_rows.size():
-				var crow := String(dungeon_zone.map_rows[cy])
-				for cx in crow.length():
-					if crow[cx] == "A":
-						_env4_place(_env4_cave_props, altar, cx, cx, cy, cy, Vector2i(cx, cy))
-		# Каменные «B» пещеры (тайл 8 — такая же каменная кочка) — тот же
-		# «одинокий валун»: один спрайт на клетку, коллайдеров не было и нет.
-		if boulder != null:
-			for by in dungeon_zone.map_rows.size():
-				var brow := String(dungeon_zone.map_rows[by])
-				for bx in brow.length():
-					if brow[bx] == "B":
-						_env4_place(_env4_cave_props, boulder, bx, bx, by, by, Vector2i(bx, by))
-		if chest != null and dungeon_zone.chest_tile.x >= 0:
-			var ct: Vector2i = dungeon_zone.chest_tile
-			var cspr := _env4_place(_env4_cave_props, chest, ct.x, ct.x, ct.y, ct.y, ct)
-			_env4_track(cspr, func() -> bool: return not GameState.has_amulet)
-	# — Пепелище: выходной портал (якорь — фактическая позиция portal_node,
-	# zone.tile_to_world) и сундук награды на chest_tile — прячем, когда узел
-	# забран и снят (тот же предикат, что у ashen_zone).
-	_env4_ashen_props = Node2D.new()
-	_env4_ashen_props.name = "Env4AshenProps"
-	_env4_ashen_props.z_index = 5
-	_env4_ashen_props.y_sort_enabled = true  # волна 5: порядок по Y внутри слоя
-	ashen_zone.add_child(_env4_ashen_props)
-	if ashen_grid != null:
-		var portal := _env4_tex("portal")
-		if portal == null:
-			missing.append("portal")
-		elif ashen_grid.portal_node != null:
-			var pp: Vector2 = ashen_grid.portal_node.position  # ((x+.5)*T, (y+.5)*T+2)
-			var pt := Vector2i(roundi((pp.x - 8.0) / TILE), roundi((pp.y - 10.0) / TILE))
-			var pspr := _env4_place(_env4_ashen_props, portal, pt.x, pt.x, pt.y, pt.y, pt)
-			_env4_track(pspr, func() -> bool: return ashen_grid != null and is_instance_valid(ashen_grid.portal_node))
-		if chest != null and ashen_grid.chest_tile.x >= 0:
-			var at: Vector2i = ashen_grid.chest_tile
-			var aspr := _env4_place(_env4_ashen_props, chest, at.x, at.x, at.y, at.y, at)
-			_env4_track(aspr, func() -> bool: return ashen_grid != null and is_instance_valid(ashen_grid.chest_node))
-	# Сундук открывают и в этой сессии: try_interact эмитит stats_changed —
-	# снимаем картинку сразу (паттерн _sync_cave_chest).
-	GameState.stats_changed.connect(_sync_env4_props)
-	if not missing.is_empty():
-		var names := ""
-		for k in missing:
-			names += String(k) + " "
-		push_warning("world: нет env4-ассетов %s— окружение волны 4 остаётся тайловым в этих местах" % names)
-
-## ---- «Живая земля» и «прочерченные тропы» (волна 5) -------------------------
-## Слой z=-5: над тайлами (-10) и водой (-9), под персонажами/маркерами (0),
-## лутом и цифрами урона, кронами/пропсами (5) — картинка земли богаче, логика
-## не тронута. Симол «d» есть ТОЛЬКО в карте деревни (пещера/Пепелище — другой
-## алфавит), поэтому слой живёт в village_zone; для остальных зон менять нечего.
-## Детерминизм: только хэш клетки (_env4_hash), randi нет — два прогона рисуют
-## побитово идентичный слой. Fail-safe: нет ассетов земли и тропы → слой не
-## создаётся вовсе (прежний рендер); нет части ассетов → слой без подслой.
-func _build_ground_paint() -> void:
-	var ground_texs: Array = []
-	for p in GROUND_ART:
-		var t := _village_art(p)
-		if t != null:
-			ground_texs.append(t)
-	var path_texs: Array = []
-	for p in PATH_ART:
-		var t := _village_art(p)
-		if t != null:
-			path_texs.append(t)
-	if ground_texs.is_empty() and path_texs.is_empty():
-		push_warning("world: нет ассетов ground_*/path_* — слой «живой земли» пропущен (прежний рендер)")
-		return
-	# V-05 (t35): вместо сотен Sprite2D в «порядке вставки» — ЕДИНЫЙ бейк слоя
-	# в одной RGBA8-текстуре с согласованным порядком наложения (вид, y, x):
-	# земля, затем тропа; внутри вида — юг поверх севера. Патчи (>30% перекрытий
-	# давали рваные несогласованные кромки) композитятся побайтово детерминированно.
-	# 1) Разнотонная земля: мягкий патч на ~55% клеток «g»/«f»/«G». Клетки у
-	# самой воды (Чебышёва<=1) пропускаем — перо патча не должно наползать на
-	# воду (z -9 рисуется под слоем, но закрытая водой клетка выглядела бы
-	# обрубком берега). Джиттер центра ±5 px, повороты кратно 90°, flip_h и
-	# вариант — всё из хэша; сетка клетки перестаёт читаться.
-	var specs: Array = []
-	if not ground_texs.is_empty():
-		for y in map_h:
-			var row := String(map_rows[y])
-			for x in map_w:
-				if not (row[x] in "gfG"):
-					continue
-				if _near_char(x, y, "w"):
-					continue
-				var h := _env4_hash(x, y)
-				if h % 20 >= GROUND_PAINT_DENSITY:
-					continue
-				# привязка к tile_to_world (тот же +2 по Y), джиттер — из хэша;
-				# alpha 0.30..0.42: патч тише самого тайла (std 24) — низкая
-				# контрастность по ТЗ: разнотон земли, а не второй план сцены
-				specs.append({
-					"kind": 0, "x": int((x + 0.5) * TILE) + ((h >> 20) % 11) - 5, \
-					"y": int((y + 0.5) * TILE + 2.0) + ((h >> 24) % 11) - 5, \
-					"a": 0.30 + 0.02 * float((h >> 28) % 7), \
-					"rot": (h >> 8) % 4, "flip": ((h >> 16) & 1) == 1, \
-					"tex": ground_texs[(h >> 4) % ground_texs.size()], \
-				})
-	# 2) Тропа: каждый «d» — сегмент 30px с перьевыми краями. Маска непрозрачна
-	# до границы клетки и далее на ~2 px, перо 3–4 px — стык двух сегментов
-	# перекрыт, прямоугольных границ нет. 3 фактуры (утоптанная/хвоя/камешки)
-	# по хэшу; flip_h дробёт монотонность. Alpha 0.92 — тайл-«d» чуть угадывается
-	# под тропой (рельеф), миникарта его не видит (читает атлас, не спрайты).
-	# kind=1: тропа накладывается ПОСЛЕ всей земли (как лежала поверх в старом
-	# порядке вставки), поверх других троп — тоже юг поверх севера.
-	if not path_texs.is_empty():
-		for y in map_h:
-			var row2 := String(map_rows[y])
-			for x in map_w:
-				if row2[x] != "d":
-					continue
-				var h2 := _env4_hash(x, y)
-				specs.append({
-					"kind": 1, "x": int((x + 0.5) * TILE), "y": int((y + 0.5) * TILE + 2.0), \
-					"a": 0.92, "rot": 0, "flip": ((h2 >> 16) & 1) == 1, \
-					"tex": path_texs[h2 % path_texs.size()], \
-				})
-	var b := _gp_bake(specs)
-	if b.is_empty():
-		push_warning("world: бейк «живой земли» не удался — слой пропущен (прежний рендер)")
-		return
-	ground_paint = Node2D.new()
-	ground_paint.name = "GroundPaint"
-	ground_paint.z_index = -5
-	# V-05: единственный запечённый ребёнок — прежний комментарий «порядок не
-	# важен» отменён: порядок задан бейком (kind, y, x) и больше нигде.
-	ground_paint.y_sort_enabled = false
-	village_zone.add_child(ground_paint)
-	ground_paint.add_child(_gp_bake_sprite(b))
-
-## Порядок бейка: (kind, y, x) — total order, стабильность сортировки не нужна
-## (клетка уникальна внутри вида → ключей-дубликатов нет → детерминизм гарантирован).
-func _gp_spec_less(a: Dictionary, b: Dictionary) -> bool:
-	if int(a["kind"]) != int(b["kind"]):
-		return int(a["kind"]) < int(b["kind"])
-	if int(a["y"]) != int(b["y"]):
-		return int(a["y"]) < int(b["y"])
-	return int(a["x"]) < int(b["x"])
-
-## V-05: детерминированный CPU-бейк патчей в одну RGBA8-текстуру. specs — список
-## {tex, x, y, a, rot90, flip} (x/y — ЦЕЛЫЕ центры спрайтов, как в tile_to_world).
-## Композиция straight-alpha «over» в каноническом порядке (сортировка вызывающего).
-## Совместимость с прежним рендером: при целых позициях растровый путь 1:1 совпадает
-## с последовательной отрисовкой спрайтов; дробный зум-ресемпл экрана — тот же LINEAR,
-## только применённый к запечённому слою (мягче на доли пикселя, пиксель-канон не трогает).
-## Возвращает {} при пустом списке/сбое; иначе {"tex": ImageTexture, "x", "y"} —
-## x/y левого верхнего угла бейка в локальных координатах слоя.
-func _gp_bake(specs: Array) -> Dictionary:
-	if specs.is_empty():
-		push_warning("world: gp_bake — нет патчей, слой не создаётся")
-		return {}
-	specs.sort_custom(_gp_spec_less)
-	var imgs: Array = []
-	var bufs: Array = []
-	var minX := 2147483647
-	var minY := 2147483647
-	var maxX := -2147483647
-	var maxY := -2147483647
-	for sp0 in specs:
-		var tex: Texture2D = sp0["tex"]
-		var src: Image = tex.get_image() if tex != null else null
-		if src == null:
-			push_warning("world: gp_bake — у текстуры нет изображения, слой пропущен")
-			return {}
-		if src.get_format() != Image.FORMAT_RGBA8:
-			src = src.duplicate()
-			src.convert(Image.FORMAT_RGBA8)
-		imgs.append(src)
-		bufs.append(src.get_data())
-		var w := src.get_width()
-		var h := src.get_height()
-		var rot := int(sp0["rot"]) & 3
-		var hw := w * 0.5
-		var hh := h * 0.5
-		var hx := hw if rot % 2 == 0 else hh
-		var hy := hh if rot % 2 == 0 else hw
-		var px := int(sp0["x"])
-		var py := int(sp0["y"])
-		for cx0 in [-hx, hx]:
-			for cy0 in [-hy, hy]:
-				var cx: float
-				var cy: float
-				match rot:
-					0: cx = cx0; cy = cy0
-					1: cx = -cy0; cy = cx0
-					2: cx = -cx0; cy = -cy0
-					_: cx = cy0; cy = -cx0
-				minX = mini(minX, px + floori(cx) - 1)
-				minY = mini(minY, py + floori(cy) - 1)
-				maxX = maxi(maxX, px + floori(cx) + 2)
-				maxY = maxi(maxY, py + floori(cy) + 2)
-	var RW := maxX - minX
-	var RH := maxY - minY
-	if RW <= 0 or RH <= 0 or RW > 8192 or RH > 8192:
-		push_warning("world: gp_bake — невозможный размер бейка %dx%d" % [RW, RH])
-		return {}
-	var out := PackedByteArray()
-	out.resize(RW * RH * 4)  # нули = полностью прозрачная подложка
-	var amax := 0.0
-	for k in specs.size():
-		var sp: Dictionary = specs[k]
-		var src: Image = imgs[k]
-		var d: PackedByteArray = bufs[k]
-		var w := src.get_width()
-		var h := src.get_height()
-		var rot := int(sp["rot"]) & 3
-		var flip := bool(sp["flip"])
-		var sa := float(sp["a"])
-		if sa > amax:
-			amax = sa
-		var px := int(sp["x"])
-		var py := int(sp["y"])
-		for v in h:
-			var y0f: float = float(v) - h * 0.5
-			for u in w:
-				var si := (v * w + u) * 4
-				var a1 := d[si + 3]
-				if a1 == 0:
-					continue
-				var x0f: float = float(u) - w * 0.5
-				if flip:
-					x0f = -x0f - 1.0
-				var cx: float
-				var cy: float
-				match rot:
-					0: cx = x0f; cy = y0f
-					1: cx = -y0f - 1.0; cy = x0f
-					2: cx = -x0f - 1.0; cy = -y0f - 1.0
-					_: cx = y0f; cy = -x0f - 1.0
-				var dx := px + floori(cx) - minX
-				var dy := py + floori(cy) - minY
-				if dx < 0 or dy < 0 or dx >= RW or dy >= RH:
-					continue
-				var di := (dy * RW + dx) * 4
-				var a1f := sa * float(a1) / 255.0
-				var da := float(out[di + 3]) / 255.0
-				var aO := a1f + da * (1.0 - a1f)
-				if aO <= 0.0:
-					continue
-				var ws := a1f / aO
-				var wd := 1.0 - ws
-				out[di] = clampi(roundi(float(d[si]) * ws + float(out[di]) * wd), 0, 255)
-				out[di + 1] = clampi(roundi(float(d[si + 1]) * ws + float(out[di + 1]) * wd), 0, 255)
-				out[di + 2] = clampi(roundi(float(d[si + 2]) * ws + float(out[di + 2]) * wd), 0, 255)
-				out[di + 3] = clampi(roundi(aO * 255.0), 0, 255)
-	var img := Image.create_from_data(RW, RH, false, Image.FORMAT_RGBA8, out)
-	if img == null:
-		push_warning("world: gp_bake — create_from_data не удалась")
-		return {}
-	return {"tex": ImageTexture.create_from_image(img), "x": minX, "y": minY, "amax": amax}
-
-## Общий спрайт-носитель запечённого слоя: левый верх в позицию бейка, LINEAR —
-## та же фильтрация, что была у каждого патча. meta gp_amax — максимальный
-## «пасхальный» alpha спецификации (пины qa_lp T6: семантика alpha живёт в спеках).
-func _gp_bake_sprite(b: Dictionary) -> Sprite2D:
-	var spr := Sprite2D.new()
-	spr.texture = b["tex"]
-	spr.centered = false
-	spr.position = Vector2(float(int(b["x"])), float(int(b["y"])))
-	spr.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	spr.set_meta("gp_amax", float(b.get("amax", 0.0)))
-	return spr
-
-## Т14 «живой пол» пещеры/Пепелища — тот же приём, что у деревенской GroundPaint,
-## но по floor-клеткам grid зоны («.»/«,»). Детерминизм: вариант/flip/поворот/
-## джиттер/alpha — только из хэша клетки (_env4_hash), randi нет — два прогона
-## рисуют побитово идентичный слой. z=-5: над тайлами (-10), ПОД сущностями (0),
-## пропсами/кронами (5) и маркерами. Alpha 0.30..0.42 — патч тише тайла.
-## Перо патча (3–4 px) слегка наползает на базу стен — намеренно: пол «врастает»
-## в камень, стык клетки перестаёт читаться. Fail-safe: нет ни одного патча →
-## push_warning и слой не создаётся вовсе (прежний рендер).
-func _build_zone_floor_paint(parent: Node2D, rows: Array, art: Array, layer_name: String) -> void:
-	var texs: Array = []
-	for p in art:
-		if ResourceLoader.exists(p):
-			var t = load(p)
-			if t is Texture2D:
-				texs.append(t)
-	if texs.is_empty():
-		push_warning("world: нет патчей пола %s — слой %s пропущен (прежний рендер)" % [str(art), layer_name])
-		return
-	# V-05 (t35): единый детерминированный бейк (kind=0, y, x) вместо «порядка
-	# вставки» — см. комментарий у _build_ground_paint.
-	var specs: Array = []
-	for y in rows.size():
-		var row := String(rows[y])
-		for x in row.length():
-			if row[x] != "." and row[x] != ",":
-				continue
-			var h := _env4_hash(x, y)
-			if h % 20 >= ZONE_FLOOR_PAINT_DENSITY:
-				continue
-			# привязка к tile_to_world (тот же +2 по Y), джиттер центра — из хэша
-			specs.append({
-				"kind": 0, "x": int((x + 0.5) * TILE) + ((h >> 20) % 9) - 4, \
-				"y": int((y + 0.5) * TILE + 2.0) + ((h >> 24) % 9) - 4, \
-				"a": 0.30 + 0.02 * float((h >> 28) % 7), \
-				"rot": (h >> 8) % 4, "flip": ((h >> 16) & 1) == 1, \
-				"tex": texs[(h >> 4) % texs.size()], \
-			})
-	var b := _gp_bake(specs)
-	if b.is_empty():
-		push_warning("world: бейк пола %s не удался — слой пропущен (прежний рендер)" % layer_name)
-		return
-	var layer := Node2D.new()
-	layer.name = layer_name
-	layer.z_index = -5
-	layer.y_sort_enabled = false  # единственный запечённый ребёнок — порядок задан бейком
-	parent.add_child(layer)
-	layer.add_child(_gp_bake_sprite(b))
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
@@ -1148,11 +325,11 @@ func _spawn_player() -> void:
 	player.position = tile_to_world(spawn_tile)
 	add_child(player)
 	cam = Camera2D.new()
-	# Волна 5: мир крупнее во всех трёх зонах. Zoom 2 оказался «слишком близко»
-	# по вердикту пользователя (10:20) — итог 1.5: мир крупнее базового, но обз
-	# шире. Лимиты — мировые пиксели, Godot клампит вид-окно внутрь лимитов зоны,
-	# а _set_cam_limits переставляет их на каждой смене зоны — герой всегда в кадре.
-	cam.zoom = Vector2(1.5, 1.5)
+	# t51 (закон пользователя 13.11): возврат масштаба «до Крупного мира» — зум 1
+	# во всех зонах, в кадре 640×360 ~40×22.5 клетки. Лимиты — мировые пиксели,
+	# Godot клампит вид-окно внутрь лимитов зоны, а _set_cam_limits переставляет
+	# их на каждой смене зоны — герой всегда в кадре.
+	cam.zoom = Vector2.ONE
 	cam.limit_left = 0
 	cam.limit_top = 0
 	cam.limit_right = map_w * TILE
@@ -1164,9 +341,8 @@ func _spawn_player() -> void:
 	# текст world-space подсказок — не «картинка», держим пиксельную чёткость
 	# (наследовать LINEAR от героя ему не надо)
 	hint_label.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	# SCALE_CANON: герой рисуется 32 px (макушка до ~ -23 у высоких классов) —
-	# подсказка не должна залезать на голову
-	hint_label.position = Vector2(-45, -35)
+	# t51: герой 16 px (макушка ~ -8) — подсказка «было» на (−45, −26)
+	hint_label.position = Vector2(-45, -26)
 	hint_label.size = Vector2(90, 10)
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.35))  # t18: амбер = интерактив (канон цвета)
@@ -1469,7 +645,6 @@ func _build_cave() -> void:
 	dungeon_zone = dz
 	_spawn_cave_embers()
 	_apply_cave_shapes(dz)
-	_build_zone_floor_paint(cave_zone, dz.map_rows, CAVE_FLOOR_ART, "CaveFloorPaint")
 	# сундук открывают и в этой сессии: try_interact эмитит stats_changed — снимаем
 	# коллайдер сразу, а не только после перезахода (пещера строится один раз)
 	GameState.stats_changed.connect(_sync_cave_chest)
@@ -1624,7 +799,6 @@ func _build_ashen() -> void:
 	ashen_zone.add_child(az)
 	az.setup(self, ashen_map)
 	ashen_grid = az
-	_build_zone_floor_paint(ashen_zone, az.map_rows, ASHEN_FLOOR_ART, "AshenFloorPaint")
 	ashen_zone.visible = false
 	ashen_zone.process_mode = Node.PROCESS_MODE_DISABLED
 
@@ -1665,8 +839,8 @@ func _ys_update(delta: float) -> void:
 		dn = get_tree().current_scene.get_node_or_null("DmgNumbers")  # мир вложен (харнессы)
 	if dn is CanvasItem and (dn as CanvasItem).z_index < YS_HUD_Z:
 		(dn as CanvasItem).z_index = YS_HUD_Z
-	# бокс героя ~ канон 32 px: макушка -21, стопа +11 от центра ноды
-	var hr := Rect2(player.global_position + Vector2(-8.0, -21.0), Vector2(16.0, 32.0))
+	# t51 «было»: бокс героя = клетка 16 px: макушка −8, стопа +8 от центра ноды
+	var hr := Rect2(player.global_position + Vector2(-8.0, -8.0), Vector2(16.0, 16.0))
 	for c in _ys_canopies:
 		var spr := c as Sprite2D
 		if spr == null or not is_instance_valid(spr) or spr.texture == null:
@@ -1721,13 +895,6 @@ func _process(delta: float) -> void:
 		hint_label.text = "E: " + near[0].get_hint()
 	_check_witch_done()
 	_update_cursor()
-	# погасший (использованный) костёр: живописный треножник прячем — на его
-	# месте снова виден прежний «пепел» из спрайтов campfire.gd
-	for e in _cf_props:
-		var spr: Sprite2D = e["spr"]
-		var cf = e["cf"]
-		if is_instance_valid(spr) and is_instance_valid(cf) and spr.visible == cf.used:
-			spr.visible = not cf.used
 
 # --- мышь: курсор и враги под курсором ---
 
@@ -1833,7 +1000,7 @@ func drink_potion() -> void:
 	Achv.on_herb_drunk()  # ачивка «Травник» (achv.gd §2 #11)
 	var _hp0 := GameState.hp  # heal-число = реально восстановленные HP
 	GameState.heal(3)
-	DmgNumbers.spawn(player.global_position + Vector2(0, -24), GameState.hp - _hp0, "heal")
+	DmgNumbers.spawn(player.global_position + Vector2(0, -12), GameState.hp - _hp0, "heal")  # t51: было −12
 	GameState.quest_changed.emit()  # автосейв + обновление HUD
 	GameState.toast.emit("Лесное зелье: +%d HP" % (GameState.hp - _hp0))  # факт долечено (QA F1)
 

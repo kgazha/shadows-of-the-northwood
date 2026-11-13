@@ -63,7 +63,6 @@ var _moss: Array = []          # {spr: Sprite2D, light: Light2D, phase: float}
 var _altar_light: Light2D = null
 var _altar_home := Vector2.ZERO    # t18: домашняя позиция света алтаря для bob (спрайт не трогаем)
 var _prop_lights: Array = []       # t18: {light, home, phase, base, amp} — пульс + bob ±1.5 px
-var _env4_lights_done := false     # t18: одноразовый сбор «дышащих» lights env4-пропов
 var _boss: Node2D = null
 var _boss_light: Light2D = null
 var _scan_t := 0.0
@@ -178,11 +177,8 @@ func _process(delta: float) -> void:
 		_altar_light.energy = 0.75 + 0.25 * sin(_time() * 2.2)
 		# t18: bob света ±1.5 px — спрайт алтаря неподвижен (канон T7), «дышит» свет
 		_altar_light.position = _altar_home + Vector2(0.0, sin(_time() * 1.7) * 1.5)
-	# t18: «дыхание» env4-пропов (алтари/портал/сундуки): пульс + bob ±1.5 px.
-	# Сбор — один кадр после ready (env4-слои построены до setup атмосферы).
-	if not _env4_lights_done and world != null:
-		_env4_lights_done = true
-		_collect_env4_lights()
+	# t52: env4-пропов больше нет — «дышат» только легасовые света (алтарь,
+	# пещерный сундук); коллектор env4-огней снят вместе с пропсами.
 	if not _prop_lights.is_empty():
 		var jt := _time()
 		for i in range(_prop_lights.size() - 1, -1, -1):
@@ -209,44 +205,9 @@ func _process(delta: float) -> void:
 		_sync_shadow(world.player)
 
 # ---------- t18 «дыхание» пропов: пульс + bob света ----------
-
-## Алтарям/порталам/сундукам env4-слоёв вешаем child-Light2D «JuiceLight» с пульсом
-## энергии и bob ±1.5 px. Спрайты-пропы НЕ трогаем (тайловая геометрия, SCALE_CANON
-## T7 и live-позиции каноничны) — «оживает» только свет. Тот же JuiceLight переживает
-## смену зоны: свет child'ом спрайта, зона гаснет PROCESS_MODE_DISABLED — Light2D
-## не обрабатывается, но энергия пишется из мира; визуально зона скрыта целиком.
-func _collect_env4_lights() -> void:
-	if world == null:
-		return
-	for zone in [world.village_zone, world.cave_zone, world.ashen_zone]:
-		if zone != null:
-			_walk_env4_light(zone)
-
-func _walk_env4_light(n: Node) -> void:
-	for c in n.get_children():
-		if c is Sprite2D:
-			var s := c as Sprite2D
-			if s.texture != null and not s.has_node("JuiceLight"):
-				var cfg: Variant = _env4_light_cfg(String(s.texture.resource_path))
-				if cfg != null:
-					var l := _mk_light(cfg[0], cfg[1], cfg[2])
-					l.name = "JuiceLight"
-					s.add_child(l)
-					_prop_lights.append({"light": l, "home": Vector2.ZERO,
-						"phase": float(_hash(int(s.position.x), int(s.position.y))),
-						"base": float(cfg[1]), "amp": 0.15})
-		_walk_env4_light(c)
-
-## Цвет/мощность «дыхания» по арту: алтарь — зелёный канон пещерного алтарного
-## света, портал — сумрак Пепелища (семейство света Ведьмы), сундук — золото лута.
-func _env4_light_cfg(p: String) -> Variant:
-	if p.ends_with("env4_altar.png"):
-		return [Color(0.4, 1.0, 0.5), 0.55, 30.0]
-	if p.ends_with("env4_portal.png"):
-		return [Color(0.75, 0.55, 1.0), 0.7, 40.0]
-	if p.ends_with("env4_chest.png"):
-		return [Color(1.0, 0.84, 0.4), 0.55, 26.0]
-	return null
+## t52 снос (закон 13.11): коллектор env4-огней (алтари/порталы/сундуки ген-арта)
+## снят вместе с пропсами; _prop_lights наполняют только легасовые света
+## (пещерный сундук — см. _build_cave).
 
 # ---------- тени ----------
 
@@ -386,7 +347,8 @@ func _sync_shadow(e: Node2D) -> void:
 	var p1 := _shadow_pos(e, spr, blob.size)
 	sh.position = p1 + Vector2(blob.size.x * 0.5 * (1.0 - k), blob.size.y * (1.0 - k))
 
-## t18: базовый масштаб тени = отрисованная высота актёра / высота-канон героя (32 px).
+## t18: базовый масштаб тени = отрисованная высота актёра / высота-канон героя.
+## t51: канон героя 16 px (возврат мира «до Крупного мира»), делитель 32→16.
 ## Берём высоту кадра (у атласов — высота region) × scale спрайта; clip [0.55, 2.2].
 func _shadow_scale(spr: Node2D) -> float:
 	var vh := 0.0
@@ -400,7 +362,7 @@ func _shadow_scale(spr: Node2D) -> float:
 	vh *= absf(spr.scale.y)
 	if vh <= 2.0:
 		return 1.0
-	return clampf(vh / 32.0, 0.55, 2.2)
+	return clampf(vh / 16.0, 0.55, 2.2)
 
 ## Позиция тени в координатах сущности: центр блоба по x над пяткой,
 ## низ блоба — на линии ног + SHADOW_BIAS.

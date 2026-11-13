@@ -25,10 +25,9 @@ const ALPHA_ETH := 0.45
 const ALPHA_PHASE := 0.3
 const MAX_HP := 8
 const ETH_MAX_TIME := 3.5     # кап «вечного эфира»: принудительное окно уязвимости
-## SCALE_CANON: тенеплёт 0.9H = 29 px (16px-кадр × 1.8125); коллайдер 10x8,
-## фазы/скорости — прежние. Контент-стоп 16px-кадра на +5: якорь
-## +5*(1−1.8125) = −4.0625 (призрак «парит» там же).
-const VISUAL_SCALE := 1.8125
+## t51 (возврат «до Крупного мира»): тенеплёт 16 px 1:1 (коллайдер 10x8,
+## фазы/скорости — прежние). Якорь ZERO, призрак «парит» там же, где был.
+const VISUAL_SCALE := 1.0
 
 var world: Node2D
 var hp := MAX_HP
@@ -86,7 +85,7 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		anim.sprite_frames = fr
 		add_child(anim)
 		anim.scale = Vector2.ONE * VISUAL_SCALE
-		anim.position = Vector2(0, -4.0625)  # якорь по стопам: +5*(1−1.8125)
+		anim.position = Vector2.ZERO  # t51 «было»: якорь в центре ноды
 		anim.play("idle_down")
 	else:
 		push_warning("Нет ассета: assets/mobs_wraith.png — у тенеплёта цветная заглушка")

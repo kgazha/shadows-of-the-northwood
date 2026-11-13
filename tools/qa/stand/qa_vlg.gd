@@ -429,72 +429,30 @@ func _inv8() -> void:
 	chk(w != null and w.player != null, "inv8: мир и герой построены")
 	if w == null or w.player == null:
 		return
-	# 8.1 дети VillageProps/GroveCanopy — абсолютный z == глобальный Y стопы
-	var layers: Array = []
-	if w.village_props != null:
-		layers.append(w.village_props)
+	# 8.1 t52 снос (закон 13.11): ген-пропы деревни/рощи и env4 сняты —
+	# слои VillageProps/GroveCanopy/Env4* в мире отсутствуют; YS-инфраструктура
+	# (_ys_canopies/_ys_props_dim) пуста и ждёт пропсы ручной прорисовки.
 	var gc = w.village_zone.get_node_or_null("GroveCanopy")
-	if gc != null:
-		layers.append(gc)
-	chk(layers.size() == 2, "inv8: слои VillageProps и GroveCanopy на месте")
-	var n_all := 0
-	var bad_rel := 0
-	var bad_z := 0
-	var n_can := 0
-	for l in layers:
-		for c in (l as Node).get_children():
-			var spr := c as Sprite2D
-			if spr == null or spr.texture == null:
-				continue
-			n_all += 1
-			if spr.z_as_relative:
-				bad_rel += 1
-			# зеркало формулы мира: z = round(fposmod(Y стопы, цикл 4800))
-			if spr.z_index != int(round(fposmod(_spr_rect(spr).end.y, 4800.0))):
-				bad_z += 1
-		if l == gc:
-			n_can = (l as Node).get_child_count()
-	chk(n_all >= 20, "inv8: спрайтов пропсов/крон %d" % n_all)
-	chk(bad_rel == 0, "inv8: все дети — абсолютный z (z_as_relative=false)")
-	chk(bad_z == 0, "inv8: z == глобальный Y стопы (%d/%d)" % [n_all - bad_z, n_all])
-	# 8.2 крона в покое (герой на спавне, в рощах не стоит) — alpha ровно 1.0
-	var rest_ok := true
-	var can_list: Array = (gc as Node).get_children() if gc != null else []
-	for c in can_list:
-		var spr := c as Sprite2D
-		if spr != null and not is_equal_approx(spr.modulate.a, 1.0):
-			rest_ok = false
-	chk(rest_ok and n_can > 0, "inv8: кроны в покое alpha=1.0 (%d крон)" % n_can)
-	# 8.3 изба: южнее — герой ПОВЕРХ, севернее — ПОД (тот же прогон, пара)
-	var cottage := _biggest_sprite(w.village_props, "village_cottage.png")
-	if cottage == null:
-		chk(false, "inv8: изба не найдена")
-	else:
-		var r := _spr_rect(cottage)
-		w.player.global_position = Vector2(r.get_center().x, r.end.y + 22.0)
-		await _frames(4)
-		chk(w.player.z_index > cottage.z_index,
-			"inv8: герой южнее избы — ПОВЕРХ (%d > %d)" % [w.player.z_index, cottage.z_index])
-		w.player.global_position = Vector2(r.get_center().x, r.position.y + r.size.y * 0.4)
-		await _frames(4)
-		chk(w.player.z_index < cottage.z_index,
-			"inv8: герой севернее избы — ПОД (%d < %d)" % [w.player.z_index, cottage.z_index])
-	# 8.4 крона: «встал в рощу» — димится к 0.5; «вышел с юга» — 1.0 и герой поверх
-	var canopy := _biggest_sprite(gc, "")
-	if canopy == null:
-		chk(false, "inv8: крона не найдена")
-	else:
-		var cr := _spr_rect(canopy)
-		w.player.global_position = cr.get_center()
-		await _frames(50)
-		chk(canopy.z_index > w.player.z_index and absf(canopy.modulate.a - 0.5) < 0.02,
-			"inv8: крона над героем димится к 0.5 (alpha=%.3f, z %d>%d)" \
-			% [canopy.modulate.a, canopy.z_index, w.player.z_index])
-		w.player.global_position = Vector2(cr.get_center().x, cr.end.y + 22.0)
-		await _frames(50)
-		chk(is_equal_approx(canopy.modulate.a, 1.0) and w.player.z_index > canopy.z_index,
-			"inv8: южнее стопы крона 1.0 и герой поверх (alpha=%.3f)" % canopy.modulate.a)
-	# 8.5 NPC — в динамической шкале (стопа + биас, смещение ноги => смещение z)
+	chk(w.get("village_props") == null and gc == null,
+		"inv8: t52 снос — VillageProps и GroveCanopy сняты")
+	var env4_any := false
+	for zone: Node2D in [w.cave_zone, w.ashen_zone]:
+		for lname: String in ["Env4CaveProps", "Env4AshenProps"]:
+			if zone.get_node_or_null(NodePath(lname)) != null:
+				env4_any = true
+	chk(not env4_any, "inv8: t52 снос — env4-слои пропов сняты (пещера/Пепелище)")
+	var fw := FileAccess.open("res://scripts/world.gd", FileAccess.READ)
+	var wsrc: String = fw.get_as_text() if fw != null else ""
+	if fw != null:
+		fw.close()
+	chk(wsrc.contains("_ys_canopies") and not wsrc.contains("_build_village_props") \
+			and not wsrc.contains("_build_grove"),
+		"inv8: world.gd — билдеры ген-пропов сняты, YS-инфраструктура цела")
+	# 8.2 костёр — игровой POI (campfire.gd), с ген-пропами не уходил
+	var cfs: Array = w.get("campfires") if w.get("campfires") != null else []
+	chk(cfs.size() == 1 and w.has_method("campfire_near"),
+		"inv8: костёр-POI жив (%d шт., campfire_near есть)" % cfs.size())
+	# 8.3 NPC — в динамической шкале (стопа + биас, смещение ноги => смещение z)
 	var npc: Node2D = null
 	for e in get_tree().get_nodes_in_group("ys_actor"):
 		if is_instance_valid(e) and (e as Node2D).get_parent() == w.village_zone:
@@ -523,50 +481,28 @@ func _inv7() -> void:
 		else:
 			chk(true, "inv7: старт моба %s (%d,%d) проходим и достижим" % [nm, x, y])
 
-# ---------------------------------------------------------------- инв. 9 (t41)
-## Дим-контракт мелких пропов деревни (паттерн кроны, inv8.4): встал севернее
-## пропа так, что он накрывает >= 40% бокса героя (YS_PROP_DIM_AT) — проп димится
-## к 0.5±0.08 и нарисован над героем; встал южнее стопы — ровно 1.0 и герой
-## поверх. Знак/костёр/колодец — три классовых пропа из VillageProps.
+# ---------------------------------------------------------------- инв. 9 (t52)
+## t52 снос (закон 13.11): мелкие ген-пропы деревни (знак/костёр-проп/колодец)
+## сняты — димить нечего: VillageProps нет, реестр дима _ys_props_dim пуст.
+## YS-контракт при пустом реестре не ломается: герой остаётся в динамической
+## шкале глубины (формула стопы+биаса живая).
 func _inv9() -> void:
 	var w: Node2D = game_world
-	if w == null or w.get("player") == null or w.get("village_props") == null:
-		chk(false, "inv9: мир не построен (нет VillageProps)")
+	if w == null or w.get("player") == null:
+		chk(false, "inv9: мир не построен")
 		return
 	var pl: Node2D = w.get("player")
-	# физика героя выключена: микротолкания коллайдеров не сдвигают позу между кадрами
+	chk(w.get("village_props") == null, "inv9: VillageProps снесён (t52)")
+	var ysd: Array = w.get("_ys_props_dim") if w.get("_ys_props_dim") != null else []
+	chk(ysd.is_empty(), "inv9: _ys_props_dim пуст — мелких пропов нет (%d)" % ysd.size())
+	var yscan: Array = w.get("_ys_canopies") if w.get("_ys_canopies") != null else []
+	chk(yscan.is_empty(), "inv9: _ys_canopies пусты — крон нет (%d)" % yscan.size())
 	pl.process_mode = Node.PROCESS_MODE_DISABLED
-	var targets := [
-		[["village_signpost.png"], "знак"],
-		[["village_campfire.png"], "костёр"],
-		[["village_well_1.png", "village_well_2.png"], "колодец"],
-	]
-	for tg in targets:
-		var sfxs: Array = tg[0]
-		var tag: String = String(tg[1])
-		var spr: Sprite2D = null
-		for sfx in sfxs:
-			var cand := _biggest_sprite(w.get("village_props"), String(sfx))
-			if cand != null and (spr == null or _spr_rect(cand).get_area() > _spr_rect(spr).get_area()):
-				spr = cand
-		if spr == null:
-			chk(false, "inv9: проп «%s» не найден" % tag)
-			continue
-		var r := _spr_rect(spr)
-		# герой центром чуть севернее нижней грани пропа: проп южнее (z больше)
-		# и накрывает >= 40% канонного бокса 16x32
-		pl.global_position = Vector2(r.get_center().x, r.end.y - 12.0)
-		await _frames(50)
-		var cov := rect2_overlap_ratio_proxy(r, Rect2(pl.global_position + Vector2(-8.0, -21.0), Vector2(16.0, 32.0)))
-		chk(spr.z_index > pl.z_index and cov >= 0.40,
-			"inv9: «%s» над героем (z %d>%d) и накрытие %.0f%%>=40%%" % [tag, spr.z_index, pl.z_index, 100.0 * cov])
-		chk(absf(spr.modulate.a - 0.5) < 0.08,
-			"inv9: «%s» димится к 0.5 при >=40%% (alpha=%.3f)" % [tag, spr.modulate.a])
-		# южнее стопы: проп под героем — дим выключен, alpha ровно 1.0
-		pl.global_position = Vector2(r.get_center().x, r.end.y + 22.0)
-		await _frames(50)
-		chk(is_equal_approx(spr.modulate.a, 1.0) and pl.z_index > spr.z_index,
-			"inv9: южнее «%s» alpha=1.0 и герой поверх (alpha=%.3f)" % [tag, spr.modulate.a])
+	await _frames(8)
+	# герой — в той же шкале (t51: стопа + YS-биас 10, без пропов не ломается)
+	chk(absf(float(pl.z_index) - (pl.global_position.y + 10.0)) < 3.0,
+		"inv9: герой в шкале глубины при пустом реестре пропов (z=%d, y=%.0f)" \
+		% [pl.z_index, pl.global_position.y])
 	pl.process_mode = Node.PROCESS_MODE_INHERIT
 
 ## Пересечение двух rect, доля от площади rect b (для гейта >=40% в inv9).

@@ -20,11 +20,10 @@ const FLEE_RADIUS := 128.0    # отбежал на это расстояние 
 ## (116–235 кадров, замер t43) — порог беззапасен для нормального бегства.
 const FLEE_STUCK_T := 9.0
 const MAX_HP := 2
-## Волна 5: визуальный масштаб ×1.5 (коллайдер 8x6, дистанции и скорости —
-## прежние). Контент-стоп 16px-кадра на +6: якорь +6*(1−s).
-## t22 (вердикт 12.11 15:49, SCALE_CANON): мглокрыс 0.75H→0.55H, экранная
-## высота 24→18 px. Пиксельный лист 16px: s=18/16=1.125, якорь +6*(1−1.125)=−0.75.
-const VISUAL_SCALE := 1.125
+## t51 (возврат «до Крупного мира»): мглокрыс 16 px 1:1 (коллайдер 8x6,
+## дистанции и скорости — прежние). Контент-стоп 16px-кадра на +6 задаёт
+## картинка, якорь ZERO (было: ×1.5/−3.0, t22 ×1.125/−0.75).
+const VISUAL_SCALE := 1.0
 
 ## Реестры стай: swarm_id -> {total, alive, panicked, scatter}.
 ## static — переживает конкретный экземпляр; чистится сам, когда стая гибнет/исчезает.
@@ -44,7 +43,6 @@ var wander_dir := Vector2.ZERO
 var flee_dir := Vector2.ZERO
 var home := Vector2.ZERO
 var facing := "down"
-var gen_art := false  # t17: ген-ассет (flip по facing, LINEAR_WITH_MIPMAPS)
 var bit_t := 0.0              # >0 — проигрывается кадр укуса
 var dying := false            # страж повторной смерти: XP — ровно один раз
 var swarm_left := false       # крыса покинула стайный учёт ровно один раз (смерть XOR бегство)
@@ -76,13 +74,10 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	anim = AnimatedSprite2D.new()
 	var fr := SpriteFrames.new()
 	fr.remove_animation("default")
-	if ResourceLoader.exists("res://assets/art/mob_swarmling.png") \
-			or ResourceLoader.exists("res://assets/mobs_swarmling.png"):
-		# t17: ген-ассет (art_gen swarmling v1 — compact-силуэт читабельнее v2
-		# на 24 px, см. t17_metrics) приоритетом над пиксельным листом.
-		var gen := ResourceLoader.exists("res://assets/art/mob_swarmling.png")
-		gen_art = gen
-		var tex: Texture2D = load("res://assets/art/mob_swarmling.png") if gen else load("res://assets/mobs_swarmling.png")
+	if ResourceLoader.exists("res://assets/mobs_swarmling.png"):
+		# t52 снос (закон 13.11): ген-ассет art_gen снят — прежний пиксельный
+		# лист mobs_swarmling.png (4 ряда направления × idle/walk/act).
+		var tex: Texture2D = load("res://assets/mobs_swarmling.png")
 		var rows := {"down": 0, "left": 1, "right": 2, "up": 3}
 		for dir_name: String in rows.keys():
 			var row: int = int(rows[dir_name])
@@ -92,27 +87,15 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 				fr.set_animation_loop(an, bool(kind[2]))
 				if bool(kind[2]):
 					fr.set_animation_speed(an, float(kind[3]))
-				if gen:
-					fr.add_frame(an, tex, 0.0)  # однокадровый канон-набор (резерв под аним-проход)
-				else:
-					for col: int in kind[1]:
-						var at := AtlasTexture.new()
-						at.atlas = tex
-						at.region = Rect2(col * 16, row * 16, 16, 16)
-						fr.add_frame(an, at, 0.0)
+				for col: int in kind[1]:
+					var at := AtlasTexture.new()
+					at.atlas = tex
+					at.region = Rect2(col * 16, row * 16, 16, 16)
+					fr.add_frame(an, at, 0.0)
 		anim.sprite_frames = fr
 		add_child(anim)
-		if gen:
-			# tight-кроп: s=18/tex_h (t22: канон 0.55H=18 px; был 24); линия ног
-			# 7.5 (замер старых кадров, ffb=1) → pos.y = 7.5 − 18/2 = −1.5
-			var gs := 18.0 / float(tex.get_height())
-			anim.scale = Vector2.ONE * gs
-			anim.position = Vector2(0, 7.5 - 9.0)
-			anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-			anim.flip_h = facing == "left"
-		else:
-			anim.scale = Vector2.ONE * VISUAL_SCALE
-			anim.position = Vector2(0, -0.75)  # t22: 6*(1−1.125); было −3.0 при ×1.5
+		anim.scale = Vector2.ONE * VISUAL_SCALE
+		anim.position = Vector2.ZERO  # t51 «было»: якорь в центре ноды
 		anim.play("idle_down")
 	else:
 		push_warning("Нет ассета: assets/mobs_swarmling.png — у мглокрыса цветная заглушка")
@@ -255,8 +238,6 @@ func _anim() -> void:
 	var an := "%s_%s" % [want, facing]
 	if anim.animation != an:
 		anim.play(an)
-	if gen_art:
-		anim.flip_h = facing == "left"  # арт смотрит вправо
 
 func hurt(dmg: int, from: Vector2) -> void:
 	if dying:

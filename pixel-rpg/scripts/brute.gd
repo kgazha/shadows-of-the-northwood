@@ -35,25 +35,18 @@ const BOSS_XP := 40
 ## материалов не даёт (материалы — за гринд мобов, не за босса).
 const MAT_DROP_CHANCE := 0.25
 const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
-## SCALE_CANON: ярус 3 = 1.3H = 42 px (32px-кадр × 1.3125), ярусы 1/2 — доли
-## яруса 3 через TIERS.scale (29/35/42 px). Коллайдеры (босс 18x16, моб 10x8),
-## скорости, рывок и дистанции — прежние. Контент-стоп листа 32px на +11 от
-## центра кадра: якорь = +11*(s_old−s_new) держит ноги на прежней линии, тень
-## следует сама. Лесной босс — 52 px («босс 51+»): s_old = 52/42.
-const VISUAL_SCALE := 1.3125
-# t17: ген-бестиарий (art_gen rotspawn/grom v2, полная глубина). Как пропсы env4:
-# tight-кроп, стопы = нижний край текстуры, экранная высота канона достигается
-# масштабом s = canon/tex_h; pos.y = прежняя линия ног − canon/2 — стопы стоят
-# там же, где стояли на brute.png (линии измерены по старым 32px-кадрам:
-# foot = 12·s − |11·(s_old−s)| при t12-формуле → 12.3125·s_old).
-const GEN_ROTSPAWN := "res://assets/art/mob_rotspawn.png"
-const GEN_GROM := "res://assets/art/mob_grom.png"
-const GEN_CANON := {1: 29.0, 2: 35.0, 3: 42.0}          # ярусы t12 (H px)
-const GEN_FOOT_OLD := {1: 8.50178125, 2: 10.26000625, 3: 12.3125, 0: 15.2440476}  # 0 = босс
+## t51 (возврат «до Крупного мира»): мультипликат снят — лист 32px рисуется с
+## ярусными TIERS.scale 1:1 (ярус 3 ≤32 px), босс scale 1.0 (s_old=52/42 снят).
+## Коллайдеры (босс 18x16, моб 10x8), скорости, рывок и дистанции — прежние.
+## Якорь 11·(s_old−s) при s=s_old даёт ZERO — ноги на линии «было», тень следует сама.
+const VISUAL_SCALE := 1.0
+# t52 снос (закон 13.11): ген-бестиарий art_gen (rotspawn/grom) снят — прежний
+# листовой канон brute.png (32px-кадры, ярусы через TIERS.scale).
 ## Ярусы мобов: чем глубже, тем жирнее, злее и быстрее (xp — за убийство).
+## t51: scale — «было» {0.72, 0.85, 1.0} (t12-пересчёт 0.6905/0.8333 под H=32 снят).
 const TIERS := {
-	1: {"hp": 6, "dmg": 1, "speed": 24.0, "xp": 6, "cd": 0.0, "scale": 0.6905},
-	2: {"hp": 9, "dmg": 2, "speed": 29.0, "xp": 8, "cd": 6.0, "scale": 0.8333},
+	1: {"hp": 6, "dmg": 1, "speed": 24.0, "xp": 6, "cd": 0.0, "scale": 0.72},
+	2: {"hp": 9, "dmg": 2, "speed": 29.0, "xp": 8, "cd": 6.0, "scale": 0.85},
 	3: {"hp": 12, "dmg": 2, "speed": 33.0, "xp": 10, "cd": 4.5, "scale": 1.0},
 }
 
@@ -88,8 +81,6 @@ var hit_dist := HIT_DIST_BOSS
 var boss_leash := 0.0      # >0 — радиус агрессии босса (Ведьма: сторожит арену);
 # 0 — историческое поведение Грома: преследовать героя с любой дистанции
 var anim: AnimatedSprite2D
-var gen_art := false   # t17: собран на ген-ассете (tight-кроп, LINEAR_WITH_MIPMAPS)
-var gen_canon := 0.0   # экранная высота ген-ассета, px
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
 var freeze_t := 0.0
@@ -169,21 +160,7 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	fr.add_animation("walk")
 	fr.set_animation_loop("walk", true)
 	fr.set_animation_speed("walk", 2.5)
-	if ResourceLoader.exists(gen_tex_path()):
-		# t17: ген-ассет — однокадровый «walk» (резерв под будущий аним-проход),
-		# якорь по стопам см. GEN_* выше
-		var gtex := load(gen_tex_path())
-		fr.add_frame("walk", gtex, 0.0)
-		anim.sprite_frames = fr
-		add_child(anim)
-		anim.play("walk")
-		gen_art = true
-		gen_canon = gen_canon_h()
-		var gs := gen_canon / float(gtex.get_height())
-		anim.scale = Vector2.ONE * gs
-		anim.position = Vector2(0, gen_foot_old() - gen_canon / 2.0)
-		anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	elif ResourceLoader.exists("res://assets/brute.png"):
+	if ResourceLoader.exists("res://assets/brute.png"):
 		var tex := load("res://assets/brute.png")
 		for col in [0, 1]:
 			var at := AtlasTexture.new()
@@ -193,11 +170,9 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		anim.sprite_frames = fr
 		add_child(anim)
 		anim.play("walk")
-		# SCALE_CANON: лист домножается VISUAL_SCALE=1.3125 — ярусные пропорции
-		# TIERS.scale сохранены (29/35/42 px), босс между ярусом 3 и боссами
-		# таблицы (52 px). Якорь по контент-стопам 32px-кадра (+11): ноги
-		# остаются на прежней линии.
-		var s_old := (52.0 / 42.0) if boss else float(TIERS[tier].scale)
+		# t51 «было»: лист 1:1 с TIERS.scale, босс scale 1.0 (52/42-база H=32
+		# снята). Якорь 11·(s_old−s) при VISUAL_SCALE=1.0 даёт ZERO.
+		var s_old := 1.0 if boss else float(TIERS[tier].scale)
 		var s := s_old * VISUAL_SCALE
 		anim.scale = Vector2.ONE * s
 		anim.position = Vector2(0, 11.0 * (s_old - s))
@@ -378,33 +353,14 @@ func _push_from_hero() -> void:
 			sy = -1.0  # точное совпадение центров — отход вверх
 		move_and_collide(Vector2(0.0, sy * (oy + 0.05)))
 
-## Якорь появления цифр урона — над макушкой С учётом текущего визуального
-## масштаба (волна 5): аним-узел несёт scale/position, макушка листа 32px на
-## −10 от центра кадра. Работает и для Грома, и для отпрысков ярусов, и для
-## Ведьмы (mob_boss2 меняет scale выше) — берем фактические значения anim.
-func _head_spawn_y() -> float:
-	if anim == null or not is_instance_valid(anim):
-		return -14.0
-	if gen_art:
-		# tight-кроп: макушка = верх текстуры = pos.y − canon/2
-		return anim.position.y - gen_canon * 0.5 - 4.0
-	return anim.position.y - 10.0 * anim.scale.x - 4.0
-
-# --- виртуалы ген-арта (Ведьма переопределяет в mob_boss2.gd) ---
-func gen_tex_path() -> String:
-	return GEN_GROM if boss else GEN_ROTSPAWN
-
-func gen_canon_h() -> float:
-	return 52.0 if boss else float(GEN_CANON[tier])
-
-func gen_foot_old() -> float:
-	return float(GEN_FOOT_OLD[0]) if boss else float(GEN_FOOT_OLD[tier])
+## Якорь цифр урона — t51 «было» (до волны 5): плоский −12 над центром; функция
+## _head_spawn_y (wave-5 подстройка под ×1.5/H=32) снята вместе с мультипликатами.
 
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:
 		return  # труп не получает урон: XP и quest_changed — ровно один раз (фикс T3)
 	GameState.entered_combat()  # контакт с врагом — реген паузится
-	DmgNumbers.spawn(global_position + Vector2(0, _head_spawn_y()), dmg_in, "normal")
+	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg_in, "normal")
 	hp -= dmg_in
 	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
 	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)

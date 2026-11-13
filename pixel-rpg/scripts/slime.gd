@@ -13,10 +13,9 @@ const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
 ## NG+ §1.3: базы до скейла по волне. Формулы — в game_state.gd (одна точка истины).
 const BASE_HP := 3
 const BASE_DMG := 1
-## SCALE_CANON: слизень 0.7H = 22 px (16px-кадр × 1.375); коллайдер 10x8,
-## дистанции боя и скорости — прежние. Контент-стопы 16px-кадра на +5:
-## якорь +5*(1−1.375) = −1.875, ноги там же.
-const VISUAL_SCALE := 1.375
+## t51 (возврат «до Крупного мира»): слизень 16 px 1:1; коллайдер 10x8,
+## дистанции боя и скорости — прежние. Якорь ZERO, как было до волны 5.
+const VISUAL_SCALE := 1.0
 
 var world: Node2D
 var hp := BASE_HP
@@ -54,28 +53,17 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	fr.add_animation("walk")
 	fr.set_animation_loop("walk", true)
 	fr.set_animation_speed("walk", 3.0)
-	if ResourceLoader.exists("res://assets/art/mob_slime.png"):
-		# t17: сгенерированный слизень (art_gen slime v2, полная глубина). Tight-кроп
-		# из 1024-оригинала: стопы = нижний край текстуры; экран 22 px — масштабом
-		# s=22/tex_h; линия ног — средняя из двух bob-линий старых кадров
-		# (6.375/7.75) → pos.y = 7.0625 − 11. Тень (atmosphere) цепляется по низу сама.
-		var gtex := load("res://assets/art/mob_slime.png")
-		fr.add_frame("walk", gtex, 0.0)
-		anim.sprite_frames = fr
-		var gs := 22.0 / float(gtex.get_height())
-		anim.scale = Vector2.ONE * gs
-		anim.position = Vector2(0, -3.9375)
-		anim.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	else:
-		var tex := load("res://assets/slime.png")
-		for col in [0, 1]:
-			var at := AtlasTexture.new()
-			at.atlas = tex
-			at.region = Rect2(col * 16, 0, 16, 16)
-			fr.add_frame("walk", at, 0.0)
-		anim.sprite_frames = fr
-		anim.scale = Vector2.ONE * VISUAL_SCALE
-		anim.position = Vector2(0, -1.875)  # якорь по стопам: +5*(1−1.375)
+	# t52 снос (закон 13.11): ген-слизень art_gen снят — прежний листовой канон
+	# slime.png (2 кадра bob по 16px, стопка в центр ноды).
+	var tex := load("res://assets/slime.png")
+	for col in [0, 1]:
+		var at := AtlasTexture.new()
+		at.atlas = tex
+		at.region = Rect2(col * 16, 0, 16, 16)
+		fr.add_frame("walk", at, 0.0)
+	anim.sprite_frames = fr
+	anim.scale = Vector2.ONE * VISUAL_SCALE
+	anim.position = Vector2.ZERO  # t51 «было»: якорь в центре ноды
 	add_child(anim)
 	anim.play("walk")
 
@@ -161,7 +149,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 	if dying:
 		return
 	GameState.entered_combat()  # контакт с врагом — реген паузится
-	DmgNumbers.spawn(global_position + Vector2(0, -13), dmg, "normal")  # SCALE_CANON: выше макушки 22px-слизня
+	DmgNumbers.spawn(global_position + Vector2(0, -12), dmg, "normal")  # t51: было −12
 	hp -= dmg
 	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
 	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
