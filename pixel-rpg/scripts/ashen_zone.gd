@@ -8,10 +8,12 @@ extends Node2D
 ## Тайлы assets/ashen_tiles.png (регион index*16,
 ## 0, 16, 16), стены, портал выхода, сундук награды, травы, моб-наполнение:
 ## 3 лучника, стая мглокрысов из 4 и мини-босс «Ведьма Пепелища»
-## (scripts/mob_boss2.gd). Тенеплёты T13 выведены из геймплея (вердикт
-## пользователя): генератор по-прежнему эммитит их координаты в mobs{wraiths}
-## (схема dict и детерминизм сидов не тронуты), но зона их НЕ спавнит;
-## скрипт-резерв и арт остаются в репозитории. Реестры/волны
+## (scripts/mob_boss2.gd). Тенеплёты (c21 «оживить», отмена T13 для Пепелища):
+## зона читает координаты mobs{wraiths} генератора (схема dict и детерминизм
+## сидов не менялись) и спавнит ровно их тем же паттерном, что лучники/стая;
+## лист assets/mobs_wraith.png и скрипт mob_wraith.gd — без правок кадра, тинт
+## не вешается (перекраска — отдельная волна c22); персиста individual-смертей
+## нет — паритет с archers/swarm. Реестры/волны
 ## мобов — без изменений. Персист — GameState.flags: "ashen.boss" = "dead",
 ## "ashen.chest" = "taken" (cave_state/boss_defeated НЕ трогаем — у пещеры свой путь).
 ## Тинты мобов — через self_modulate: скрипты мобов перекрашивают modulate каждый
@@ -238,8 +240,9 @@ func _spawn_entities(meta: Dictionary) -> void:
 			var herb = it_script.new()
 			add_child(herb)
 			herb.setup(world, "herb", Vector2i(int(h[0]), int(h[1])))
-	# наполнение: лучники, стая (тенеплёты T13 не спавнятся — резерв;
-	# mobs.get("wraiths") генератора остаётся неиспользованными данными)
+	# наполнение: лучники, стая, тенеплёты (c21 «оживить»: спавн ровно по
+	# координатам mobs.get("wraiths") генератора — тот же паттерн, что
+	# archers/swarm/boss; dict-схема и procregion не тронуты)
 	var archer_script := load("res://scripts/mob_archer.gd")
 	var mobs: Dictionary = meta.get("mobs", {})
 	for a: Array in mobs.get("archers", []):
@@ -248,6 +251,12 @@ func _spawn_entities(meta: Dictionary) -> void:
 			add_child(ar)
 			ar.setup(world, Vector2i(int(a[0]), int(a[1])))
 			ar.self_modulate = TINT_ARCHER
+	var wraith_script := load("res://scripts/mob_wraith.gd")
+	for wr: Array in mobs.get("wraiths", []):
+		if wr.size() == 2:
+			var wt = wraith_script.new()
+			add_child(wt)
+			wt.setup(world, Vector2i(int(wr[0]), int(wr[1])))
 	var swarm: Array = mobs.get("swarm", [])
 	if not swarm.is_empty():
 		var rat_script := load("res://scripts/mob_swarmling.gd")

@@ -77,12 +77,13 @@ func _phase_build() -> void:
 	chk(az.boss_node != null, "ведьма заспавнена")
 	chk(az.portal_node != null, "портал выхода есть")
 	chk(az.chest_node != null, "сундук есть")
-	# состав мобов: 3 лучника, стая 4; тенеплёты T13 выведены из геймплея
+	# состав мобов: 3 лучника, стая 4, тенеплёты 4 (c21 «оживить»; T13-«вне
+	# геймплея» отменён вердиктом c21 для Пепелища — деревня/пещера по-прежнему 0)
 	# (генератор эммитит координаты, зона не спавнит — ждём 0 живых узлов)
 	var counts := _count_mobs(world.ashen_zone)
 	chk(int(counts["archer"]) == 3, "лучников 3")
 	chk(int(counts["swarmling"]) == 4, "стаи 4 крыса")
-	chk(int(counts["wraith"]) == 0, "тенеплётов 0 (T13: вне геймплея, резерв)")
+	chk(int(counts["wraith"]) == 4, "тенеплётов 4 (c21: оживлены из координат генератора)")
 	chk(int(counts["witch"]) == 1, "ведьма одна")
 	# тинты через self_modulate (атмосферная перекраска без новых ассетов)
 	var tinted := true
@@ -328,8 +329,8 @@ func _phase_rebuild() -> void:
 	chk(az != null and az.boss_node == null, "пересборка: ведьмы нет (флаг dead)")
 	chk(az.chest_node == null, "пересборка: сундука нет (флаг taken)")
 	var c := _count_mobs(world.ashen_zone)
-	chk(int(c["archer"]) == 3 and int(c["wraith"]) == 0,
-		"пересборка: аркадные спавны на месте, тенеплётов 0 (T13)")
+	chk(int(c["archer"]) == 3 and int(c["wraith"]) == 4,
+		"пересборка: аркадные спавны на месте, тенеплётов 4 (c21)")
 	chk(int(c["swarmling"]) == 4 and int(c["guard"]) == 0, "пересборка: стая 4, стражи 0")
 	chk(az.portal_node != null, "пересборка: портал на месте")
 	# T5b: детерминизм пин-сида — вторая сборка мира даёт ту же карту (meta + grid)

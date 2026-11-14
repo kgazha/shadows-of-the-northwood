@@ -30,8 +30,8 @@ extends Node2D
 ##  T11 t52: ген-листы актёров снесены; герой — AtlasTexture листа класса
 ##      (class_warrior.png, 4 аним × 4 кадра 16 px, drawn 16/стопы 8, parent-фильтр);
 ##      бестиарий — slime/mobs_*/brute листы (ярусы × TIERS.scale, Ведьма ×1.12);
-##      dungeon_tiles.png — MD5 после t52-реставрации клеток 6/7; Тенеплёт не
-##      интегрирован.
+##      dungeon_tiles.png — MD5 после t52-реставрации клеток 6/7; Тенеплёт жив
+##      в Пепелище (c21, спавн из координат генератора; деревня/пещера — ноль, T13).
 ##  T12 t18 «сочность»: hitstop конечен и возвращает Engine.time_scale в
 ##      РЕАЛЬНОМ времени (обычный и смертельный удар), вспышки цели ≤0.1 с,
 ##      overshoot цифр 1.3 (qa_dn зелёный), тень по высоте актёра + воздушная
@@ -756,7 +756,7 @@ func _t10() -> void:
 # ({idle,walk,act}_{dirs}, idle 2 кадра), гнидень/Гром/Ведьма — brute.png
 # (32 px кадры × TIERS.scale; Ведьма ×1.12). Фильтры — INHERITED (проектный
 # nearest; мипмапсов на листах нет). dungeon_tiles.png после восстановления
-# клеток 6/7 из доген-блоба пинится MD5. Тенеплёт (wraith) не интегрирован.
+# клеток 6/7 из доген-блоба пинится MD5. Тенеплёт (wraith) оживлён в Пепелище (c21).
 const T11_GEN_GONE := [
 	"hero_idle.png", "hero_walk.png", "hero_attack.png",
 	"mob_slime.png", "mob_swarmling.png", "mob_archer.png",
@@ -840,7 +840,13 @@ func _t11() -> void:
 	_t11_mob("гнидень ярус3", "res://scripts/brute.gd", "brute.png", "walk", 2, 32.0, 16.0, {"boss": false, "tier": 3})
 	_t11_mob("Гром", "res://scripts/brute.gd", "brute.png", "walk", 2, 32.0, 16.0, {"boss": true})
 	_t11_mob("Ведьма Пепелища", "res://scripts/mob_boss2.gd", "brute.png", "walk", 2, 35.84, 17.92, {})
-	# --- 4. Тенеплёт не интегрирован ---
+	# --- 4. Тенеплёт ---
+	# T11: легаси-арта тенеплёта в assets/art нет (утверждённый лист — корневой
+	# assets/mobs_wraith.png, он не под сканом). c21 (вердикт пользователя
+	# «тенеплёт — оживить»): ссылка на mob_wraith допускается ТОЛЬКО в
+	# ashen_zone.gd — единственной зоне спавна; world.gd и dungeon_zone.gd —
+	# по-прежнему чисты (T13: деревня/пещера вне геймплея для тенеплёта;
+	# живой ноль в этих зонах пинит qa_wr0 S1).
 	var wraith_art := ""
 	var d := DirAccess.open("res://assets/art")
 	if d != null:
@@ -849,13 +855,18 @@ func _t11() -> void:
 				wraith_art += String(fn) + " "
 	chk(wraith_art == "", "T11: в assets/art нет ассетов Тенеплёта (wraith не интегрирован)")
 	var wraith_ref := ""
+	var wraith_other := ""
 	for sp: String in ["res://scripts/world.gd", "res://scripts/ashen_zone.gd", "res://scripts/dungeon_zone.gd"]:
 		var f2 := FileAccess.open(sp, FileAccess.READ)
 		if f2 != null:
 			if f2.get_as_text().contains("mob_wraith"):
-				wraith_ref += sp.get_file() + " "
+				if sp.ends_with("ashen_zone.gd"):
+					wraith_ref += sp.get_file() + " "
+				else:
+					wraith_other += sp.get_file() + " "
 			f2.close()
-	chk(wraith_ref == "", "T11: зоны не ссылаются на mob_wraith (Тенеплёт не спавнится)")
+	chk(wraith_ref.contains("ashen_zone.gd"), "c21: ashen_zone ссылается на mob_wraith (оживлён вердиктом)")
+	chk(wraith_other == "", "c21: ссылка mob_wraith только в ashen_zone (world/dungeon чисты, T13 цел)")
 
 func _t11_mob(tag: String, script_path: String, tex_name: String, anim_name: String, \
 		frames_expected: int, canon: float, foot: float, cfg: Dictionary) -> void:
