@@ -511,60 +511,59 @@ static func build_altar() -> Image:
 	return img
 
 
-## Сундук пещеры (широкий, по вердикту) — SCALE_CANON «сундук ~1.2 | 19 |
-## спрайт 35×19 нативно» (наследуем габарит легаси-кадра 1:1; alpha-trim даёт
-## силуэт 33×16). Корпус WOOD, оковки IRON, замок-кристалл CRYSTAL, мох
-## MOSS_GLOW на СЗ-крышке.
+## Сундук пещеры — SCALE_CANON «сундук ~0.8 | 16 | кадр=силуэт 26×13» (вердикт
+## c10 «сундук уменьши»: было 33×16). Корпус WOOD, оковки IRON, замок-кристалл
+## CRYSTAL, мох MOSS_GLOW на СЗ-крышке — дизайн прежний, габарит 0.8H. Кадр
+## рисуется сразу по силуэту (alpha-trim — тождество), нога на нижней границе.
 static func build_chest() -> Image:
-	var img := im(35, 19)
-	# корпус y9..18 (ножная плаха — весь нижний ряд y18)
-	rect(img, 2, 9, 32, 18, C("WOOD", P.T_MID))
-	rect(img, 2, 9, 2, 18, C("WOOD", P.T_LIGHT))
-	rect(img, 32, 10, 32, 18, C("WOOD", P.T_DARK))
-	# доски (теневые швы каждые 4 px)
-	for x in [6, 10, 14, 18, 22, 26, 30]:
-		line(img, x, 9, x, 18, C("WOOD", P.T_DARK))
-	# крышка (пологая арка): y3..8
-	rect(img, 1, 5, 33, 8, C("WOOD", P.T_MID))
-	rect(img, 4, 4, 30, 4, C("WOOD", P.T_MID))
-	rect(img, 7, 3, 27, 3, C("WOOD", P.T_MID))
-	rect(img, 7, 3, 27, 3, C("WOOD", P.T_LIGHT))
-	rect(img, 4, 4, 30, 4, C("WOOD", P.T_LIGHT))
-	rect(img, 1, 5, 33, 5, C("WOOD", P.T_LIGHT))
-	rect(img, 1, 8, 33, 8, C("WOOD", P.T_DARK))  # тень под крышкой
-	px(img, 1, 5, C("WOOD", P.T_LIGHT))
-	px(img, 33, 6, C("WOOD", P.T_DARK))
-	px(img, 33, 7, C("WOOD", P.T_DARK))
-	# вертикальные оковки IRON (крышка+корпус, до ножной плахи y18)
-	for xs in [5, 16, 29]:
-		for y in range(4 if xs != 16 else 3, 19):
+	var img := im(26, 13)
+	# крышка (пологая арка) y0..3 + теневая кромка y4
+	px(img, 6, 0, C("WOOD", P.T_MID))
+	rect(img, 7, 0, 18, 0, C("WOOD", P.T_MID))
+	px(img, 19, 0, C("WOOD", P.T_MID))
+	rect(img, 4, 1, 21, 1, C("WOOD", P.T_MID))
+	rect(img, 0, 2, 25, 3, C("WOOD", P.T_MID))
+	rect(img, 0, 4, 25, 4, C("WOOD", P.T_DARK))
+	# корпус y5..12 (ножная плаха — весь нижний ряд y12, канон кладёт OUTLINE)
+	rect(img, 1, 5, 24, 12, C("WOOD", P.T_MID))
+	# доски (теневые швы)
+	for x in [5, 8, 11, 16, 19, 22]:
+		line(img, x, 5, x, 12, C("WOOD", P.T_DARK))
+	# вертикальные оковки IRON (крышка+корпус, до ножной плахи)
+	for xs in [3, 12, 21]:
+		for y in range(1 if xs != 12 else 0, 13):
 			px(img, xs, y, C("IRON", P.T_MID))
 			px(img, xs + 1, y, C("IRON", P.T_DARK))
-		px(img, xs, 4 if xs != 16 else 3, C("IRON", P.T_LIGHT))
-	# замок: пластина + кристальный ключник
-	rect(img, 15, 8, 19, 12, C("IRON", P.T_MID))
-	rect(img, 15, 8, 19, 8, C("IRON", P.T_LIGHT))
-	rect(img, 19, 9, 19, 12, C("IRON", P.T_DARK))
-	rect(img, 16, 9, 18, 11, C("CRYSTAL", P.T_MID))
-	px(img, 16, 9, C("CRYSTAL", P.T_LIGHT))
-	px(img, 18, 11, C("CRYSTAL", P.T_DARK))
-	px(img, 16, 12, C("CRYSTAL", P.T_OUTLINE))
-	px(img, 17, 12, C("CRYSTAL", P.T_OUTLINE))
-	px(img, 18, 12, C("CRYSTAL", P.T_OUTLINE))
-	# нижняя плаха корпуса
-	rect(img, 2, 17, 32, 17, C("WOOD", P.T_MID))
-	px(img, 4, 12, C("WOOD", P.T_LIGHT))
-	px(img, 24, 14, C("WOOD", P.T_DARK))
-	px(img, 8, 15, C("WOOD", P.T_DARK))
-	# мох на СЗ-крышке и у левого края корпуса
-	px(img, 6, 4, C("MOSS_GLOW", P.T_LIGHT))
-	px(img, 7, 4, C("MOSS_GLOW", P.T_MID))
-	px(img, 8, 4, C("MOSS_GLOW", P.T_LIGHT))
-	px(img, 5, 5, C("MOSS_GLOW", P.T_MID))
-	px(img, 6, 5, C("MOSS_GLOW", P.T_LIGHT))
-	px(img, 2, 8, C("MOSS_GLOW", P.T_MID))
-	px(img, 3, 8, C("MOSS_GLOW", P.T_LIGHT))
-	px(img, 24, 6, C("MOSS_GLOW", P.T_MID))
+		px(img, xs, 1 if xs != 12 else 0, C("IRON", P.T_LIGHT))
+	# замок: пластина + кристальный ключник (по центру оковки x12/13)
+	for x in [11, 12, 13]:
+		for y in [5, 6]:
+			px(img, x, y, C("IRON", P.T_MID))
+	for y in [4, 5, 6, 7]:
+		px(img, 14, y, C("IRON", P.T_DARK))
+	px(img, 11, 4, C("IRON", P.T_LIGHT))
+	px(img, 12, 4, C("IRON", P.T_LIGHT))
+	px(img, 13, 4, C("IRON", P.T_LIGHT))
+	px(img, 14, 4, C("IRON", P.T_LIGHT))
+	px(img, 12, 5, C("CRYSTAL", P.T_MID))
+	px(img, 13, 5, C("CRYSTAL", P.T_MID))
+	px(img, 12, 6, C("CRYSTAL", P.T_MID))
+	px(img, 13, 6, C("CRYSTAL", P.T_DARK))
+	px(img, 12, 5, C("CRYSTAL", P.T_LIGHT))
+	px(img, 12, 7, C("CRYSTAL", P.T_OUTLINE))
+	px(img, 13, 7, C("CRYSTAL", P.T_OUTLINE))
+	# сучки/волокно корпуса
+	px(img, 6, 8, C("WOOD", P.T_LIGHT))
+	px(img, 19, 10, C("WOOD", P.T_DARK))
+	px(img, 9, 11, C("WOOD", P.T_DARK))
+	# мох на СЗ-крышке и у левого края (зональная зелень пещеры)
+	px(img, 4, 1, C("MOSS_GLOW", P.T_LIGHT))
+	px(img, 5, 1, C("MOSS_GLOW", P.T_MID))
+	px(img, 6, 1, C("MOSS_GLOW", P.T_LIGHT))
+	px(img, 4, 2, C("MOSS_GLOW", P.T_LIGHT))
+	px(img, 5, 2, C("MOSS_GLOW", P.T_MID))
+	px(img, 18, 3, C("MOSS_GLOW", P.T_MID))
+	px(img, 1, 4, C("MOSS_GLOW", P.T_MID))
 	return img
 
 

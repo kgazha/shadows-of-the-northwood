@@ -1637,18 +1637,20 @@ func _t16() -> void:
 	chk(alt_n.size() == altar_cells.size() and alt_bad == 0,
 		"t16: алтарь 1.6H на каждой «A» (стопа=граница клетки, z V-01) (%d/%d, bad %d)" \
 		% [alt_n.size(), altar_cells.size(), alt_bad])
-	# широкий сундук: визуальный слой >1 клетки; коллайдер клетки и grid — целы
+	# сундук ~0.8H (вердикт c10 «сундук уменьши»: 33×16 → 26×13): визуальный
+	# слой >1 клетки; коллайдер клетки и grid — целы
 	var chst: Array = by_key.get("CHEST", [])
 	var ct: Vector2i = dz.chest_tile
 	var chest_spr: Sprite2D = null
 	if chst.size() == 1 and ct.x >= 0:
 		chest_spr = chst[0]
 		var rr := _t15_rect(chest_spr)
-		var ok_geom: bool = absf(rr.size.x - 33.0) < 0.6 \
+		var ok_geom: bool = absf(rr.size.x - 26.0) < 0.6 \
+				and absf(rr.size.y - 13.0) < 0.6 \
 				and absf(rr.get_center().x - (origin.x + float(ct.x) * 16.0 + 8.0)) < 0.6 \
 				and absf(rr.end.y - (origin.y + float(ct.y + 1) * 16.0)) < 0.6
 		chk(ok_geom and not dz.cell_walkable(ct),
-			"t16: широкий сундук 33 px поверх клеточного коллайдера «C» (walkable=%s)" \
+			"t16: сундук ~0.8H 26x13 поверх клеточного коллайдера «C» (walkable=%s)" \
 			% str(dz.cell_walkable(ct)))
 		var space := get_world_2d().direct_space_state
 		var q := PhysicsPointQueryParameters2D.new()
@@ -1668,7 +1670,7 @@ func _t16() -> void:
 		world.cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
 		chk(solid, "t16: физика клетки сундука осталась (стандартный блок не изменён)")
 	else:
-		chk(false, "t16: широкий сундук не найден на клетке «C» (%d)" % chst.size())
+		chk(false, "t16: сундук не найден на клетке «C» (%d)" % chst.size())
 	# сталактиты: висячие, z выше потолка актёров, верх кадра = верх клетки-свода
 	var stalc_all: Array = by_key.get("STALC3", []) + by_key.get("STALC2", []) \
 			+ by_key.get("STALC1", [])

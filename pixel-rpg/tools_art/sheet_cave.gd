@@ -146,7 +146,7 @@ func _build_props_all() -> Array:
 	for s in CP.prop_set_canon():
 		by[String(s["name"])] = s["img"]
 	var meta := [
-		["ALTAR", "ALT", "1.6H"], ["CHEST", "CST", "~1.2H"],
+		["ALTAR", "ALT", "1.6H"], ["CHEST", "CST", "~0.8H"],
 		["BRAZIER", "BRZ", "~1.2H"],
 		["STALC1", "C1", "0.5H"], ["STALC2", "C2", "0.75H"], ["STALC3", "C3", "1.2H"],
 		["STALAG1", "G1", "0.5H"], ["STALAG2", "G2", "0.75H"], ["STALAG3", "G3", "1.2H"],

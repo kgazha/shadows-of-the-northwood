@@ -7,7 +7,8 @@ extends RefCounted
 ## res://tools_art/sheet_cave.gd (режим bake, генератор cave_paint.gd):
 ##   assets/cave/cave_floor_v1.png — пол 16 px (обычный/трещины/у алтаря/мох),
 ##   assets/cave/cave_wall_v1.png  — стена 16 px (тело/свод/подошва/углы L,R),
-##   assets/cave/cave_props_v1.png — пропы (алтарь 13×25, широкий сундук 33×16,
+##   assets/cave/cave_props_v1.png — пропы (алтарь 13×25, сундук 26×13 ~0.8H
+##                                   (вердикт c10 «сундук уменьши»),
 ##                                   сталактиты/сталагмиты 0.5/0.75/1.2H,
 ##                                   факел 9×10 в 2 кадрах — c5).
 ## REGIONS — источник истины и для игры, и для bake-режима инструмента; кадры
@@ -62,7 +63,7 @@ const P := preload("res://scripts/pixel_palette.gd")
 ## на y=64, «с потолка» — ярусы сталактитов выровнены по своей верхней кромке.
 const REGIONS := {
 	"ALTAR": Rect2(0, 39, 13, 25),
-	"CHEST": Rect2(14, 48, 33, 16),
+	"CHEST": Rect2(14, 51, 26, 13),
 	"BRAZIER": Rect2(48, 47, 17, 17),
 	"STALC3": Rect2(66, 45, 9, 19),
 	"STALAG3": Rect2(76, 45, 13, 19),
