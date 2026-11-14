@@ -36,7 +36,7 @@ extends "res://mb_base.gd"
 ## через угол стены) целиком закрыта в CLOSED; дверь не сирота (к ней примыкает
 ## достижимый closed-пол). 50 сидов каскада.
 
-const GOLDEN_CAVE_PIN := 8065050884287841817  # GOLDEN-CAVE-PIN: FNV-1a 64, cave_map(seed_zone(42,"cave",1)) @ b862110 (после PG8a-фикса)
+const GOLDEN_CAVE_PIN := -1017898612486188285  # GOLDEN-CAVE-PIN: FNV-1a 64, cave_map(seed_zone(42,"cave",1)) @ c13 (тонкийка алтарей: по одному «A» в комнатах с алтарями; был 8065050884287841817 @ b862110 после PG8a-фикса)
 const GOLDEN_ASHEN_PIN := 8636615847371749653  # GOLDEN-ASHEN-PIN: FNV-1a 64, ashen_map(seed_zone(42,"ashen",1)) @ b862110
 const GOLDEN_CAVE_UNITS := [[24, 6], [27, 6], [13, 7], [16, 7], [11, 8], [27, 9], [10, 10], [24, 12], [27, 12], [8, 14], [17, 14]]  # GOLDEN-PLACE-PIN: эталон world._spawn_cave_mobs (11 брутов), место действия — PG10c
 const PROFILES_PATH := "res://data/proc_profiles.json"

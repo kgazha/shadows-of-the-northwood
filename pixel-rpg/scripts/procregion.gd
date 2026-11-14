@@ -194,8 +194,32 @@ static func _build_once(templates: Array, zone: String, rng: RandomNumberGenerat
 	var m: Dictionary = _emit_meta(grid, picked, rects, zone, w, h, rng)
 	if zone == "cave":
 		_seal_chest(grid, m, zone, w, h)
+		_thin_altars(grid, picked, rects, w, h)
 	var map: Dictionary = _finish_map(grid, m, zone, w, h)
 	return {"ok": _validate(map, zone, w, h), "map": map}
+
+## c13 (вердикт пользователя «алтарей много, можно оставить 1-2»): шаблоны комнат
+## несут по 2-3 литеры «A» — на карте их выходило 4-6. Оставляем ровно по одному
+## алтарю в комнатах с алтарями (алтарная комната + алтарный зал босса — итог 2,
+## «1-2» из вердикта), остальные клетки становится обычный пол. Чистое пост-
+## построение: после штампов/прокопов/герметизации сундука (все BFS-и генератора
+## видят исходную сетку — геометрия проходов бит-в-бит прежняя), без rng — всё
+## остальное детерминировано сидом. «A» — блокатор-пол внутри комнат (стены
+## комнат — #/V), поэтому A→"." не рассекает карманы: связность монотонно
+## растёт; гейт «дверь закрыта — сундук недоступен» не затронут (он за V-ободом).
+const ALTAR_KEEP_PER_HALL := 1
+static func _thin_altars(grid: Array, picked: Array, rects: Array,
+		w: int, h: int) -> void:
+	for i in picked.size():
+		var rc: Rect2i = rects[i]
+		var found: Array = []
+		for y in range(rc.position.y, rc.position.y + rc.size.y):
+			var row := String(grid[y])
+			for x in range(rc.position.x, rc.position.x + rc.size.x):
+				if String(row[x]) == "A":
+					found.append(Vector2i(x, y))
+		for k in range(ALTAR_KEEP_PER_HALL, found.size()):
+			_set_cell(grid, found[k].x, found[k].y, ".", w, h)
 
 ## Выбор шаблона под каждый тег состава: кандидаты — порядок файла, выбор rng.
 static func _pick_templates(templates: Array, tags: Array, rng: RandomNumberGenerator) -> Array:
