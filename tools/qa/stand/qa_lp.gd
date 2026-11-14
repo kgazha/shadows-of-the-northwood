@@ -1466,6 +1466,43 @@ func _t16_bbox(img: Image) -> Rect2i:
 		return Rect2i(0, 0, 0, 0)
 	return Rect2i(minx, miny, maxx - minx + 1, maxy - miny + 1)
 
+## c14: метрика вертикального wrap 16×16 кадра — mean|Δ|(RGB) стыка «низ↔верх»
+## против средней mean|Δ| соседних строк поля (формула пин-метрики шва листа,
+## независимая реализация).
+func _t14_seam_y(img: Image) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var seam := 0.0
+	for x in w:
+		seam += _t14_db(img, x, h - 1, x, 0)
+	seam /= float(w)
+	var field := 0.0
+	for y in range(h - 1):
+		for x in w:
+			field += _t14_db(img, x, y, x, y + 1)
+	field /= float((h - 1) * w)
+	return seam / maxf(field, 0.001)
+
+## c14: парная горизонтальная метрика (стык «правый край↔левый» против поля).
+func _t14_seam_x(img: Image) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var seam := 0.0
+	for y in h:
+		seam += _t14_db(img, w - 1, y, 0, y)
+	seam /= float(h)
+	var field := 0.0
+	for y in h:
+		for x in range(w - 1):
+			field += _t14_db(img, x, y, x + 1, y)
+	field /= float(h * (w - 1))
+	return seam / maxf(field, 0.001)
+
+func _t14_db(img: Image, x0: int, y0: int, x1: int, y1: int) -> float:
+	var a := img.get_pixel(x0, y0)
+	var b := img.get_pixel(x1, y1)
+	return (absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)) * 255.0 / 3.0
+
 func _t16() -> void:
 	if world == null or world.dungeon_zone == null:
 		chk(false, "t16: мир/пещера не построены")
@@ -1596,6 +1633,17 @@ func _t16() -> void:
 					bot_bad += 1
 	chk(bot_n > 0 and bot_bad == 0,
 		"t16: WALL_BOT однократен — подошва над проходимым, репита нет (%d клеток, %d)" % [bot_n, bot_bad])
+	# 6b) c14 (вердикт пользователя «подправь тайл», ревью c4 F3): вертикальный wrap
+	#     CORNER_L (стык «низ↔верх» кадра 3 атласа стен) — формула пин-метрики шва
+	#     из листа (mean|Δ| шва против поля), независимая реализация здесь.
+	#     Порог уровня тела: WALL-тело 1.21, свод 1.29; до правки было 1.75 —
+	#     светлая нить с периодом 4 читалась линией на столбике угла.
+	var cl_f: Image = wimg.get_region(Rect2i(48, 0, 16, 16))
+	var ry_cl := _t14_seam_y(cl_f)
+	var rx_cl := _t14_seam_x(cl_f)
+	chk(ry_cl < 1.5, "t14: вертикальный wrap CORNER_L на уровне тела (<1.5; %.2f)" % ry_cl)
+	chk(ry_cl < 2.0 and rx_cl < 2.2,
+			"t14: CORNER_L wrap в формальных порогах 2.0/2.2 (верт %.2f / гор %.2f)" % [ry_cl, rx_cl])
 	# 7) пропы: слой CaveV1 — алтарь на каждой «A», сундук на «C», якоря стопой
 	#    на нижнюю границу клетки, z по V-01; сталактиты — над актёров
 	var layer: Node2D = world.cave_zone.get_node_or_null("CaveV1")
