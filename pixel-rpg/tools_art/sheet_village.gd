@@ -100,7 +100,7 @@ func _bake(out_dir: String) -> void:
 		atlas.blit_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()),
 				Vector2i(int(reg.position.x), int(reg.position.y)))
 	var floors: Array = [
-		_build_floor_grass(), _build_floor_grass2(), _build_floor_flower(),
+		_build_floor_grass(), _build_floor_tuft(), _build_floor_flower(),
 		_build_floor_path(), _build_floor_water(),
 	]
 	var fatlas := _im(V4.FLOOR_SIZE.x, V4.FLOOR_SIZE.y)
@@ -644,22 +644,55 @@ func _build_floor_grass() -> Image:
 	return img
 
 
-func _build_floor_grass2() -> Image:
+func _build_floor_tuft() -> Image:
+	# c9 «куртина» (вердикт пользователя «добавь»): тайл слота «G» — три
+	# травяные куртины на обычном травяном фоне. Канон: свет СЗ (LIGHT на
+	# верхних кончиках и левых сторонах дуг, DARK на правых основаниях),
+	# только GRASS/LEAF-рампы. Детерминированный шум фона. Для VillageSway
+	# маска качания = GRASS LIGHT y<=8 (кончики): светлые «фоновые» крапинки
+	# — только y>=9, чтобы маска вырезала ровно кончики куртин.
 	var img := _im(16, 16)
 	img.fill(C("GRASS", P.T_MID))
 	for y in 16:
 		for x in 16:
 			var h := _hash(x * 7 + 3, y + 11)
-			if h < 0.10:
+			if h < 0.08 and y >= 9:
 				_px(img, x, y, C("GRASS", P.T_LIGHT))
 			elif h > 0.95:
 				_px(img, x, y, C("LEAF", P.T_DARK))
-	# галечник
-	_rect(img, 11, 10, 12, 11, C("STONE_WARM", P.T_DARK))
-	_px(img, 11, 10, C("STONE_WARM", P.T_MID))
-	_px(img, 3, 12, C("STONE_WARM", P.T_DARK))
-	_px(img, 5, 3, C("GRASS", P.T_DARK))
-	_px(img, 6, 3, C("GRASS", P.T_LIGHT))
+	var M := P.T_MID
+	var D := P.T_DARK
+	var L := P.T_LIGHT
+	# Дуги читаются на MID-фоне тёмным (DARK) штрихом: MID-штрих на MID-фоне
+	# невидим. Свет СЗ: одиночный LIGHT-кончик на острие каждой дуги (ровно
+	# один LIGHT-пиксель на дугу — маска VillageSway качает кончик целиком,
+	# без «отрыва» второго пикселя), MID — мягкая NW-подсветка у основания.
+	# куртина 1 (x2..6, кончик y6..8):
+	for pt: Array in [[3, 12, D], [4, 12, D], [5, 12, D], [4, 13, D], [2, 13, M]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[3, 11, D], [2, 10, D], [2, 9, D], [2, 8, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[4, 11, D], [4, 10, D], [4, 9, D], [4, 8, D], [3, 7, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[5, 11, D], [6, 10, D], [6, 9, D], [6, 8, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	# куртина 2 (x7..11, выше всех: кончик y2)
+	for pt: Array in [[8, 13, D], [9, 13, D], [8, 12, D], [9, 12, D], [7, 13, M]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[8, 11, D], [7, 10, D], [7, 9, D], [7, 8, D], [7, 7, D], [7, 6, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[9, 11, D], [9, 10, D], [9, 9, D], [9, 8, D], [9, 7, D],
+			[9, 6, D], [9, 5, D], [9, 4, D], [8, 3, D], [8, 2, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[10, 11, D], [10, 10, D], [10, 9, D], [10, 8, D], [10, 7, D], [11, 6, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	# куртина 3 (x12..14, низкая: кончик y7)
+	for pt: Array in [[13, 12, D], [14, 12, D], [12, 13, M]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[13, 11, D], [12, 10, D], [12, 9, D], [12, 8, D], [12, 7, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
+	for pt: Array in [[14, 11, D], [14, 10, D], [14, 9, D], [14, 8, D], [14, 7, L]]:
+		_px(img, pt[0], pt[1], C("GRASS", pt[2]))
 	return img
 
 

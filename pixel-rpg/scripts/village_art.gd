@@ -40,7 +40,7 @@ const P := preload("res://scripts/pixel_palette.gd")
 ## (ни накопления, ни randi), 0 физ. узлов.
 const SWAY_T := 0.5                 # период качания, с (2 фазы)
 const SWAY_P_FLOWER := 0.60         # доля цветочных клеток с качанием
-const SWAY_P_GRASS := 0.18          # доля «G»-клеток (травяные куртины)
+const SWAY_P_GRASS := 1.0           # доля «G»-клеток: куртины штучные (c9) — качаются все
 const FF_HOPS := 8                  # клеток в цикле блуждания светлячка
 const FF_HOP_T := 2.2               # базовая длительность перехода, с
 const FF_Z := 900                   # светлячки летают выше актового z (деревня
@@ -174,9 +174,11 @@ static func _body_rect(body: StaticBody2D, foot: Vector2, size: Vector2) -> void
 ## Вырезание «качающейся» части тайла пола из запечённого атласа.
 ## Возвращает [texA, texL, texR] (16×16, фон прозрачный) или [] — mask по
 ## палитре: слот 2 («f») — головки цветов (рампы CLOTH/FIRE; стебелек LEAF
-## не качается), слот 1 («G») — светлые КОНЧИКИ травинок (GRASS LIGHT верхних
-## рядов, под которыми не LIGHT). Фаза A точит-в-точек равна тайлу, фазы
-## L/R — те же пиксели со сдвигом ∓/+1 px.
+## не качается), слот 1 («G», c9 «куртина») — кончики листьев (GRASS LIGHT
+## y<=8, под которыми не LIGHT; фоновые светлые крапинки тайла спроектиро-
+## ваны ниже y=9). Фаза A пиксель-в-пиксель равна тайлу; L/R — те же пиксели
+## со сдвигом ∓/+1 px, построенные на поле 18×16 с обрезкой до 16×16
+## (фикс F2).
 static func sway_frames(floor_tex: Texture2D, slot: int) -> Array:
 	var img := floor_tex.get_image()
 	if img == null or slot * 16 + 16 > img.get_width():
@@ -211,16 +213,22 @@ static func sway_frames(floor_tex: Texture2D, slot: int) -> Array:
 				picked.append(Vector2i(x, y))
 	if picked.is_empty():
 		return []
-	var lm := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	lm.fill(Color(0, 0, 0, 0))
-	var rm := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	rm.fill(Color(0, 0, 0, 0))
+	# F2 (ревью c8): сдвиг строится на поле ширины 18 (контент с офсетом +1)
+	# и обрезается к колонкам 1..16 => сдвиг на 1 px НИКОГДА не переполняет
+	# канву и пиксели не теряются на «охранном условии» (как терялись до
+	# фикса). Пока выбранные пиксели не занимают колонки 0/15 (тайлы
+	# куртины/цветов так и спроектированы), мультисеты цветов A/L/R строго
+	# совпадают — пин qa_vlg сверяет мультисеты.
+	var lf := Image.create(18, 16, false, Image.FORMAT_RGBA8)
+	lf.fill(Color(0, 0, 0, 0))
+	var rf := Image.create(18, 16, false, Image.FORMAT_RGBA8)
+	rf.fill(Color(0, 0, 0, 0))
 	for p: Vector2i in picked:
 		var c := a.get_pixel(p.x, p.y)
-		if p.x - 1 >= 0:
-			lm.set_pixel(p.x - 1, p.y, c)
-		if p.x + 1 < 16:
-			rm.set_pixel(p.x + 1, p.y, c)
+		lf.set_pixel(p.x, p.y, c)       # (p.x + 1) - 1: сдвиг влево на поле
+		rf.set_pixel(p.x + 2, p.y, c)   # (p.x + 1) + 1: сдвиг вправо
+	var lm := lf.get_region(Rect2i(1, 0, 16, 16))
+	var rm := rf.get_region(Rect2i(1, 0, 16, 16))
 	return [ImageTexture.create_from_image(a), ImageTexture.create_from_image(lm),
 			ImageTexture.create_from_image(rm)]
 
@@ -257,6 +265,7 @@ static func _build_sway(world) -> void:
 			layer.add_child(spr)
 			layer.items.append({
 				"spr": spr, "ta": fr[0], "tl": fr[1], "tr": fr[2],
+				"cell": Vector2i(x, y),
 				"phase": CaveArt.hash_xy(x, y) % 2,
 				"dir": -1 if CaveArt.frac(x, y, 9) < 0.5 else 1,
 			})

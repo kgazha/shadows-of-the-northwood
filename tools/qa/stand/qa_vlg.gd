@@ -37,6 +37,10 @@ extends Node2D
 ##     фазы кластеров не синхронны, тайлмап не мутируется) и 3..6 светлячков
 ##     с проходным маршрутом и позицией — чистой функцией времени; у обоих
 ##     слоёв ноль коллайдеров.
+## 11. c9 (вердикт «добавь»): куртины «G» — 8 пин-клеток (6..10) в пин-дампе
+##     строк 0..14 и в items качания (каждая сменила кадр, фазы независимы);
+##     мультисеты фаз A/L/R строгие (фикс F2 ревью c8: сдвиг на поле 18×16
+##     с обрезкой, кромка не теряется).
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -45,11 +49,17 @@ const PIN_NPCS := [["elder", 10, 8], ["merchant", 22, 13], ["farmer", 29, 13]]
 const PIN_HERBS := [[14, 19], [26, 20], [17, 24], [30, 24], [24, 17], [12, 17], [45, 12]]
 const PIN_CHESTS := [[37, 21]]
 const PIN_SLIMES := [[16, 21], [24, 22], [30, 19], [20, 25], [33, 22], [27, 24]]
+## c9 (вердикт «добавь»): травяные куртины «G» — пин-клетки (опушка луга:
+## северная кромка x6/26/40 row2, у стены избы x12 и в лугу x33 row3,
+## южная кромка над тропой x5/20/43 row13). Проходимы (CHAR_TO_TILE "G"=1),
+## вне r1 herbs/spawn, не в лесных рядах.
+const PIN_TUFTS := [[6, 2], [26, 2], [40, 2], [12, 3], [33, 3], [5, 13], [20, 13], [43, 13]]
+const PAL := preload("res://scripts/pixel_palette.gd")
 const PIN_ROWS_0_14 := [
 	"tttttttttttttttttttttttttttttttttttttttttttttttt",
 	"tttttttttttttttttttttttttttttttttttttttttttttttt",
-	"ttggggggggggggggggggggggggggggggggggggggggggggtt",
-	"ttggggRRRRRRgggggfggggggggggggggggggfgggggggggtt",
+  "ttggggGgggggggggggggggggggGgggggggggggggGgggggtt",
+  "ttggggRRRRRRGggggfgggggggggggggggGggfgggggggggtt",
 	"ttggggRRRRRRggggfggggggggggggggggggfwwwwwwwwwgtt",
 	"ttggggWWWWWWgggggggggggggggggfgggggrwwwwwwwwwgtt",
 	"ttgggfWWDWWWggggggggggggfgggggggggggwwwwwwwwwgtt",
@@ -59,7 +69,7 @@ const PIN_ROWS_0_14 := [
 	"ttggggggdggggggfggggggggggggggggggfgggggggggggtt",
 	"ttggggggdgsggggggggfggggggggggggggggggfgggggggtt",
 	"ttggdddddddddddddddddddddddddddddddddddddddddgtt",
-	"ttggggggggggggggggggggdgggggggggggggggggggggggtt",
+  "ttgggGggggggggggggggGgdggggggggggggggggggggGggtt",
 	"ttggggggggggggggggggggdgggggggggggggggggggggggtt",
 ]
 # фикс. клетки внутри лесных строк (x,y,ch)
@@ -201,6 +211,18 @@ func _inv2() -> void:
 		if _ch(x, 20) != "d":
 			fix_bad += 1
 	chk(fix_bad == 0, "inv2: фикс. клетки леса целы (тропы d, s(23,15), A(45,20), row20 d 22..44)")
+	# c9: куртины «G» — пин-клетки ровно совпадают, других G в карте нет
+	var tuft_bad := 0
+	for c in PIN_TUFTS:
+		if _ch(int(c[0]), int(c[1])) != "G":
+			tuft_bad += 1
+	var g_total := 0
+	for y in H:
+		for x in W:
+			if _ch(x, y) == "G":
+				g_total += 1
+	chk(tuft_bad == 0 and g_total == PIN_TUFTS.size() and g_total >= 6 and g_total <= 10,
+		"inv2: куртины «G» = пин (%d/%d), в диапазоне 6..10" % [PIN_TUFTS.size() - tuft_bad, g_total])
 	chk(not _blocked(40, 17), "inv2: пещера (40,17) проходима")
 	var fire_bad := 0
 	for dy in range(-1, 2):
@@ -644,6 +666,55 @@ func _inv10() -> void:
 	chk(moved > 0, "inv10: качание — за 1.3 с кадр сменили %d кластеров" % moved)
 	chk(distinct.size() >= 2,
 		"inv10: фазы не синхронны — в моменте разных кадров %d" % distinct.size())
+	# c9: куртины «G» — каждая пин-клетка в items (плотность 1.0), каждая
+	# сменила кадр за окно, фазы куртин независимы между собой
+	var g_items: Array = []
+	var g_flags: Array = []
+	for i in items.size():
+		var cell: Vector2i = items[i]["cell"]
+		if _ch(cell.x, cell.y) == "G":
+			g_items.append(items[i])
+			g_flags.append(bool(changed_flags[i]))
+	var g_moved := 0
+	for fl in g_flags:
+		if bool(fl):
+			g_moved += 1
+	var g_distinct := {}
+	for git in g_items:
+		g_distinct[(git["spr"] as Sprite2D).texture] = true
+	chk(g_items.size() == PIN_TUFTS.size() and g_moved == PIN_TUFTS.size(),
+		"inv10: куртины в качании — %d/%d клеток, все сменили кадр" % [g_moved, g_items.size()])
+	# тайлмап-доказательство (без скриншотов): каждая «G»-клетка — тайл
+	# источника 1 (v4-пол) с атлас-координатой слота FLOOR_SLOTS["G"] —
+	# зеркало _build_tiles() world.gd; фактический тайл берётся из живого слоя
+	var tml: TileMapLayer = null
+	for c in w.village_zone.get_children():
+		if c is TileMapLayer:
+			tml = c as TileMapLayer
+			break
+	var tile_ok := tml != null
+	if tile_ok:
+		for t in PIN_TUFTS:
+			if tml.get_cell_source_id(Vector2i(int(t[0]), int(t[1]))) != 1 \
+					or tml.get_cell_atlas_coords(Vector2i(int(t[0]), int(t[1]))) \
+					!= Vector2i(int(VillageArt.FLOOR_SLOTS["G"]), 0):
+				tile_ok = false
+	chk(tile_ok, "inv10: тайлмап: все куртины — тайл v4-пола слота «G»")
+	chk(g_distinct.size() >= 2,
+		"inv10: фазы куртин независимы (разных кадров в моменте: %d)" % g_distinct.size())
+	# F2 (ревью c8): мультисеты цветов кадров A/L/R строгие для обоих слотов —
+	# сдвиг на 1 px не теряет пикселей кромки (поле 18×16 + обрезка)
+	var ftex: Texture2D = load("res://assets/village/village_floor_v4.png")
+	var ms_ok := true
+	for slot in [1, 2]:
+		var fr: Array = VillageArt.sway_frames(ftex, slot)
+		if fr.is_empty():
+			ms_ok = false
+			continue
+		var m0 := _ms(fr[0])
+		if m0.is_empty() or m0 != _ms(fr[1]) or m0 != _ms(fr[2]):
+			ms_ok = false
+	chk(ms_ok, "inv10: мультисеты кадров A/L/R строгие (фикс F2, слоты 1 и 2)")
 	var bodies := 0
 	for n: Node in [sway, mgr]:
 		for d in n.find_children("*", "CollisionShape2D", true, false):
@@ -699,3 +770,18 @@ func _ff_pos(f: Dictionary, tt: float) -> Vector2:
 	var pa := Vector2(float(a.x) * 16.0 + 8.0, float(a.y) * 16.0 + 8.0)
 	var pb := Vector2(float(b.x) * 16.0 + 8.0, float(b.y) * 16.0 + 8.0)
 	return pa.lerp(pb, fr) + Vector2(0.0, -6.0 + sin(tt * 2.1 + float(f["phase"]) * TAU) * 1.5)
+
+
+## Мультисет непроврачных пикселей текстуры: {аргб-ключ -> count}
+## (строгая сверка фаз A/L/R в inv10, фикс F2).
+func _ms(tex) -> Dictionary:
+	var o := {}
+	var im: Image = (tex as ImageTexture).get_image()
+	for y in im.get_height():
+		for x in im.get_width():
+			var c := im.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			var k := PAL.key(c)
+			o[k] = int(o.get(k, 0)) + 1
+	return o
