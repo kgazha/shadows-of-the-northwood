@@ -16,6 +16,15 @@ extends Node2D
 ## "ashen.chest" = "taken" (cave_state/boss_defeated НЕ трогаем — у пещеры свой путь).
 ## Тинты мобов — через self_modulate: скрипты мобов перекрашивают modulate каждый
 ## кадр (вспышки урона), self_modulate перемножается с modulate и выживает.
+## c20 «Пепелище v1» (вердикт «берём»): атлас — bake листа tools_art/sheet_ashen_v1.gd
+## (bake_atlas): 0–3 — полы листа (палитра 0 off), 4–6 — ash-подложки под
+## prop-спрайтами блокировщиков (буквы grid и коллайдеры НЕ изменены), 7 — тайл
+## портала (им же рисуется вход в деревне — синхронно), 8 — свой сундук; строка 1
+## — высокие prop-кадры. self_modulate земли убран (тон запечён в листе).
+## Prop-слой «AshenPropV1»: дерево T (чередание TREE1/TREE2 по чётности x+y),
+## пень K, бревно #; стопа — низ клетки, z = fposmod(стопа, YS_CYCLE) (ASHEN_OFFSET
+## кратен циклу — локальная стопа == глобальная). Имя слоя свободно от запрещённых
+## pin-имён (AshenFloorPaint/Env4AshenProps/_env4_ashen_props).
 ## Публичный API: setup(p_world, p_map) -> void; вход/выход: world.enter_ashen()/exit_ashen().
 
 const TILE := 16
@@ -85,6 +94,7 @@ func setup(p_world: Node2D, p_map: Dictionary = {}) -> void:
 		chest_tile = Vector2i(int(cht[0][0]), int(cht[0][1]))
 	if ResourceLoader.exists(TEX_PATH):
 		_build_tiles()
+		_build_props()
 	else:
 		push_warning("Нет ассета: assets/ashen_tiles.png — Пепелище построено без тайлов")
 	_build_walls()
@@ -123,9 +133,9 @@ func _build_tiles() -> void:
 	tilemap = TileMapLayer.new()
 	tilemap.tile_set = ts
 	tilemap.z_index = -10
-	# наземный тон Пепелища: холодная дымка только на землю (зоны-спрайты мобов
-	# красятся individually) — атмосфера остаётся «лесной», не пещерной
-	tilemap.self_modulate = Color(0.93, 0.94, 1.0)
+	# c20: холодный тон запечён в лист (ASH_* рампы PixelPalette) — временный
+	# self_modulate легаси-эпохи «внепалитрного» атласа на земле больше не нужен;
+	# тинты мобов (TINT_*) остаются — перекраска наполнения запланирована отдельно
 	add_child(tilemap)
 	for y in map_h:
 		var row := String(map_rows[y])
@@ -133,6 +143,52 @@ func _build_tiles() -> void:
 			var ch := row[x]
 			if CHAR_TO_TILE.has(ch):
 				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(int(CHAR_TO_TILE[ch]), 0))
+
+## c20: регионы высоких prop-кадров атласа (строка 1). Layout — источник
+## tools_art/sheet_ashen_v1.gd::PROP_REGIONS; пин T18 сличает спрайты зоны с
+## layout инструмента (дрейфт рассинхронится пинами с обеих сторон).
+const PROP_REGIONS := {
+	"TREE1": Rect2(0, 16, 16, 24),
+	"TREE2": Rect2(16, 16, 16, 24),
+	"STUMP": Rect2(32, 16, 14, 12),
+	"LOG": Rect2(48, 16, 20, 10),
+}
+
+## c20: prop-слой поверх блокировщиков T/K/# (вердикт «берём»). Стоит ровно на
+## буквах блокировщиков (коллизии — по-прежнему от _build_walls, спрайты —
+## только картинка), чередование деревьев детерминировано чётностью x+y.
+func _build_props() -> void:
+	var layer := Node2D.new()
+	layer.name = "AshenPropV1"
+	add_child(layer)
+	var tex := load(TEX_PATH)
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in map_w:
+			var ch := row[x]
+			if not CHAR_TO_TILE.has(ch):
+				continue
+			var idx := int(CHAR_TO_TILE[ch])
+			var nm := ""
+			if idx == 4:
+				nm = "TREE1" if (x + y) % 2 == 0 else "TREE2"
+			elif idx == 5:
+				nm = "STUMP"
+			elif idx == 6:
+				nm = "LOG"
+			else:
+				continue
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = PROP_REGIONS[nm]
+			var spr := Sprite2D.new()
+			spr.texture = at
+			var foot_y := float((y + 1) * TILE)
+			spr.position = Vector2(float(x * TILE) + TILE / 2.0, foot_y - at.region.size.y / 2.0)
+			# ASHEN_OFFSET.y кратен YS_CYCLE (world.gd) — локальная стопа == глобальной
+			spr.z_as_relative = false
+			spr.z_index = int(round(fposmod(foot_y, float(world.YS_CYCLE))))
+			layer.add_child(spr)
 
 ## Коллизии блокировщиков — полная клетка 16x16 (приём dungeon_zone.gd).
 func _build_walls() -> void:
@@ -268,12 +324,9 @@ class AshenChest:
 		zone = p_zone
 		uid = "chest@ashen:%d,%d" % [tile.x, tile.y]
 		position = zone.tile_to_world(tile)
-		if ResourceLoader.exists("res://assets/tiles.png"):
+		if ResourceLoader.exists(zone.TEX_PATH):
 			var spr := Sprite2D.new()
-			var at := AtlasTexture.new()
-			at.atlas = load("res://assets/tiles.png")
-			at.region = Rect2(10 * 16, 0, 16, 16)  # сундук — тайл 10, как в interactable.gd
-			spr.texture = at
+			spr.texture = zone._atlas(8)  # c20: свой кадр листа (слот 8), не лесной тайл 10
 			add_child(spr)
 		var cs := CollisionShape2D.new()
 		var sh := CircleShape2D.new()

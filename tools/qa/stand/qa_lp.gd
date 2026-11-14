@@ -125,6 +125,7 @@ func _ready() -> void:
 	await _t15()
 	await _t16()
 	await _t17()
+	await _t18()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2203,3 +2204,151 @@ func _t17() -> void:
 		"t17: мглокрыс — 2-фазный цикл от пути при движении (кадры %s, ходовых %d, сбоев %d)" \
 				% [str(seen_f.keys()), moving_n, bad_rf])
 	r.queue_free()
+
+## c20 «Пепелище v1 в игре» (вердикт «берём», лист sheet_ashen_v1 утверждён).
+## Аттлас assets/ashen_tiles.png == побайтовый bake генератора (полы 0–3 —
+## кадры листа, палитра 0 off); prop-слой «AshenPropV1» стоит ровно на
+## блокировщиках T/K/# (запрещённые pin-имена T6/T13 не заняты); сундук — свой
+## кадр (слот 8), портал — слот 7 (деревенский вход синхронен тем же атласом);
+## self_modulate земли убран (тон в листе); тинты мобов — как были (перекраска c22).
+## Честный RED на голом HEAD: легаси-аттлас вне палитры, bake_atlas нет,
+## prop-слоя нет, сундук лесной, self_modulate висит.
+func _t18() -> void:
+	var AZ = load("res://scripts/ashen_zone.gd")
+	var azm: Dictionary = AZ.get_script_constant_map()
+	var SH = load("res://tools_art/sheet_ashen_v1.gd")
+	chk(SH != null, "t20: лист-инструмент tools_art/sheet_ashen_v1.gd в репо")
+	var has_bake := false
+	if SH != null:
+		for mi in SH.get_script_method_list():
+			if String(mi.get("name", "")) == "bake_atlas":
+				has_bake = true
+	chk(has_bake, "t20: у инструмента есть статический bake_atlas — единственный источник атласа (голо-HEAD: RED)")
+	var az = world.ashen_grid
+	# 1) байты атласа == генератор (raw RGBA, без пересчёта палитры)
+	var fb := FileAccess.get_file_as_bytes("res://assets/ashen_tiles.png")
+	var fi := Image.new()
+	var ferr := fi.load_png_from_buffer(fb)
+	var raw_match := false
+	if has_bake and ferr == OK:
+		var baked: Image = SH.bake_atlas()
+		raw_match = baked != null and baked.get_data() == fi.get_data()
+	chk(raw_match, "t20: assets/ashen_tiles.png == bake_atlas() побайтово (raw RGBA)")
+	# 2) новый пин контракта: палитра 0 off для регионов пола 0–3 (легаси: все 1024)
+	var off03 := 0
+	if ferr == OK:
+		var cidx: Dictionary = PAL.color_index()
+		var lim := mini(64, fi.get_width())
+		for y in mini(16, fi.get_height()):
+			for x in lim:
+				var col := fi.get_pixel(x, y)
+				if col.a > 0.5 and not cidx.has(PAL.key(col)):
+					off03 += 1
+	chk(off03 == 0, "t20: палитра PixelPalette: 0 off-пикселей в регионах 0–3 (легаси давал 1024, получено %d)" % off03)
+	# 3) алфавит grid и коллайдеры — байтово заморожены (grid и GOLDEN-ASHEN-PIN не тронуты)
+	chk(azm.get("CHAR_TO_TILE") == {".": 0, ",": 1, "c": 2, "a": 3, "T": 4, "K": 5, "#": 6, "P": 7} \
+			and azm.get("BLOCKING") == [4, 5, 6] \
+			and azm.get("ASHEN_BLOCK_SHAPES") == {5: [10, 8, 0, 3]},
+			"t20: CHAR_TO_TILE/BLOCKING/форма пня — байтово заморожены (блокировщики T/K/# на местах)")
+	# 4) prop-слой: разрешённое имя; стоит ровно на T/K/#; регионы — layout инструмента
+	var layer = az.get_node_or_null("AshenPropV1")
+	chk(layer != null and az.get_node_or_null("AshenFloorPaint") == null \
+			and az.get_node_or_null("Env4AshenProps") == null \
+			and world.ashen_zone.get_node_or_null("AshenFloorPaint") == null \
+			and world.ashen_zone.get_node_or_null("Env4AshenProps") == null,
+			"t20: prop-слой AshenPropV1 есть; запрещённые pin-имена (T6/T13) не заняты")
+	var exp := {}
+	var n_block := 0
+	var ctm: Dictionary = azm.get("CHAR_TO_TILE", {})
+	for y in int(az.map_h):
+		var row := String(az.map_rows[y])
+		for x in int(az.map_w):
+			var idx := int(ctm.get(String(row[x]), -1))
+			if idx == 4:
+				exp[Vector2i(x, y)] = "TREE1" if (x + y) % 2 == 0 else "TREE2"
+				n_block += 1
+			elif idx == 5:
+				exp[Vector2i(x, y)] = "STUMP"
+				n_block += 1
+			elif idx == 6:
+				exp[Vector2i(x, y)] = "LOG"
+				n_block += 1
+	var regs: Dictionary = {}
+	if SH != null:
+		regs = SH.get_script_constant_map().get("PROP_REGIONS", {})
+	var got := {}
+	var bad_pos := 0
+	var bad_z := 0
+	if layer != null:
+		for n in layer.get_children():
+			var spr := n as Sprite2D
+			if spr == null or not (spr.texture is AtlasTexture):
+				bad_pos += 1
+				continue
+			var reg: Rect2 = (spr.texture as AtlasTexture).region
+			var foot := spr.position.y + reg.size.y / 2.0
+			var keyv := Vector2i(int(round(spr.position.x / 16.0)) - 1, int(round(foot / 16.0)) - 1)
+			if not exp.has(keyv):
+				bad_pos += 1
+				continue
+			var want_nm := String(exp[keyv])
+			if not regs.has(want_nm) or regs[want_nm] != reg:
+				bad_pos += 1
+			got[keyv] = true
+			if spr.z_as_relative or spr.z_index != int(round(fposmod(foot, 4800.0))):
+				bad_z += 1
+	chk(layer != null and got.size() == n_block and bad_pos == 0,
+			"t20: prop-слой стоит ровно на клетках T/K/# (блокировщиков %d, спрайтов %d, несоответствий %d)" \
+			% [n_block, got.size(), bad_pos])
+	chk(layer != null and bad_z == 0,
+			"t20: стопы спрайтов — низ клетки, z-сортировка fposmod(стопа, 4800) как у актёров (сбоев %d)" % bad_z)
+	chk(regs.size() == 4,
+			"t20: layout инструмента PROP_REGIONS (4 региона) запинен и используется зоной (регионов %d)" % regs.size())
+	# 5) тон листа: self_modulate земли убран
+	var tm = az.get("tilemap")
+	chk(tm != null and (tm as CanvasItem).self_modulate == Color.WHITE,
+			"t20: self_modulate земли убран — тон делает лист (голо-HEAD: RED)")
+	# 6) сундук/портал — свои кадры ashen_v1; вход в деревне синхронен атласом
+	var chest = az.get("chest_node")
+	var chest_ok := false
+	if chest != null:
+		for n in (chest as Node).get_children():
+			var spr := n as Sprite2D
+			if spr != null and spr.texture is AtlasTexture:
+				var at := spr.texture as AtlasTexture
+				chest_ok = String((at.atlas as Resource).resource_path).ends_with("ashen_tiles.png") \
+						and at.region == Rect2(8 * 16, 0, 16, 16)
+	chk(chest_ok, "t20: сундук — свой кадр ashen_v1 (слот 8); uid/награда/флаг не тронуты (голо-HEAD: RED)")
+	var portal = az.get("portal_node")
+	var portal_ok := false
+	if portal != null:
+		for n in (portal as Node).get_children():
+			var spr := n as Sprite2D
+			if spr != null and spr.texture is AtlasTexture:
+				var at := spr.texture as AtlasTexture
+				portal_ok = String((at.atlas as Resource).resource_path).ends_with("ashen_tiles.png") \
+						and at.region == Rect2(7 * 16, 0, 16, 16)
+	var gate_ok := false
+	var vstack: Array = [world.village_zone]
+	while not vstack.is_empty():
+		var nd: Node = vstack.pop_back()
+		for c in nd.get_children():
+			vstack.append(c)
+			var spr := c as Sprite2D
+			if spr != null and spr.texture is AtlasTexture \
+					and String(((spr.texture as AtlasTexture).atlas as Resource).resource_path).ends_with("ashen_tiles.png"):
+				gate_ok = (spr.texture as AtlasTexture).region == Rect2(7 * 16, 0, 16, 16)
+	chk(portal_ok and gate_ok,
+			"t20: портал — слот 7 листа; вход в деревне (world.gd, AshenGate) синхронен тем же атласом")
+	# 7) тинты мобов зоны — как были (перекраска наполнения — c22)
+	var tint_arch := false
+	var tint_rat := false
+	for n in az.get_children():
+		if n.get_script() != null:
+			var rp := String((n.get_script() as Resource).resource_path)
+			if rp.ends_with("mob_archer.gd") and (n as CanvasItem).self_modulate != Color.WHITE:
+				tint_arch = true
+			if rp.ends_with("mob_swarmling.gd") and (n as CanvasItem).self_modulate != Color.WHITE:
+				tint_rat = true
+	chk(tint_arch and tint_rat,
+			"t20: modulate-тинты мобов зоны оставлены как есть (лесные листы; перекраска — c22)")
