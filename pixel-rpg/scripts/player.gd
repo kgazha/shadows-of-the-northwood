@@ -23,6 +23,19 @@ const EXEC_HEAL := 3           # «Казнь» добивила цель: +HP �
 # контент-стопы 16px-кадра (+5) задаёт сама картинка.
 const VISUAL_SCALE := 1.0
 const ANIM_HOME := Vector2.ZERO
+# --- c19 «цикл ходьбы v1» (вердикт «добавляем», лист sheet_walk_v1) ---
+# Кадр ходьбы — от ПРОЙДЕННОГО ПУТИ, не от времени: шаг «приклеен» к земле,
+# не скользит и не зависит от частоты кадров. WALK_SEQ — порядок колонок
+# hero.png (0 стойка, 1 шаг левой, 2 шаг правой): было [0,1,0,2], стало
+# [1,0,2,0] — стойка стала проходной фазой между шагами, и на ОБЕИХ проходных
+# фазах (позиции 1 и 3) герой поднимается на 1 px (WALK_BOB). Фаза =
+# floor(путь/PX_PER_PHASE); 7 px при
+# базовых 55 px/с — тот же темп 8 fps, что был. Кувырок/рывок — старая
+# временная анимация (autoplay), контракт покоя: кадр стойки, bob=0.
+const WALK_SEQ := [1, 0, 2, 0]
+const WALK_BOB := [0, -1, 0, -1]
+const PX_PER_PHASE := 7.0
+const WALK_IDLE_FR := 1  # кадр стойки в новом порядке (колонка 0 = прежний кадр 0)
 # t52 снос (закон пользователя 13.11): ген-герой art_gen снят — герой снова
 # рисуется пиксельным листом класса (player.png-канон), код-арт без картинок gen.
 
@@ -31,6 +44,7 @@ var head_y := -8.0  # линия макушки 16px-героя (искры/ци
 
 var anim: AnimatedSprite2D
 var facing := "down"
+var walk_dist := 0.0  # c19: пройденный путь, px; фаза производна от него, НЕ сериализуется
 var attack_cd := 0.0
 var hurt_cd := 0.0
 var _flash_t := 0.0
@@ -113,8 +127,8 @@ func _build_frames(tex: Texture2D) -> void:
 	for dir_name in rows:
 		fr.add_animation(dir_name)
 		fr.set_animation_loop(dir_name, true)
-		fr.set_animation_speed(dir_name, 8.0)
-		for col in [0, 1, 0, 2]:
+		fr.set_animation_speed(dir_name, 8.0)  # автоиграет только кувырок/рывок (c19)
+		for col in WALK_SEQ:  # c19: порядок кадров = цикл [1,0,2,0] (колонки hero.png)
 			var at := AtlasTexture.new()
 			at.atlas = tex
 			at.region = Rect2(col * 16, rows[dir_name] * 16, 16, 16)
@@ -187,7 +201,7 @@ func _physics_process(delta: float) -> void:
 	velocity *= 1.0 + 0.01 * float(GameState.mb_value("ash_step"))
 	if velocity != Vector2.ZERO:
 		_set_facing_from(velocity)
-		_play_walk()
+		_walk_tick(delta)
 		_step_tick(delta)
 	else:
 		_step_t = 0.0  # встал — следующий шаг зазвучит сразу, не «доедет» по таймеру
@@ -195,7 +209,8 @@ func _physics_process(delta: float) -> void:
 		face_to(world.get_global_mouse_position())
 		if anim.animation != facing:
 			anim.play(facing)
-		anim.frame = 0
+		anim.frame = WALK_IDLE_FR  # кадр стойки (колонка 0) — вид как до c19
+		anim.offset = Vector2.ZERO
 		anim.pause()
 	var pre_pos := global_position
 	var pre_vel := velocity  # move_and_slide обнуляет упирающуюся компоненту — бережём намерение
@@ -252,8 +267,24 @@ func _set_facing_from(v: Vector2) -> void:
 		facing = "down" if v.y > 0 else "up"
 
 ## Ход: прежний листовой канон (4 направления, 3 кадра).
+## Автоигра кадров — только кувырок/рывок (c19: WASD-ход перешёл на _walk_tick).
 func _play_walk() -> void:
 	anim.play(facing)
+
+## c19 «цикл ходьбы v1»: кадр — от пройденного пути (WALK_SEQ), проходные
+## фазы (стойка между шагами) поднимают спрайт на 1 px (WALK_BOB). Автоигра
+## выключена (pause): фаза производна от пути, поэтому шаг не скользит при
+## упоре в стену и не зависит от частоты кадров. walk_dist не сериализуется:
+## после загрузки фаза продолжается от нового пути, а не из сейва.
+func _walk_tick(delta: float) -> void:
+	if anim.animation != facing:
+		anim.play(facing)
+	anim.pause()
+	walk_dist += velocity.length() * delta
+	var ph := int(walk_dist / PX_PER_PHASE) % WALK_SEQ.size()
+	if anim.frame != ph:
+		anim.frame = ph
+	anim.offset.y = float(WALK_BOB[ph])
 
 ## Шаг: два сэмпла попеременно, лёгкий разброс темпа и высоты — не «швейная машинка».
 func _step_tick(delta: float) -> void:
@@ -275,6 +306,7 @@ func start_roll(mv: Vector2) -> void:
 	_ring_fx(12.0, Color(0.75, 0.65, 0.5, 0.5))
 	Fx.dust(global_position + roll_dir * 4.0, world)
 	anim.modulate.a = 0.75
+	anim.offset = Vector2.ZERO  # c19: кувырок стартует без bob проходной фазы
 	_ghost_t = 0.0
 
 ## t18 «сочность»: призрачный шлейф рывка — затухающие силуэты текущего кадра.

@@ -124,6 +124,7 @@ func _ready() -> void:
 	await _t14()
 	await _t15()
 	await _t16()
+	await _t17()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -748,7 +749,8 @@ func _t10() -> void:
 # t52 «план сноса» (закон пользователя 13.11): весь qwen-image ген-арт (assets/art/:
 # герой-листы, бестиарий, роща, деревня, env4, полы) снят с игры. Актёры — ручные
 # пиксельные листы (t51, мир 16 px): герой — лист класса class_warrior.png
-# (48×64: кадры 16 px, ряды down/left/right/up, колонки [0,1,0,2], 4 кадра/аним),
+# (48×64: кадры 16 px, ряды down/left/right/up, 4 кадра/аним; с c19 порядок
+# кадров цикла [1,0,2,0] — колонки те же 0/1/2 листа class_warrior.png),
 # слизень — slime.png (2 кадра bob), мглокрыс/лучник — mobs_swarmling/mobs_archer.png
 # ({idle,walk,act}_{dirs}, idle 2 кадра), гнидень/Гром/Ведьма — brute.png
 # (32 px кадры × TIERS.scale; Ведьма ×1.12). Фильтры — INHERITED (проектный
@@ -795,7 +797,10 @@ func _t11() -> void:
 			"T11: герой — AtlasTexture листа class_warrior.png")
 		var row_of := {"down": 0, "left": 1, "right": 2, "up": 3}
 		var reg_ok := true
-		var cols := [0, 1, 0, 2]
+		# c19 (вердикт «добавляем цикл ходьбы», лист sheet_walk_v1): порядок
+		# кадров цикла [0,1,0,2] -> [1,0,2,0]; сами regions 16 px по рядам
+		# листа — как пинились.
+		var cols := [1, 0, 2, 0]
 		for dir_name: String in row_of.keys():
 			if not pa.sprite_frames.has_animation(dir_name) \
 					or pa.sprite_frames.get_frame_count(dir_name) != 4 \
@@ -2080,3 +2085,121 @@ func _t16_torch_slots(rows: Array, chest: Vector2i, spawn: Vector2i,
 			out.append(m)
 			break
 	return out
+
+# ------------------------------------------------------------------ T17 (c19)
+
+## c19 «цикл ходьбы в игре» (вердикт «добавляем», лист sheet_walk_v1 утверждён).
+## Фазы кадра — от пройденного пути, НЕ от времени; покой = стойка; мглокрыс —
+## 2-фазный цикл. На голом HEAD честный RED: констант WALK_SEQ/WALK_BOB/
+## PX_PER_PHASE/RAT_PX_PER_PHASE нет в скриптах (get_script_constant_map).
+func _t17() -> void:
+	var p = world.player
+	if p == null:
+		chk(false, "t17: героя нет в мире")
+		return
+	var pcm: Dictionary = p.get_script().get_script_constant_map()
+	var has_hero: bool = pcm.has("WALK_SEQ") and pcm.has("WALK_BOB") \
+			and pcm.has("PX_PER_PHASE")
+	chk(has_hero, "t17: у героя есть константы WALK_SEQ/WALK_BOB/PX_PER_PHASE (на голом HEAD — RED)")
+	var SR = load("res://scripts/mob_swarmling.gd")
+	var scm: Dictionary = SR.get_script_constant_map()
+	var has_rat: bool = scm.has("RAT_PX_PER_PHASE")
+	chk(has_rat, "t17: у мглокрыса есть константа RAT_PX_PER_PHASE (на голом HEAD — RED)")
+	if not (has_hero and has_rat):
+		return
+	var seq: Array = pcm["WALK_SEQ"]
+	var bob: Array = pcm["WALK_BOB"]
+	var ppx := float(pcm["PX_PER_PHASE"])
+	chk(seq == [1, 0, 2, 0] and bob == [0, -1, 0, -1] and absf(ppx - 7.0) < 0.001,
+		"t17: договор констант: [1,0,2,0] / bob [0,-1,0,-1] (оба прохода) / 7 px (получено %s %s %.2f)" \
+				% [str(seq), str(bob), ppx])
+	world.apply_area("village", true)
+	await _frames(8)
+	var anim: AnimatedSprite2D = p.get("anim")
+	if anim == null:
+		chk(false, "t17: у героя нет анимации")
+		return
+	# покой: стойка (колонка 0 hero.png) без bob — тот же кадр, что до интеграции
+	var f0: Texture2D = anim.sprite_frames.get_frame_texture(anim.animation, int(anim.frame))
+	chk(f0 is AtlasTexture and int((f0 as AtlasTexture).region.position.x) == 0 \
+			and anim.offset == Vector2.ZERO,
+		"t17: покой = кадр стойки (колонка 0) без смещения — вид не изменился")
+	# бег на месте (стена справа не мешает: фаза от намерения-скорости, как в сговоре)
+	GameState.hp = 999
+	Input.action_press("move_right")
+	var seen_phase := {}
+	var bad_frame := 0
+	var bad_bob := 0
+	var trans_d: Array = []
+	var prev_ph := -1
+	for i in 150:
+		await get_tree().physics_frame
+		var wd := float(p.get("walk_dist"))
+		var ph := int(wd / ppx) % 4
+		var ft: Texture2D = anim.sprite_frames.get_frame_texture(anim.animation, int(anim.frame))
+		if not (ft is AtlasTexture) \
+				or int((ft as AtlasTexture).region.position.x) != int(seq[ph]) * 16:
+			bad_frame += 1
+		if int(anim.offset.y) != int(bob[ph]):
+			bad_bob += 1
+		seen_phase[ph] = true
+		if ph != prev_ph:
+			trans_d.append(wd)
+			prev_ph = ph
+	Input.action_release("move_right")
+	chk(bad_frame == 0,
+		"t17: кадр при ходьбе = WALK_SEQ[floor(путь/7)] (кадров-несоответствий %d)" % bad_frame)
+	chk(bad_bob == 0,
+		"t17: bob = WALK_BOB[по фазе] (−1 px на проходных фазах) (несоответствий %d)" % bad_bob)
+	chk(seen_phase.size() == 4,
+		"t17: полный цикл [1,0,2,0] пройден за 150 кадров (фаз %d)" % seen_phase.size())
+	var step_bad := 0
+	for i in range(1, trans_d.size()):
+		if absf(float(trans_d[i]) - float(trans_d[i - 1]) - ppx) > 1.5:
+			step_bad += 1
+	chk(trans_d.size() >= 5 and step_bad == 0,
+		"t17: смена фазы ровно каждые ~7 px пути (смен %d, сбоев %d)" % [trans_d.size(), step_bad])
+	# покой снова стойка, bob обнулён
+	await _frames(3)
+	var f1: Texture2D = anim.sprite_frames.get_frame_texture(anim.animation, int(anim.frame))
+	chk(f1 is AtlasTexture and int((f1 as AtlasTexture).region.position.x) == 0 \
+			and anim.offset == Vector2.ZERO,
+		"t17: встал — снова кадр стойки, bob вернулся в 0")
+	# сговор о персисте: фаза — производная пути, в сейв не попадает
+	if GameState.save_game():
+		var fa := FileAccess.open(SAVE_PATH, FileAccess.READ)
+		var txt := fa.get_as_text()
+		chk(not txt.contains("walk_dist") and not txt.contains("\"phase\""),
+				"t17: в сейве нет walk_dist/phase — загрузка не ломает фазу (она от пути)")
+	else:
+		chk(false, "t17: save_game() не смог записаться")
+	# мглокрыс: свой экземпляр рядом с героем (погоня — детерминированный ход)
+	var r = SR.new()
+	world.village_zone.add_child(r)
+	var hp_t := Vector2i(
+		int(floor((p.global_position.x - world.village_zone.global_position.x) / 16.0)),
+		int(floor((p.global_position.y - world.village_zone.global_position.y) / 16.0)))
+	r.setup(world, hp_t + Vector2i(2, 0))
+	await _frames(2)
+	var rppx := float(scm["RAT_PX_PER_PHASE"])
+	var seen_f := {}
+	var bad_rf := 0
+	var moving_n := 0
+	for i in 90:
+		await get_tree().physics_frame
+		var ra: AnimatedSprite2D = r.get("anim")
+		if ra == null:
+			continue
+		var an := String(ra.animation)
+		if an.begins_with("walk"):
+			moving_n += 1
+			var rph := int(float(r.get("walk_dist")) / rppx) % 2
+			if int(ra.frame) != rph:
+				bad_rf += 1
+			seen_f[int(ra.frame)] = true
+		elif an.begins_with("idle") and r.velocity.length_squared() > 1.0:
+			bad_rf += 1  # едет, а стоит в idle — несогласовано
+	chk(moving_n > 20 and bad_rf == 0 and seen_f.size() == 2,
+		"t17: мглокрыс — 2-фазный цикл от пути при движении (кадры %s, ходовых %d, сбоев %d)" \
+				% [str(seen_f.keys()), moving_n, bad_rf])
+	r.queue_free()

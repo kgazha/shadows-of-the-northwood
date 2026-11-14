@@ -11,6 +11,10 @@ const HIT_DIST := 8.0
 const SPEED_CHASE := 54.0     # быстрее слайма: мелкий и юркий
 const SPEED_FLEE := 66.0      # испуганная крыса почти не догоняема
 const SPEED_WANDER := 14.0
+# c19 «поступь мглокрыса» (вердикт «добавляем», лист sheet_walk_v1): двухфазный
+# цикл ходьбы от пройденного пути, как у героя, — кадра walk (колонки 0/1)
+# переключаются каждые ~5 px, а не по таймеру. Покой/укус — прежние кадры.
+const RAT_PX_PER_PHASE := 5.0
 const FLEE_RADIUS := 128.0    # отбежал на это расстояние — стая растворилась в тумане
 ## t44 «анти-залипание»: свип t43 (48 углов × 2 тайла) показал геометрические карманы
 ## поляны — углы вблизи 0/90/180/270° (7 из 48) не достигают FLEE_RADIUS НИКОГДА
@@ -48,6 +52,7 @@ var dying := false            # страж повторной смерти: XP �
 var swarm_left := false       # крыса покинула стайный учёт ровно один раз (смерть XOR бегство)
 var flee_best := 0.0          # t44: макс. удаление от дома за текущий бег (якорь = FLEE_RADIUS)
 var flee_stall := 0.0         # t44: секунды с последней прибавки к этому рекорду
+var walk_dist := 0.0          # c19: пройденный путь, px; фаза кадра производна от него
 var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
@@ -152,7 +157,7 @@ func _physics_process(delta: float) -> void:
 		velocity = flee_dir * SPEED_FLEE
 		move_and_slide()
 		_face(flee_dir)
-		_anim()
+		_anim(delta)
 		# t44 «анти-залипание»: прогресс бегства = новый максимум удаления от дома
 		# (тот же якорь, что у FLEE_RADIUS и LEASH-блуждания t39). Карманная крыса,
 		# упирающаяся в стену, рекордов не ставит → счётчик растёт. Заморозка и
@@ -193,7 +198,7 @@ func _physics_process(delta: float) -> void:
 			wander_dir = (home - global_position).normalized()
 		velocity = wander_dir * SPEED_WANDER
 	_face(player.global_position - global_position if d < LEASH else velocity)
-	_anim()
+	_anim(delta)
 	move_and_slide()
 	_push_from_hero()  # «стенка без пиления»: упор герой<->крыса больше не дребезжит камерой
 
@@ -231,13 +236,20 @@ func _face(dvec: Vector2) -> void:
 	else:
 		facing = "up" if dvec.y < 0.0 else "down"
 
-func _anim() -> void:
+func _anim(delta: float) -> void:
 	if anim == null or not anim.sprite_frames.has_animation("idle_down"):
 		return
 	var want := "act" if bit_t > 0.0 else ("walk" if velocity.length_squared() > 1.0 else "idle")
 	var an := "%s_%s" % [want, facing]
 	if anim.animation != an:
 		anim.play(an)
+	if want == "walk":
+		# c19: фаза от пройденного пути, не от времени (шаг не скользит)
+		walk_dist += velocity.length() * delta
+		anim.pause()
+		var fr := int(walk_dist / RAT_PX_PER_PHASE) % 2
+		if anim.frame != fr:
+			anim.frame = fr
 
 func hurt(dmg: int, from: Vector2) -> void:
 	if dying:
