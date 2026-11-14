@@ -151,6 +151,7 @@ func _build_props_all() -> Array:
 		["STALC1", "C1", "0.5H"], ["STALC2", "C2", "0.75H"], ["STALC3", "C3", "1.2H"],
 		["STALAG1", "G1", "0.5H"], ["STALAG2", "G2", "0.75H"], ["STALAG3", "G3", "1.2H"],
 		["TORCH1", "TRH1", "~0.6H"], ["TORCH2", "TRH2", "~0.6H"],
+		["STAIRS", "STR", "~1.5H"],
 	]
 	var out: Array = []
 	for m in meta:

@@ -340,7 +340,16 @@ class ExitStairs:
 	func setup(p_zone, tile: Vector2i) -> void:
 		zone = p_zone
 		position = zone.tile_to_world(tile)
-		if ResourceLoader.exists("res://assets/dungeon_tiles.png"):
+		if CaveArt.REGIONS.has("STAIRS") and ResourceLoader.exists(CaveArt.ATLAS_PATH):
+			# c12: та же канон-арка входа, что и в деревне (обратная сторона);
+			# стопа на нижней границе клетки (+2 смещение tile_to_world → -6),
+			# z V-01. Легаси dungeon_tiles.png — только фолбэк без v1-арта.
+			var spr := Sprite2D.new()
+			spr.texture = CaveArt.region_texture("STAIRS")
+			spr.position = Vector2(0.0, -6.0)
+			add_child(spr)
+			zone.world._ys_prop(spr)
+		elif ResourceLoader.exists("res://assets/dungeon_tiles.png"):
 			var spr := Sprite2D.new()
 			spr.texture = zone._atlas(5)
 			add_child(spr)

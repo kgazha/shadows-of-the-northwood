@@ -1508,7 +1508,7 @@ func _t16() -> void:
 		var bb := _t16_bbox(crop)
 		if bb != Rect2i(0, 0, crop.get_width(), crop.get_height()):
 			bad_tight += 1
-		if String(k) in ["ALTAR", "CHEST", "STALAG1", "STALAG2", "STALAG3"]:
+		if String(k) in ["ALTAR", "CHEST", "STALAG1", "STALAG2", "STALAG3", "STAIRS"]:
 			var last := crop.get_height() - 1
 			var seen := 0
 			for x in crop.get_width():
@@ -1920,6 +1920,68 @@ func _t16() -> void:
 		if not ysd.has(m["spr"]):
 			dim_free += 1
 	chk(dim_free == motes.size(), "t16: пылинки вне реестра дима (%d)" % dim_free)
+	# 12) c12 арка входа (вердикт «вся графика в едином стиле»): канонный кадр
+	#     STAIRS с обеих сторон двери вместо легаси-кадра dungeon_tiles.png
+	if not CA.REGIONS.has("STAIRS"):
+		chk(false, "t12: c12 — арка STAIRS не в REGIONS (поставка не на месте)")
+		return
+	var sr: Rect2 = CA.REGIONS["STAIRS"]
+	var arch_px := 0
+	var arch_pal := 0
+	for y in int(sr.size.y):
+		for x in int(sr.size.x):
+			var ac := pimg.get_pixel(int(sr.position.x) + x, int(sr.position.y) + y)
+			if ac.a > 0.5:
+				arch_px += 1
+				if idxm.has(PAL.key(ac)):
+					arch_pal += 1
+	chk(sr.size == Vector2(16, 24) and arch_px > 100 and arch_pal == arch_px,
+			"t12: арка 16×24 в атласе и строго из палитры (%d/%d px)" % [arch_pal, arch_px])
+	# обе зоны: ровно две арки, ни одного спрайта на легаси-листе dungeon_tiles
+	var legacy_tex := load("res://assets/dungeon_tiles.png")
+	var stacks: Array = [world.village_zone, world.cave_zone]
+	var arches: Array = []
+	var legacy_n := 0
+	while not stacks.is_empty():
+		var nd: Node = stacks.pop_back()
+		if nd is Sprite2D:
+			var tx: Texture2D = (nd as Sprite2D).texture
+			if tx is AtlasTexture and (tx as AtlasTexture).region == CA.REGIONS["STAIRS"]:
+				arches.append(nd)
+			elif tx != null and (tx == legacy_tex \
+					or (tx is AtlasTexture and (tx as AtlasTexture).atlas == legacy_tex)):
+				legacy_n += 1
+		for chd in nd.get_children():
+			stacks.append(chd)
+	chk(legacy_n == 0,
+			"t12: легаси-спрайтов dungeon_tiles в зонах деревни/пещеры нет (%d)" % legacy_n)
+	# геометрия: стопа на нижней границе клетки якоря, центр по x, z — V-01
+	var st: Array = dz.loaded_map.get("stairs_out", [])
+	var et := Vector2i(40, 17) # CAVE_ENTRANCE_TILE из world.gd — закреплённая копия
+	var v_or: Vector2 = world.village_zone.global_position
+	var cave_arch: Sprite2D = null
+	var vil_arch: Sprite2D = null
+	for a2 in arches:
+		var s2a := a2 as Sprite2D
+		var rr2 := _t15_rect(s2a)
+		if absf(rr2.end.y - (origin.y + float(int(st[1]) + 1) * 16.0)) < 0.6 \
+				and absf(rr2.get_center().x - (origin.x + (float(int(st[0])) + 0.5) * 16.0)) < 0.6:
+			cave_arch = s2a
+		elif absf(rr2.end.y - (v_or.y + float(et.y + 1) * 16.0)) < 0.6 \
+				and absf(rr2.get_center().x - (v_or.x + (float(et.x) + 0.5) * 16.0)) < 0.6:
+			vil_arch = s2a
+	var z_ok := 0
+	for a3 in [cave_arch, vil_arch]:
+		if a3 == null:
+			continue
+		if (a3 as Sprite2D).z_index == int(round(fposmod(_t15_rect(a3).end.y, WS.YS_CYCLE))):
+			z_ok += 1
+	chk(arches.size() == 2 and cave_arch != null and vil_arch != null and z_ok == 2,
+			"t12: арки с обеих сторон двери — стопа на границе клетки, z V-01 (%d/2)" % z_ok)
+	# геймплей под арками не тронут: клетки входа/выхода проходимы
+	chk(bool(world.call("_village_walkable", et)) \
+			and bool(dz.cell_walkable(Vector2i(int(st[0]), int(st[1])))),
+			"t12: клетки под арками проходимы — проход открыт (двери не тронуты)")
 
 
 ## Независимое зеркало расстановки факелов (тот же контракт: якоря сундук/вход/

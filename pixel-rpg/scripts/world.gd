@@ -528,7 +528,7 @@ static func _rg_chest_protect(grid: Array, walk: String) -> Dictionary:
 						prot[_rg_key(cx + int(d[0]), cy + int(d[1]))] = true
 	return prot
 
-## Выемкаdig-символов в прямоугольнике x±hw, y−up..y+down; ранг и защита — табу.
+## Выемка dig-символов в прямоугольнике x±hw, y−up..y+down; ранг и защита — табу.
 static func _rg_hall(grid: Array, cx: int, cy: int, hw: int, up: int, down: int,
 		dig: String, prot: Dictionary) -> void:
 	var h := grid.size()
@@ -1502,7 +1502,19 @@ class CaveStairs:
 	func setup(p_world: Node2D, tile: Vector2i) -> void:
 		world = p_world
 		position = world.tile_to_world(tile)
-		if ResourceLoader.exists("res://assets/dungeon_tiles.png"):
+		if CaveArt.REGIONS.has("STAIRS") and ResourceLoader.exists(CaveArt.ATLAS_PATH):
+			# c12 вердикт «вход в подземелье не каноничный»: арка — кодоген-кадр
+			# STAIRS (16×24 ~1.5H) из cave_props_v1.png, та же, что и на обратной
+			# стороне входа в пещере. Легаси-спрайт dungeon_tiles.png (кадр 5,
+			# 218 вне-палитрных цветов на кадр) остаётся только фолбэком.
+			# Стопа — нижняя граница клетки: нода на tile_to_world (+2 смещение),
+			# центр кадра на -6 локально; z — общая шкала V-01 от стопы.
+			var spr := Sprite2D.new()
+			spr.texture = CaveArt.region_texture("STAIRS")
+			spr.position = Vector2(0.0, -6.0)
+			add_child(spr)
+			world._ys_prop(spr)
+		elif ResourceLoader.exists("res://assets/dungeon_tiles.png"):
 			var spr := Sprite2D.new()
 			var at := AtlasTexture.new()
 			at.atlas = load("res://assets/dungeon_tiles.png")

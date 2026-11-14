@@ -795,6 +795,83 @@ static func build_torch_2() -> Image:
 	return img
 
 
+## Вход в подземелье (c12, вердикт «вход не каноничный»): арка 16×24 (~1.5H).
+## Каменный портал CAVE_ROCK с деревянной перемычкой и ступенями WOOD,
+## уходящими в темноту (проём — OUTLINE-«бездна»); мох MOSS_GLOW на СЗ.
+## Кадр рисуется сразу по силуэту (alpha-trim — тождество), стопа на нижней
+## границе. Одна и та же арка ставится с обеих сторон входа: в деревне
+## (world.CaveStairs) и в пещере (dungeon_zone.ExitStairs) — легаси-спрайт
+## dungeon_tiles.png кадр 5 (990 вне-палитрных цветов) снят.
+static func build_stairs() -> Image:
+	var img := im(16, 24)
+	var rk := "CAVE_ROCK"
+	# навершие арки y0..1 (канон даст LIGHT по СЗ-кромкам)
+	for x in range(2, 14):
+		px(img, x, 0, C(rk, P.T_MID))
+	for x in range(1, 15):
+		px(img, x, 1, C(rk, P.T_MID))
+	# пояс y2 — камень целиком; y3 — камень + деревянная перемычка проёма
+	for x in 16:
+		px(img, x, 2, C(rk, P.T_MID))
+	for x in range(0, 4):
+		px(img, x, 3, C(rk, P.T_MID))
+	for x in range(12, 16):
+		px(img, x, 3, C(rk, P.T_MID))
+	for x in range(4, 12):
+		px(img, x, 3, C("WOOD", P.T_MID))
+	px(img, 6, 3, C("WOOD", P.T_DARK))
+	px(img, 9, 3, C("WOOD", P.T_DARK))
+	# тень под перемычкой y4
+	for x in range(4, 12):
+		px(img, x, 4, C(rk, P.T_DARK))
+	# боковые пилоны y4..20: кладка со швами; внутренняя кромка проёма
+	for y in range(4, 21):
+		for x in range(0, 4):
+			px(img, x, y, C(rk, P.T_MID))
+		for x in range(12, 16):
+			px(img, x, y, C(rk, P.T_MID))
+	for yy in [8, 13]:
+		for xx in [1, 2, 13, 14]:
+			px(img, xx, yy, C(rk, P.T_DARK))
+	for y in range(5, 19):
+		px(img, 4, y, C(rk, P.T_MID))
+		px(img, 11, y, C(rk, P.T_DARK))
+	px(img, 4, 5, C(rk, P.T_LIGHT))
+	# проём-«бездна» x5..10 y5..14 (OUTLINE-тьма)
+	for y in range(5, 15):
+		for x in range(5, 11):
+			px(img, x, y, C(rk, P.T_OUTLINE))
+	# ступени, уходящие в темноту: дальняя (темнее) → ближняя
+	for y in [15, 16]:
+		for x in range(5, 11):
+			px(img, x, y, C("WOOD", P.T_DARK))
+	for x in range(5, 11):
+		px(img, x, 17, C("WOOD", P.T_MID))
+		px(img, x, 18, C("WOOD", P.T_DARK))
+	px(img, 5, 17, C("WOOD", P.T_LIGHT))
+	px(img, 6, 17, C("WOOD", P.T_LIGHT))
+	for x in range(4, 12):
+		px(img, x, 19, C("WOOD", P.T_MID))
+		px(img, x, 20, C("WOOD", P.T_DARK))
+	px(img, 4, 19, C("WOOD", P.T_LIGHT))
+	px(img, 5, 19, C("WOOD", P.T_LIGHT))
+	px(img, 6, 19, C("WOOD", P.T_LIGHT))
+	# ножной цоколь y21..23 (канон положит нижний ряд в OUTLINE)
+	for y in range(21, 24):
+		for x in 16:
+			px(img, x, y, C(rk, P.T_MID))
+	for x in range(5, 11):
+		px(img, x, 22, C(rk, P.T_DARK))
+	for x in range(0, 3):
+		px(img, x, 21, C(rk, P.T_LIGHT))
+	# мох СЗ-угла и юго-восточный акцент (зональная зелень пещеры)
+	px(img, 1, 2, C("MOSS_GLOW", P.T_LIGHT))
+	px(img, 2, 2, C("MOSS_GLOW", P.T_MID))
+	px(img, 1, 3, C("MOSS_GLOW", P.T_MID))
+	px(img, 13, 20, C("MOSS_GLOW", P.T_MID))
+	return img
+
+
 # ------------------------------------------------------------------ наборы
 ## Порядок тайлов пола в атласе cave_floor_v1 (индекс = слот).
 static func floor_tile_set() -> Array:
@@ -832,6 +909,7 @@ static func prop_set_canon() -> Array:
 		{"name": "STALAG1", "img": build_stalagmite_1()},
 		{"name": "TORCH1", "img": build_torch_1()},
 		{"name": "TORCH2", "img": build_torch_2()},
+		{"name": "STAIRS", "img": build_stairs()},
 	]
 	for s in props:
 		canon_pass(s["img"])

@@ -10,7 +10,8 @@ extends RefCounted
 ##   assets/cave/cave_props_v1.png — пропы (алтарь 13×25, сундук 26×13 ~0.8H
 ##                                   (вердикт c10 «сундук уменьши»),
 ##                                   сталактиты/сталагмиты 0.5/0.75/1.2H,
-##                                   факел 9×10 в 2 кадрах — c5).
+##                                   факел 9×10 в 2 кадрах — c5,
+##                                   арка входа 16×24 ~1.5H — c12).
 ## REGIONS — источник истины и для игры, и для bake-режима инструмента; кадры
 ## alpha-trim’лены до силуэта (аудит c2 F2), стопа на нижней границе кадра.
 ##
@@ -73,6 +74,9 @@ const REGIONS := {
 	"STALAG1": Rect2(114, 56, 9, 8),
 	"TORCH1": Rect2(0, 25, 9, 10),
 	"TORCH2": Rect2(10, 25, 9, 10),
+	# c12: арка входа в подземелье (16×24 ~1.5H) — верхняя полоса атласа;
+	# стопа кадра — нижняя граница региона (одна арка на обе стороны входа)
+	"STAIRS": Rect2(20, 1, 16, 24),
 }
 const ATLAS_SIZE := Vector2i(128, 64)
 const FLOOR_SIZE := Vector2i(64, 16)
@@ -179,6 +183,12 @@ static func have_art() -> bool:
 
 static func load_atlas() -> Texture2D:
 	return load(ATLAS_PATH)
+
+
+## Публичный доступ к канон-кадру региона (c12: арка входа ставится и в
+## деревне (world.CaveStairs), и в пещере (dungeon_zone.ExitStairs)).
+static func region_texture(key: String) -> AtlasTexture:
+	return _region(load_atlas(), key)
 
 
 static func _region(atlas: Texture2D, key: String) -> AtlasTexture:
