@@ -130,6 +130,7 @@ func _ready() -> void:
 	_t25()
 	_t27()
 	_t29()
+	_t30()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2842,8 +2843,81 @@ func _t29() -> void:
 		if fd < 0.12 or fl < 0.12:
 			rd_ok = false
 	chk(rd_ok, "c29: курсоры читаемы на CHAR_DARK/PARCHMENT_M, >=0.12 (dark/light %s)" % rd)
-	# --- alch_icons не тронута (побайтово == HEAD-золото) ---
+	# --- alch_icons: до c30 была побайтово == HEAD; вердиктом w2-alch удалена ---
+	# (рабочее дерево — волна до коммита; стад HEAD-архива до мержа держит легаси)
 	var al_bytes := FileAccess.get_file_as_bytes(pxr.path_join("assets/alch_icons.png"))
-	chk(not al_bytes.is_empty() \
-			and al_bytes == Marshalls.base64_to_raw(String(GOLD_C29["alch_icons.png"])),
-		"c29: alch_icons.png побайтово == HEAD (не тронута)")
+	chk(al_bytes.is_empty(),
+		"c29/c30: alch_icons.png не в дереве (до c30 == HEAD-золото; удалена вердиктом колбы)")
+
+## c30 «алхимия в игре» (вердикт «третий вариант с колбой»; прецедент c25).
+## Пины: рисовалка brewed_icon в ui_icons (голый HEAD: RED); рантайм-кадр
+## побайтово == золото кадра листа c28 (GOLD_C30_FLASK — 16×16-кроп утверждённого
+## листа F702…, сверен попиксельно единственным совпадением в позиции (344,526)
+## плюс то, что кадр испечён репозиторным генератором sheet_ui.gd); размер 16×16;
+## off/mask рантайм-кадра = 0; hud читает brewed_icon и не упоминает alch_icons
+## (скан исходника); alch_icons.png(+.import) отсутствует в дереве — все 3 кадра,
+## мёртвые 0/1 включительно; ls-tree базы: alch_icons.png трекалась в HEAD до
+## удаления (снят вне Godot, 9ef6251/855ed50) — носимое доказательство:
+## GOLD_C29["alch_icons.png"] декодируется (чек в _t29). SKILL_SLOTS/атлас — без
+## изменений.
+const GOLD_C30_FLASK := "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAMBJREFUOI1jZMABrOzc/iPzjx3axYhNHRMuAxgYGBhMRD4xmIh8wqcEvwGmYVUMpmFVpBuA7nxcYlgNgCnMzMqBi8HYMLn/N4rhhjES0owMpk+bwsDAgBqgcIaVndv/lXm/Gf5v4UXRdP3+Y4YzL9/B+VvF1FEMQfECumZs4OgsXRQ+3ljABtoC1lBmADpgQeZcv/+YZAModgGKAY3/RQlqgMUChgGwaMFnCHoUYrgAnyHYNDMwoKVEGMCV7rFlaQDbFEZgTREbvAAAAABJRU5ErkJggg=="
+
+func _t30() -> void:
+	# Рабочее дерево приоритетно (волна пинится до коммита; прецедент c29-инструмента).
+	# load() по abs-пути нельзя: class_name UiIcons конфликтует с зарегистрированным
+	# глобальным классом — компилируем исходник WORK отдельно (GDScript.reload).
+	var UIS = null
+	var abs_ui := pxr_c30().path_join("scripts/ui_icons.gd")
+	var src := FileAccess.get_file_as_string(abs_ui)
+	if src != "":
+		# class_name снимаем: второй объявления того же глобального класса
+		# Godot не позволяет (test-harness адаптация, код рисовалок — без изменений)
+		var src2 := src.replace("class_name UiIcons", "")
+		var G := GDScript.new()
+		G.source_code = src2
+		if G.reload(true) == OK:
+			UIS = G
+	if UIS == null:
+		UIS = load("res://scripts/ui_icons.gd")
+	chk(UIS != null, "c30: ui_icons.gd грузится")
+	if UIS == null:
+		return
+	var has_m := false
+	for mi in UIS.get_script_method_list():
+		if String(mi.get("name", "")) == "brewed_icon":
+			has_m = true
+	chk(has_m, "c30: рисовалка колбы brewed_icon в ui_icons (прецедент c25; голый HEAD: RED)")
+	if not has_m:
+		chk(false, "c30: рантайм-кадр побайтово == лист c28 (метод не найден — RED)")
+		chk(false, "c30: кадр 16×16, off/mask=0 (метод не найден — RED)")
+	else:
+		var tex: Texture2D = UIS.brewed_icon()
+		var img: Image = tex.get_image() if tex != null else null
+		var gold := Marshalls.base64_to_raw(GOLD_C30_FLASK)
+		var eq := img != null and img.save_png_to_buffer() == gold
+		chk(eq, "c30: равенство-пин — рантайм brewed_icon побайтово == кадр листа c28 (0 расхождений; голый HEAD: RED)")
+		var st := _c29_off(img) if img != null else {"off": -1, "masks": -1}
+		chk(img != null and img.get_size() == Vector2i(16, 16) \
+				and int(st["off"]) == 0 and int(st["masks"]) == 0,
+			"c30: кадр 16×16, off=0, mask=0 (получено %d×%d off=%s mask=%s)" % [
+				img.get_size().x if img != null else 0, img.get_size().y if img != null else 0,
+				str(st["off"]), str(st["masks"])])
+	# --- hud: источник читает рисовалку и забыл PNG (рабочее дерево — волна до коммита) ---
+	var hud_src := FileAccess.get_file_as_string(pxr_c30().path_join("scripts/hud.gd"))
+	chk(hud_src.contains("brewed_icon") and not hud_src.contains("alch_icons"),
+		"c30: hud brewed_btn читает UiIcons.brewed_icon, alch_icons в исходнике не упоминается")
+	# --- alch_icons PNG+import отсутствуют (рабочее дерево; стад HEAD-архива до
+	# коммита содержит легаси-копию — как и ассеты c29, пин по WORK, прецедент выше) ---
+	var png_abs := pxr_c30().path_join("assets/alch_icons.png")
+	var imp_abs := pxr_c30().path_join("assets/alch_icons.png.import")
+	chk(not FileAccess.file_exists(png_abs) and not FileAccess.file_exists(imp_abs),
+		"c30: alch_icons.png(+.import) удалены целиком — все 3 кадра, мёртвые 0/1 включительно")
+	print("qa_lp c30: ls-tree базы — alch_icons.png трекалась в HEAD до удаления (снят вне Godot; золото == HEAD-блоб, чек в _t29)")
+	# --- атлас-контракт не тронут ---
+	var at: Texture2D = UIS.skill_atlas()
+	chk(at.get_width() == 192 and at.get_height() == 16 and UIS.SKILL_SLOTS.size() == 12,
+		"c30: атлас скиллов 192x16 и SKILL_SLOTS(12) не тронуты")
+
+func pxr_c30() -> String:
+	var ws := _c29_ws()
+	return ws.path_join("pixel-rpg") if ws != "" else ProjectSettings.globalize_path("res://")

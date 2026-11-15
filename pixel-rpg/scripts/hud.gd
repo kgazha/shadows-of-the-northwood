@@ -681,9 +681,6 @@ func _on_potion_pressed() -> void:
 # --- привалы и алхимия: индикаторы, кнопка заряда, панель варки, полоса отдыха ---
 
 func _build_alch_ui(th: Theme) -> void:
-	var atex: Texture2D = null
-	if ResourceLoader.exists("res://assets/alch_icons.png"):
-		atex = load("res://assets/alch_icons.png")
 	mat_lbl = Label.new()
 	mat_lbl.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	mat_lbl.offset_left = 74
@@ -708,11 +705,9 @@ func _build_alch_ui(th: Theme) -> void:
 	brewed_btn.offset_bottom = -4
 	brewed_btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	brewed_btn.tooltip_text = "Крепкое зелье: +%d HP (клик). Варится у костра." % GameState.STRONG_POTION_HEAL
-	if atex != null:
-		var at := AtlasTexture.new()
-		at.atlas = atex
-		at.region = Rect2(2 * 16, 0, 16, 16)
-		brewed_btn.icon = at
+	# c30 (вердикт w2 «третий вариант с колбой»): иконка — рисовалка UiIcons,
+	# дословно из генератора листа c28 (прецедент c25); легаси-PNG удалена из репо.
+	brewed_btn.icon = UiIcons.brewed_icon()
 	brewed_btn.pressed.connect(_on_brewed_pressed)
 	brewed_btn.theme = th
 	brewed_btn.visible = false

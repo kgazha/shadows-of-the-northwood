@@ -954,11 +954,14 @@ func _legacy_contact(out_png: String) -> void:
 	var files := ["res://assets/ui/panel_frame.png", "res://assets/ui/cursor_arrow.png",
 		"res://assets/ui/cursor_crosshair.png", "res://assets/cursor_move.png",
 		"res://assets/cursor_enemy.png", "res://assets/projectiles.png",
-		"res://assets/key.png", "res://assets/campfire.png", "res://assets/alch_icons.png"]
+		"res://assets/key.png", "res://assets/campfire.png"]
+	# c30: alch_icons.png удалена (вердикт «колба» переехала рисовалкой в ui_icons.gd)
 	var imgs: Array = []
 	var w := 8
 	for f in files:
 		var im := Image.load_from_file(f)
+		if im == null:
+			continue
 		imgs.append(im)
 		w += im.get_width() * 2 + 8
 	var big := Image.create(w, 32 * 2 + 8, false, Image.FORMAT_RGBA8)

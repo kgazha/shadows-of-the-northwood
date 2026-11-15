@@ -570,3 +570,140 @@ static func _stamp_item(img: Image, id: String) -> void:
 			_cv_ox = 0
 		_:
 			_hline(img, 4, 11, 8, ACC_G)
+
+# ================== c30: «крепкое зелье» (brewed_btn) ==================
+# Вердикт w2: «третий вариант с колбой» — круглая колба с пробкой и искрами
+# (лист c28, секция F, alch2). Рисовалка _flask/_vial и вспомогательные
+# _mask/_dilate/_merge/_spec_color/_paint16/_bake16 перенесены ДОСЛОВНО из
+# tools_art/sheet_ui.gd (прецедент c25); стенд qa_lp сверяет рантайм-кадр
+# побайтово с золотым кадром утверждённого листа (GOLD_C30_FLASK).
+
+static func _mask(cells: Array) -> Array:
+	var m := {}
+	for c in cells:
+		var p := String(c).split(",")
+		m[int(p[0]) + int(p[1]) * 16] = 1
+	return [m, false]
+
+static func _dilate(m: Array) -> Array:
+	var src: Dictionary = m[0]
+	var out := {}
+	for k in src:
+		var x: int = k % 16
+		var y: int = k / 16
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var nx: int = x + dx
+				var ny: int = y + dy
+				if nx >= 0 and ny >= 0 and nx < 16 and ny < 16:
+					out[nx + ny * 16] = 1
+	return [out, true]
+
+static func _merge(a: Array, b: Array) -> Array:
+	var m: Dictionary = a[0].duplicate()
+	for k in b[0]:
+		if not m.has(k):
+			m[k] = b[0][k]
+	return [m, "merged"]
+
+static func _spec_color(spec: String) -> Color:
+	if spec == "INK":
+		return PAL.FLATS["INK"]
+	var p := spec.split(":")
+	return PAL.c(p[0], int(p[1]))
+
+static func _paint16(img: Image, m: Array, ox: int, oy: int) -> void:
+	var d: Dictionary = m[0]
+	for k in d:
+		var spec := String(d[k])
+		var x: int = k % 16
+		var y: int = k / 16
+		img.set_pixel(ox + x, oy + y, _spec_color(spec))
+
+static func _bake16(m: Array) -> Image:
+	var im := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	im.fill(Color(0, 0, 0, 0))
+	_paint16(im, m, 0, 0)
+	return im
+
+static func _flask(fill: String, big: bool) -> Array:
+	if not big:
+		return _vial(fill)
+	# большая круглая колба: пробка, горло 2, круглое пузато тело, искры
+	var cells: Array = []
+	cells.append("7,1")
+	cells.append("8,1")
+	for y in range(2, 6):
+		cells.append("7,%d" % y)
+		cells.append("8,%d" % y)
+	var cy := 9
+	var r := 5
+	for y in range(cy - r, cy + r + 1):
+		for x in range(8 - r - 1, 8 + r + 2):
+			var dx: float = x - 7.5
+			var dy: float = y - float(cy)
+			if dx * dx + dy * dy <= float(r * r) + 3.0:
+				cells.append("%d,%d" % [x, y])
+	var b := _mask(cells)
+	var bd: Dictionary = b[0]
+	var toned := {}
+	for k in bd:
+		var x: int = k % 16
+		var y: int = k / 16
+		if y == 1:
+			toned[k] = "BARK:%d" % _M
+		elif y <= 5:
+			toned[k] = "IRON:%d" % _L
+		else:
+			if x <= 7 and y <= 9:
+				toned[k] = fill + ":%d" % _L
+			elif x >= 9:
+				toned[k] = fill + ":%d" % _D
+			else:
+				toned[k] = fill + ":%d" % _M
+	var ring := {}
+	for k in _dilate(b)[0]:
+		if not bd.has(k):
+			ring[k] = "IRON:%d" % _O
+	var res := _merge([toned, "t"], [ring, "o"])
+	res[0][13 + 4 * 16] = "HUD_GOLD:%d" % _L
+	res[0][3 + 6 * 16] = "HUD_GOLD:%d" % _M
+	res[0][12 + 7 * 16] = "HUD_GOLD:%d" % _L
+	return res
+
+static func _vial(fill: String) -> Array:
+	# узкая пробирка: ободок, цилиндр 4, скруглённое дно
+	var cells: Array = []
+	for x in range(5, 11):
+		cells.append("%d,3" % x)
+	for y in range(4, 13):
+		for x in range(6, 10):
+			cells.append("%d,%d" % [x, y])
+	for p in [[5, 13], [10, 13]]:
+		cells.append("%d,%d" % [p[0], p[1]])
+	var b := _mask(cells)
+	var bd: Dictionary = b[0]
+	var toned := {}
+	for k in bd:
+		var x: int = k % 16
+		var y: int = k / 16
+		if y == 3:
+			toned[k] = "IRON:%d" % _L
+		elif y <= 7:
+			toned[k] = "IRON:%d" % _M
+		else:
+			if x <= 6:
+				toned[k] = fill + ":%d" % _L
+			elif x >= 9:
+				toned[k] = fill + ":%d" % _D
+			else:
+				toned[k] = fill + ":%d" % _M
+	var ring := {}
+	for k in _dilate(b)[0]:
+		if not bd.has(k):
+			ring[k] = "IRON:%d" % _O
+	return _merge([toned, "t"], [ring, "o"])
+
+## Иконка крепкого зелья для brewed_btn (c30): колба варианта 3 листа c28.
+static func brewed_icon() -> Texture2D:
+	return ImageTexture.create_from_image(_bake16(_flask("HP_RED", true)))
