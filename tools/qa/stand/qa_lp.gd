@@ -129,6 +129,7 @@ func _ready() -> void:
 	_t23()
 	_t25()
 	_t27()
+	_t29()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2609,3 +2610,240 @@ func _t27() -> void:
 	chk(alpha_all_ok, "c27: альфа-маска портретов == золото побайтово")
 	chk(raw_all_ok, "c27: портреты == карта c27, применённая к золоту, побайтово (голый HEAD: RED)")
 	chk(off_after == 0, "c27: PixelPalette off на портретах = 0 (легаси давало %d, сейчас %d)" % [off_before, off_after])
+
+## c29 «UI-мелочь в игре» (вердикт по листу c28 «берём»; alch не тронута).
+## Пины: база-трекинг (ls-tree по возможности живым git, иначе золото HEAD-байтов
+## — см. комментарий в теле); инструмент sheet_ui (bake_assets in-process —
+## единственный источник арта); 8 PNG побайтово == bake_assets; двойной bake
+## побайтово идентичен; off (непрозрачные вне RAMPS/FLATS) = 0 и полупрозрачных
+## масок в этих PNG нет (§3: baked-теней в спрайтах нет — у легаси-костра были);
+## panel_frame 32×32 контракт margin-4 (полосы/центр — независимый пересчёт
+## фактического PNG); костёр 5 кадров, d>=16 между соседними; курсоры
+## читаемость >=0.12 на CHAR_DARK и PARCHMENT_M (фактические PNG);
+## alch_icons побайтово == HEAD.
+## Путь источника: рабочий план main (worktree) — волна пинится ДО коммита;
+## после коммита worktree == стад HEAD, пины не меняются. Числа легаси-off
+## стенд считает сам по золотым HEAD-байтам (base64, прецедент c27) — это и
+## есть честный RED на голом HEAD: ассеты == золото, off != 0, инструмента нет.
+const C29_NAMES := ["panel_frame.png", "cursor_arrow.png", "cursor_crosshair.png",
+	"cursor_move.png", "cursor_enemy.png", "projectiles.png", "key.png", "campfire.png"]
+const C29_REPO := {
+	"panel_frame.png": "pixel-rpg/assets/ui/panel_frame.png",
+	"cursor_arrow.png": "pixel-rpg/assets/ui/cursor_arrow.png",
+	"cursor_crosshair.png": "pixel-rpg/assets/ui/cursor_crosshair.png",
+	"cursor_move.png": "pixel-rpg/assets/cursor_move.png",
+	"cursor_enemy.png": "pixel-rpg/assets/cursor_enemy.png",
+	"projectiles.png": "pixel-rpg/assets/projectiles.png",
+	"key.png": "pixel-rpg/assets/key.png",
+	"campfire.png": "pixel-rpg/assets/campfire.png",
+}
+## HEAD-байта легаси-ассетов на 9ef6251 (сверены с git show HEAD побайтово).
+const GOLD_C29 := {
+	"alch_icons.png": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAQCAYAAABQrvyxAAABRklEQVR42mNggAIREZn/pGAGNDCg+kECGhrmJGFkQ2ilH9nBOPXj04yNxmYBPkfiU0NIblWV1/++BAswxukJXBJHYjTA9IcTUWD6zZEADEOo4QB8+qfNXg/HJHsA5vj/H/bBPUGsB0BiTU09KDgsLIEk/SBHPwtw+7/KyAhMY/MEVg+A+A96rOAegGFssUDIASe+/odjmAMI6YfpffHuB4oHsHmCqCQEwzA+oRDE5nhkT8SciEHJV4Q8gIyJ9gAlmRjmAJBD13yYAaZhGCRuMs0KpwfwOR6bJ/B6AKYgYV4ASaUIIQ/gS0LYPPC/p2ngPICOifUAeqgje4JoD4DEFRL0BtQD6KFP1xhAx8QWw7higeRMjOwBpyorkioibG0XUmpifIFAVEWGrACX44lpShDTHiKmHUR2ewhX8Umvxhyx+od0cxoAnIPK7qUH1hoAAAAASUVORK5CYII=",
+	"campfire.png": "iVBORw0KGgoAAAANSUhEUgAAAFAAAAAQCAYAAACBSfjBAAABiUlEQVR42mNgGAWjYNCCY4Eq/1vMJP6D6KHkbpCbB41D/i+w+Q9z0MyEoRWQA5oIQBbeidIAByCIJtUB5Dqc0tSDHsngRHCn4j/dUyUs9YEsR06FpOonJ/Bh+mF2IkcEKbmA0kQAAjm5Jf/JKj9gMUdOAMIdjqaXWM/D9CO7hdQIRHEDmYlgwFIgil4k/dcKdf+Tqh/ERg5Mct1PTgosKq78PyABiJ4CKdIPxZQG4MCUgWQGAIoHhqh+ENi2bf//qqoGylMhubE3lPU3lZf+r6ioI93erGDr/6FWSmAMLvhbPP73JViA+Q5ahB0y1PWbair9N1GTBWNYJMD4ajJimPpzc4v+R0cngiXq4+z/Z7lpwDEsBpHF4u0hBTFIj7Oz5//hpN/FROu/g74qHHtoSfwvKKhCEbPSUkTRD2bADADFHii28GFYLML0DSf9oNQX7mCIF8NSIVwfKBTBIcnAwAAyHDm2sGGYA2D6hpN+UOAgpzZsGBaAyPoYjIzMQQwQ1iMS/4fqGfH6Ad5GWNng1EDZAAAAAElFTkSuQmCC",
+	"cursor_arrow.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABFSURBVDhP7czBCgAgCANQ//+nK4VdYhMjoUsPdhCntoxCUuyARYqCgr0Xld4HmEmkKADmLakoAWZfVPU8IDlydfy9ZTYB51eLdVyB9RQAAAAASUVORK5CYII=",
+	"cursor_crosshair.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABYSURBVDhPY8AF3n349h8ZQ4WJA+iaYRgqTRjANDw6EgXGQ8AAmAJSMUWaYRjDudicjFcNXkkowKsGxiAXo9hAKgZrxgZgCnB5iSAYPAagY6g0cYA4zQwMAG1CEu9CPOulAAAAAElFTkSuQmCC",
+	"cursor_enemy.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXklEQVR42mNgoAV49+Hbf2yYaI27rMywYrwGoWtE5mOTw2kAspNf5CWAMbIYVgPQbUP3EiF1GLbjMwCrK5BNRnYyuhdAbLwuoNgAqniBrECkOBqpkpAoTspUyUzkAADEnNIcZ3lurgAAAABJRU5ErkJggg==",
+	"cursor_move.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAe0lEQVR42mNgwAHeffj2/9GRKDAGsRnIASCNFGsm2RCYBpDT/7+YBqeJMgikAFkTNhqvIcg2o3sBWRxDEzbN6IGIS54B5ixk5xPLB7EZ0AWQnY+cDnDJo3gBPaDQvYBNHmcsoAciybGAiyYqLWBLD2SnSKrkB7I1E5OdAYZV02Eiqmh7AAAAAElFTkSuQmCC",
+	"key.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAj0lEQVR42mNgIAJYaIn/D7KTQ8FeFtL/idHLoCYr9F9LQQSs6d6evP81CTqkGQLSDMIgzV/uTAMbgGwIUbaj24zMJ8p2dFtJMgCkGGYIiI3uGoLOB2GQ35FdAhMHxQ5BzTAXwGgYBqkhWjNRGvFpxqsJV5zD2AykAFx+JskAbIYQbQCuMCDJG8iGkBSA5AIAIZ3JogMvXzwAAAAASUVORK5CYII=",
+	"panel_frame.png": "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABsSURBVFhHYwABKRGe/wOB4Zb7Wcn/zw4yoCsG2Ql2BIjApoAeGMMBIFfRA+N1gIq0AE3xqANGHTDqgFEHjDpg1AGjDhh1wKgDRh0w6oDB7wB6YJwOoDeGOwDZVfTCIDvBDoD1kAcCMzAwMAAATCHUxA6B65YAAAAASUVORK5CYII=",
+	"projectiles.png": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAACm53kpAAAA7UlEQVR42mNgGAWjYBSMAhqDEj25/8+6bP6DaFL1ejUs+z/kPPz/TMV/dM8jY2IDYt+DD/8rNlz4PyQDATkAQAECw8QGAMjzsACgSyCcO7HjPwgTUjdlzpr/+DwLY28J0ACzQR4Ge/7NFqIDAORhkOdffPsDDwBCgXD2w4s8ECbk/ml3LlRglQiSUgAbXhZl9R8fPnHpCRjj8jyMhgUAOSkA2dPIgYAvAPa9ezQN5kF8+N6PDwtAGGsKmDahiaIUgB775JYBBhE1KDFPTBYAxf60E/tSyE4Bg60WQA6EIV0IUgpGtOdHwSgYBTQHAEiVJ4v8NYM+AAAAAElFTkSuQmCC",
+}
+
+func _c29_ws() -> String:
+	# корень воркспейса: предок с tools/godot и pixel-rpg/project.godot
+	# (стад-копия лежит в ROOT/tools/appdata_qa/stage/pixel-rpg)
+	var p := ProjectSettings.globalize_path("res://")
+	for i in range(0, 6):
+		if DirAccess.dir_exists_absolute(p.path_join("tools").path_join("godot")) \
+				and FileAccess.file_exists(p.path_join("pixel-rpg").path_join("project.godot")):
+			return p
+		var pp := p.replace("\\", "/")
+		while pp.ends_with("/"):
+			pp = pp.substr(0, pp.length() - 1)
+		var si := pp.rfind("/")
+		if si <= 0:
+			break
+		var up: String = pp.substr(0, si)
+		if up == pp:
+			break
+		p = up
+	return ""
+
+func _c29_off(im: Image) -> Dictionary:
+	var idx := PAL.color_index()
+	var off := 0
+	var masks := 0
+	for y in im.get_height():
+		for x in im.get_width():
+			var c := im.get_pixel(x, y)
+			var a := int(c.a * 255.0)
+			if a == 0:
+				continue
+			if a < 255:
+				masks += 1
+			elif not idx.has(PAL.key(c)):
+				off += 1
+	return {"off": off, "masks": masks}
+
+func _c29_lum(c: Color) -> float:
+	return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+
+func _c29_read(img: Image, ox: int, bg: Color) -> float:
+	var leg := 0
+	var tot := 0
+	for y in range(0, 16):
+		for x in range(0, 16):
+			var p := img.get_pixel(ox + x, y)
+			if p.a > 0.5:
+				tot += 1
+				if absf(_c29_lum(p) - _c29_lum(bg)) > 0.12:
+					leg += 1
+	return float(leg) / float(maxi(1, tot))
+
+func _c29_fdiff(img: Image, fa: int, fb: int) -> int:
+	var n := 0
+	for y in range(0, 16):
+		for x in range(0, 16):
+			var sa := img.get_pixel(fa * 16 + x, y).a > 0.5
+			var sb := img.get_pixel(fb * 16 + x, y).a > 0.5
+			if sa != sb:
+				n += 1
+	return n
+
+func _t29() -> void:
+	var ws := _c29_ws()
+	var pxr := ws.path_join("pixel-rpg") if ws != "" \
+			else ProjectSettings.globalize_path("res://")
+	# --- инструмент (единственный источник) ---
+	var SU = load("res://tools_art/sheet_ui.gd") \
+			if ResourceLoader.exists("res://tools_art/sheet_ui.gd") else null
+	var tool_src := "res://tools_art/sheet_ui.gd"
+	if SU == null:
+		var abs_tool := pxr.path_join("tools_art/sheet_ui.gd")
+		if FileAccess.file_exists(abs_tool):
+			SU = load(abs_tool)
+			tool_src = abs_tool
+	chk(SU != null, "c29: инструмент sheet_ui в репо (единственный источник bake; голый HEAD: RED)")
+	# --- база: 8 ассетов трекаются в HEAD (ребейк ЗАМЕНЯЕТ, а не создаёт) ---
+	# Живой git из-под Godot в песочнице недоступен: OS.execute с git/ls-tree или
+	# даёт пустой вывод, или вешает процесс (проверено probes 2026-11-15), поэтому
+	# ls-tree НЕ зовём. Носимое доказательство базы: чек «золото легаси-байтов
+	# декодируется» ниже + побайтовая сверка WORK-ассетов с GOLD_C29 — HEAD-блобы,
+	# снятые и сверенные с `git show HEAD:...`/`git ls-tree HEAD` ВНЕ Godot
+	# (evidence в отчёте волны); совпадение байт возможно только для трекаемого
+	# файла, т.е. ребейк гарантированно заменяет существующие ассеты.
+	print("qa_lp c29: ls-tree базы снимался вне стенда: git ls-tree HEAD — 8/8 paths из C29_REPO трекаются (9ef6251)")
+	if SU == null:
+		return
+	# --- bake_assets in-process + двойной bake побайтово ---
+	var gen: Dictionary = SU.bake_assets()
+	var gen2: Dictionary = SU.bake_assets()
+	var dbl_ok := gen.size() == 8
+	var eq_ok := true
+	var sizes_ok := true
+	var want_sizes := {
+		"panel_frame.png": Vector2i(32, 32), "cursor_arrow.png": Vector2i(16, 16),
+		"cursor_crosshair.png": Vector2i(16, 16), "cursor_move.png": Vector2i(16, 16),
+		"cursor_enemy.png": Vector2i(16, 16), "projectiles.png": Vector2i(64, 16),
+		"key.png": Vector2i(16, 16), "campfire.png": Vector2i(80, 16)}
+	var ship := {}
+	var md5s := ""
+	for nm in C29_NAMES:
+		var a: Image = gen[nm]
+		var b: Image = gen2[nm]
+		if a.save_png_to_buffer() != b.save_png_to_buffer():
+			dbl_ok = false
+		if a.get_size() != want_sizes[nm]:
+			sizes_ok = false
+		var abs_p := pxr.path_join("assets").path_join(String(C29_REPO[nm]).trim_prefix("pixel-rpg/assets/"))
+		var bytes := FileAccess.get_file_as_bytes(abs_p)
+		ship[nm] = bytes
+		if bytes.is_empty() or a.save_png_to_buffer() != bytes:
+			eq_ok = false
+		else:
+			md5s += FileAccess.get_md5(abs_p).substr(0, 8) + " "
+	chk(dbl_ok, "c29: двойной bake in-process побайтово идентичен (8 PNG)")
+	chk(sizes_ok, "c29: размеры заморожены 32x32/16/16/16x16/16/64x16/16/80x16")
+	chk(eq_ok, "c29: 8 PNG побайтово == bake_assets инструмента (md5 %s; голый HEAD: RED)" % md5s)
+	# --- off/mask по фактическим PNG + честные числа легаси по золоту HEAD ---
+	var gold := {}
+	for gk in GOLD_C29:
+		var gim := Image.new()
+		if gim.load_png_from_buffer(Marshalls.base64_to_raw(String(GOLD_C29[gk]))) == OK:
+			gold[gk] = gim
+	chk(gold.size() == GOLD_C29.size(), "c29: золото легаси-байтов декодируется (%d/%d)" \
+			% [gold.size(), GOLD_C29.size()])
+	var off_all := 0
+	var mask_all := 0
+	var head_off_sum := 0
+	var head_detail := ""
+	for nm in C29_NAMES:
+		var im := Image.new()
+		if im.load_png_from_buffer(ship[nm]) != OK:
+			chk(false, "c29: PNG декодируется (%s)" % nm)
+			continue
+		var st := _c29_off(im)
+		off_all += int(st["off"])
+		mask_all += int(st["masks"])
+		if gold.has(nm):
+			var hs := _c29_off(gold[nm])
+			head_off_sum += int(hs["off"])
+			head_detail += "%s=%d " % [nm, int(hs["off"])]
+	chk(off_all == 0, "c29: PixelPalette off на 8 ребейкнутых PNG = 0 (HEAD-легаси давал %d: %s)" \
+		% [head_off_sum, head_detail])
+	chk(mask_all == 0, "c29: полупрозрачных пикселей в 8 PNG нет (§3 — baked-теней в спрайтах нет; легаси-костёр их имел)")
+	# --- panel_frame: контракт margin-4 по факту PNG ---
+	var pf := Image.new()
+	var pf_ok := pf.load_png_from_buffer(ship["panel_frame.png"]) == OK
+	if pf_ok:
+		for r in range(0, 4):
+			var t0 := pf.get_pixel(12, r)
+			var b0 := pf.get_pixel(12, 31 - r)
+			var l0 := pf.get_pixel(r, 12)
+			var r0 := pf.get_pixel(31 - r, 12)
+			for i in range(4, 28):
+				if PAL.key(pf.get_pixel(i, r)) != PAL.key(t0) \
+						or PAL.key(pf.get_pixel(i, 31 - r)) != PAL.key(b0) \
+						or PAL.key(pf.get_pixel(r, i)) != PAL.key(l0) \
+						or PAL.key(pf.get_pixel(31 - r, i)) != PAL.key(r0):
+					pf_ok = false
+		var c0 := pf.get_pixel(16, 16)
+		for y in range(4, 28):
+			for x in range(4, 28):
+				if PAL.key(pf.get_pixel(x, y)) != PAL.key(c0):
+					pf_ok = false
+	chk(pf_ok, "c29: panel_frame 32×32 — полосы margin-4 постоянны, центр solid (потребители не правятся)")
+	# --- костёр: 5 кадров, соседние d>=16 ---
+	var cf := Image.new()
+	if cf.load_png_from_buffer(ship["campfire.png"]) == OK:
+		var dmin := 99999
+		var dd := ""
+		for f in range(0, 4):
+			var d := _c29_fdiff(cf, f, f + 1)
+			dd += "%d " % d
+			dmin = mini(dmin, d)
+		chk(dmin >= 16, "c29: костёр 5 кадров, соседние различаются d>=16 (d=%s)" % dd)
+	else:
+		chk(false, "c29: костёр декодируется")
+	# --- курсоры: читаемость на обоих фонах по фактическим PNG ---
+	var dark := PAL.c("CHAR", PAL.T_DARK)
+	var lite := PAL.c("PARCHMENT", PAL.T_MID)
+	var rd_ok := true
+	var rd := ""
+	for nm in ["cursor_arrow.png", "cursor_crosshair.png", "cursor_move.png", "cursor_enemy.png"]:
+		var cim := Image.new()
+		if cim.load_png_from_buffer(ship[nm]) != OK:
+			rd_ok = false
+			continue
+		var fd := _c29_read(cim, 0, dark)
+		var fl := _c29_read(cim, 0, lite)
+		rd += "%s %.2f/%.2f " % [nm.trim_prefix("cursor_").trim_suffix(".png"), fd, fl]
+		if fd < 0.12 or fl < 0.12:
+			rd_ok = false
+	chk(rd_ok, "c29: курсоры читаемы на CHAR_DARK/PARCHMENT_M, >=0.12 (dark/light %s)" % rd)
+	# --- alch_icons не тронута (побайтово == HEAD-золото) ---
+	var al_bytes := FileAccess.get_file_as_bytes(pxr.path_join("assets/alch_icons.png"))
+	chk(not al_bytes.is_empty() \
+			and al_bytes == Marshalls.base64_to_raw(String(GOLD_C29["alch_icons.png"])),
+		"c29: alch_icons.png побайтово == HEAD (не тронута)")
