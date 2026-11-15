@@ -127,6 +127,7 @@ func _ready() -> void:
 	await _t17()
 	await _t18()
 	_t23()
+	_t25()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2467,3 +2468,78 @@ func _t23() -> void:
 	chk(legacy_uniq.size() == 606, "c23: соответствий в карте — 606 (золото дало %d)" % legacy_uniq.size())
 	chk(off_before_set.size() == 486, "c23: легаси off (union 13 атласов) = 486 (золото дало %d)" % off_before_set.size())
 	chk(off_after_set.size() == 0, "c23: PixelPalette off в игровых атласах = 0 (486 -> %d)" % off_after_set.size())
+
+## c25 «предметные иконки в игре» (вердикт по листу c24 «берём, мешочек не надо»).
+## Пины: инструмент листа в репо; рантайм item_icon() шести id — 0 пикселей вне
+## PixelPalette (у стабов t52 было 1536/1536); сырые цвета стабов исчезли;
+## fallback неизвестного id — техстаб-линия (седьмая рисовалка НЕ added);
+## атлас скиллов 192x16 не тронут. Popcount-различимость листа числами.
+## Честный RED на голом HEAD: off=1536, сырые цвета стабов в кадре.
+func _t25() -> void:
+	var ui := load("res://scripts/ui_icons.gd")
+	var tool := load("res://tools_art/sheet_items.gd")
+	chk(tool != null, "c25: инструмент tools_art/sheet_items.gd в репо (голый HEAD: RED)")
+	var palkeys := {}
+	for col in PAL.color_index():
+		palkeys[col] = true
+	# ключ фонов/стабов — как их реально сохранит RGBA8 (float ui.BG/INK в to_argb32
+	# округляются иначе, чем пишет set_pixel: Color(0.16,..)->40, не 41)
+	var k25 := func(c: Color) -> int:
+		var im := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		im.set_pixel(0, 0, c)
+		return im.get_pixel(0, 0).to_argb32()
+	var bgk: int = k25.call(ui.BG)
+	var inkk: int = k25.call(ui.INK)
+	var ids := ["herb", "mushroom", "root", "ash", "berry", "glowcap"]
+	var stubs := [Color(0.4, 0.65, 0.32), Color(0.72, 0.3, 0.28), Color(0.85, 0.78, 0.65),
+		Color(0.55, 0.4, 0.25), Color(0.6, 0.6, 0.66), Color(0.75, 0.25, 0.4),
+		Color(0.45, 0.75, 0.85), Color(0.5, 0.75, 0.38), Color(0.9, 0.85, 0.7),
+		Color(0.35, 0.6, 0.7), Color(0.8, 0.95, 1.0)]
+	var stub_keys := {}
+	for c in stubs:
+		stub_keys[k25.call(c)] = true
+	var off_all := 0
+	var stub_px := 0
+	var sizes_ok := true
+	var fg_min := 1 << 30
+	for idv in ids:
+		var img: Image = ui.item_icon(String(idv)).get_image()
+		if img.get_width() != 16 or img.get_height() != 16:
+			sizes_ok = false
+		var off := 0
+		var fg := 0
+		for y in 16:
+			for x in 16:
+				var k := PAL.key(img.get_pixel(x, y))
+				if k == bgk or k == inkk:
+					continue
+				fg += 1
+				if not palkeys.has(k):
+					off += 1
+				if stub_keys.has(k):
+					stub_px += 1
+		off_all += off
+		fg_min = mini(fg_min, fg)
+	chk(sizes_ok, "c25: все шесть предметных иконок 16x16")
+	chk(off_all == 0, "c25: PixelPalette off на предметных рантайм-иконках = 0 (стабы давали 1536, сейчас %d)" % off_all)
+	chk(stub_px == 0, "c25: сырых цветов стабов t52 в иконках нет (остаток %d px)" % stub_px)
+	chk(fg_min >= 24, "c25: заполнение иконок не тоньше утверждённого листа (min fg %d px)" % fg_min)
+	# fallback: неизвестный id — техстаб (BG/INK/ACC_G линия 8 px), без седьмой рисовалки
+	var fb: Image = ui.item_icon("__unknown_id__").get_image()
+	var accg: int = k25.call(ui.ACC_G)
+	var fb_ok := true
+	var accpx := 0
+	for y in 16:
+		for x in 16:
+			var k := PAL.key(fb.get_pixel(x, y))
+			if k == bgk or k == inkk:
+				continue
+			if k == accg:
+				accpx += 1
+			else:
+				fb_ok = false
+	chk(fb_ok and accpx == 8, "c25: fallback неизвестного id — техстаб-линия ACC_G (седьмая иконка не добавлена)")
+	var sat2: Image = ui.skill_atlas().get_image()
+	chk(sat2.get_width() == 192 and sat2.get_height() == 16, "c25: атлас скиллов 192x16 не тронут")
+	# popcount-различимость 15 пар листа — числа в логе генератора (sheet_items.gd),
+	# здесь не считаем: instantiating SceneTree-скрипта внутри батареи недопустим.

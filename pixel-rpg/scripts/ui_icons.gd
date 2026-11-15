@@ -7,6 +7,9 @@ extends RefCounted
 ## 16 px — без картинок вообще. Атлас скиллов — 12 слотов по 16 px,
 ## порядок = classes_data.gd. Цвета иконок — только PixelPalette.RAMPS/FLATS;
 ## фон слота — технический SHEET.BG (как в утверждённом листе).
+## c25: предметные иконки — утверждённый лист c24, 6 рисовалок перенесены
+## дословно из tools_art/sheet_items.gd (equality-пин в его самопроверке);
+## tech-фон предмета (_slot_bg BG/INK) и fallback неизвестных id — не тронуты.
 
 const S := 16  # canonical slot size, px
 
@@ -336,6 +339,175 @@ static func _ic_firestorm() -> void:
 	# уголь — золото
 	_P(14, 10, "HUD_GOLD", _M)
 
+# ========== предметные иконки (перенос из sheet_items.gd, verbatim; c25) =====
+# Утверждённый пользователем лист c24. Тот же холст-механизм, что у скиллов
+# (_cv/_cv_ox); примитивы общие. Нижняя нога — OUTLINE, LIGHT — верх/лево.
+
+## herb — пучок из трёх листьев, перевязанный золотой лентой.
+static func _ic_item_herb() -> void:
+	# три листа-клинка (средний выше): левый край LIGHT, ядро MID, правый DARK,
+	# основание листа — OUTLINE-тон LEAF
+	for b in [[4, 5, 11], [7, 2, 11], [10, 4, 11]]:
+		var bx: int = b[0]
+		var y0: int = b[1]
+		var y1: int = b[2]
+		_P(bx, y0, "LEAF", _L)
+		_P(bx + 1, y0 + 1, "LEAF", _M)
+		for y in range(y0 + 1, y1):
+			_P(bx, y, "LEAF", _L)
+			_P(bx + 1, y, "LEAF", _M)
+		_P(bx + 2, y0 + 2, "LEAF", _D)
+		for y in range(y0 + 3, y1):
+			_P(bx + 2, y, "LEAF", _D)
+		_hl(bx, bx + 2, y1, "LEAF", _O)
+	# перевязь — золотая лента (акцент «связанный сбор»), низ — OUTLINE золота
+	_hl(3, 12, 12, "HUD_GOLD", _L)
+	_hl(3, 12, 13, "HUD_GOLD", _M)
+	_hl(3, 12, 14, "HUD_GOLD", _O)
+
+## mushroom — боровик: шляпка HP_RED с костяными пятнами, ножка BONE.
+static func _ic_item_mushroom() -> void:
+	_hl(6, 9, 4, "HP_RED", _L)
+	_hl(4, 7, 5, "HP_RED", _L)
+	_hl(8, 11, 5, "HP_RED", _M)
+	_hl(3, 7, 6, "HP_RED", _L)
+	_hl(8, 11, 6, "HP_RED", _M)
+	_hl(12, 13, 6, "HP_RED", _D)
+	_hl(2, 5, 7, "HP_RED", _L)
+	_hl(6, 10, 7, "HP_RED", _M)
+	_hl(11, 13, 7, "HP_RED", _D)
+	_hl(3, 12, 8, "HP_RED", _O)        # кайма низа шляпки
+	# костяные пятна
+	_F(5, 5, "FIRE_HOT")
+	_P(6, 6, "BONE", _L)
+	_P(9, 5, "BONE", _M)
+	_P(11, 7, "BONE", _M)
+	_P(4, 7, "BONE", _L)
+	# ножка (кремовая, как у боровика): свет левый, тень правый, раструб внизу
+	_vl(6, 9, 12, "PARCHMENT", _L)
+	_hl(7, 8, 9, "PARCHMENT", _M)
+	_vl(7, 10, 12, "PARCHMENT", _M)
+	_vl(9, 9, 12, "PARCHMENT", _D)
+	_hl(6, 9, 13, "PARCHMENT", _M)
+	_hl(5, 10, 14, "PARCHMENT", _O)
+
+## root — корень с отпиленным верхом (кремовый срез), усиками и золотым
+## кончиком (акцент «ценная сердцевина»).
+static func _ic_item_root() -> void:
+	# срез — светлая кремовая шапка
+	_hl(6, 10, 3, "PARCHMENT", _L)
+	_hl(6, 10, 4, "PARCHMENT", _M)
+	# тело: изогнутый ствол BARK (свет слева)
+	_P(6, 5, "BARK", _L)
+	_hl(7, 9, 5, "BARK", _M)
+	_vl(6, 6, 8, "BARK", _L)
+	_hl(7, 8, 6, "BARK", _M)
+	_vl(8, 7, 9, "BARK", _M)
+	_vl(9, 6, 8, "BARK", _D)
+	_P(6, 9, "BARK", _L)
+	_hl(7, 9, 9, "BARK", _M)
+	# усики
+	_diag([[10, 7], [11, 8]], "BARK", _D)
+	_diag([[5, 10], [4, 11]], "BARK", _D)
+	_diag([[10, 10], [11, 11]], "BARK", _D)
+	# сужение к кончику
+	_vl(7, 10, 11, "BARK", _M)
+	_vl(8, 10, 11, "BARK", _D)
+	# золотая сердцевина кончика (акцент) и OUTLINE-стопа
+	_hl(7, 9, 12, "HUD_GOLD", _L)
+	_hl(7, 9, 13, "HUD_GOLD", _M)
+	_hl(6, 9, 14, "BARK", _O)
+	# росток на срезе (свежий сбор)
+	_P(7, 2, "LEAF", _M)
+	_P(8, 1, "LEAF", _L)
+	_P(9, 2, "LEAF", _D)
+	# комья земли
+	_P(4, 7, "ASH_GROUND", _M)
+	_P(12, 9, "ASH_GROUND", _M)
+
+## ash — горка пепла с тлеющими углями (акцент ASH_EMBER) и дымком.
+static func _ic_item_ash() -> void:
+	# дымки (северо-запад — вверх-влево)
+	_diag([[7, 3], [6, 4], [7, 5]], "PARCHMENT", _M)
+	_diag([[10, 4], [10, 6]], "PARCHMENT", _D)
+	# горка: светлая верхушка слева, тело MID, тень справа
+	_hl(7, 8, 8, "ASH_GROUND", _L)
+	_P(6, 9, "ASH_GROUND", _L)
+	_hl(7, 9, 9, "ASH_GROUND", _M)
+	_hl(4, 9, 10, "ASH_GROUND", _M)
+	_hl(10, 11, 10, "ASH_GROUND", _D)
+	_P(3, 11, "ASH_GROUND", _L)
+	_hl(4, 10, 11, "ASH_GROUND", _M)
+	_hl(11, 12, 11, "ASH_GROUND", _D)
+	_hl(2, 13, 12, "ASH_GROUND", _M)
+	_hl(5, 10, 13, "ASH_EMBER", _M)
+	_hl(2, 4, 13, "ASH_GROUND", _D)
+	_hl(11, 13, 13, "ASH_GROUND", _D)
+	_hl(1, 14, 14, "ASH_GROUND", _O)
+	# тлеющие угли — смысл предмета
+	_P(5, 12, "ASH_EMBER", _L)
+	_P(6, 11, "ASH_EMBER", _L)
+	_P(7, 12, "ASH_EMBER", _M)
+	_P(8, 12, "ASH_EMBER", _M)
+	_P(9, 11, "ASH_EMBER", _M)
+	_P(10, 12, "ASH_EMBER", _D)
+	_P(11, 12, "ASH_EMBER", _D)
+	_F(8, 10, "FIRE_HOT")
+
+## berry — гроздь трёх ягод HP_RED на ветке с листом.
+static func _ic_item_berry() -> void:
+	# ветка и лист
+	_diag([[8, 4], [8, 5], [7, 6], [7, 7]], "BARK", _M)
+	_diag([[9, 3], [10, 3], [11, 4]], "LEAF", _L)
+	_diag([[10, 4], [11, 5], [12, 5]], "LEAF", _M)
+	_P(12, 6, "LEAF", _D)
+	# ягоды 2x2 с собственным светом; низ каждой — OUTLINE
+	_P(4, 8, "HP_RED", _L)
+	_P(5, 8, "HP_RED", _M)
+	_P(4, 9, "HP_RED", _M)
+	_hl(4, 5, 10, "HP_RED", _O)
+	_P(9, 9, "HP_RED", _L)
+	_P(10, 9, "HP_RED", _M)
+	_P(9, 10, "HP_RED", _M)
+	_hl(9, 10, 11, "HP_RED", _O)
+	_P(6, 11, "HP_RED", _L)
+	_P(7, 11, "HP_RED", _M)
+	_P(6, 12, "HP_RED", _M)
+	_hl(6, 7, 13, "HP_RED", _O)
+	# концы грозди (самый нижний ряд)
+	_P(5, 14, "HP_RED", _O)
+	_P(8, 14, "HP_RED", _O)
+
+## glowcap — светособака: колокол-фонарь CRYSTAL с горячим ядром, лучами и
+## светящейся ножкой.
+static func _ic_item_glowcap() -> void:
+	# лучи (NW-ориентированные штрихи)
+	_P(4, 3, "CRYSTAL", _L)
+	_P(3, 5, "CRYSTAL", _L)
+	_P(12, 3, "CRYSTAL", _M)
+	_P(13, 5, "CRYSTAL", _M)
+	# колокол: узкий верх — распор вниз; свет слева
+	_hl(7, 8, 4, "CRYSTAL", _L)
+	_hl(6, 9, 5, "CRYSTAL", _L)
+	_hl(10, 10, 5, "CRYSTAL", _M)
+	_hl(5, 8, 6, "CRYSTAL", _L)
+	_hl(9, 11, 6, "CRYSTAL", _M)
+	_hl(5, 8, 7, "CRYSTAL", _L)
+	_hl(9, 11, 7, "CRYSTAL", _M)
+	_hl(12, 12, 7, "CRYSTAL", _D)
+	_hl(4, 11, 8, "CRYSTAL", _M)
+	_P(4, 8, "CRYSTAL", _L)
+	_hl(12, 12, 8, "CRYSTAL", _D)
+	_hl(4, 12, 9, "CRYSTAL", _O)       # кайма раструба
+	# горячее ядро под куполом
+	_F(7, 7, "FIRE_HOT")
+	_P(6, 8, "CRYSTAL", _L)
+	_P(8, 8, "CRYSTAL", _L)
+	# ножка (светящийся кристалл, не кость — держит акцент предмета)
+	_vl(7, 10, 13, "CRYSTAL", _L)
+	_vl(8, 10, 13, "CRYSTAL", _M)
+	_hl(7, 8, 14, "CRYSTAL", _O)
+
 # ---------- низкоуровневая графика (предметы/таланты — легаси-примитивы) ----
 
 static func _px(img: Image, x: int, y: int, c: Color) -> void:
@@ -377,43 +549,24 @@ static func _outline(img: Image, c: Color) -> void:
 		_px(img, img.get_width() - 1, y, c)
 
 # ---------- предметные символы ----------
+# c25: шесть иконок — дословный перенос утверждённого листа c24
+# (tools_art/sheet_items.gd). Рисуются палитровыми примитивами на общем холсте;
+# tech-рамка слота (_slot_bg) и легаси-заглушка для неизвестных id — как были.
 
 static func _stamp_item(img: Image, id: String) -> void:
 	_slot_bg(img)
 	match id:
-		"herb":  # трава: три дудочки-листа
-			for k in 3:
-				var bx := 4 + k * 3
-				_vline(img, bx, 5, 12, Color(0.4, 0.65, 0.32))
-				_px(img, bx + 1, 7 - k, Color(0.5, 0.75, 0.38))
-		"mushroom":  # гриб: шляпка-ножка
-			_rect(img, 4, 5, 11, 8, Color(0.72, 0.3, 0.28))
-			for k in 3:
-				_px(img, 5 + k * 2, 6, Color(0.9, 0.85, 0.7))
-			_rect(img, 6, 9, 9, 12, Color(0.85, 0.78, 0.65))
-		"root":  # корень: вертикалка с боковушками
-			_vline(img, 8, 3, 4, Color(0.55, 0.4, 0.25))
-			_vline(img, 7, 5, 8, Color(0.55, 0.4, 0.25))
-			_px(img, 9, 6, Color(0.55, 0.4, 0.25))
-			_px(img, 6, 11, Color(0.55, 0.4, 0.25))
-			_vline(img, 9, 9, 12, Color(0.55, 0.4, 0.25))
-			_px(img, 11, 11, Color(0.55, 0.4, 0.25))
-		"ash":  # пепел: урна-горка с точками
-			_hline(img, 4, 11, 11, ACC_G)
-			_hline(img, 5, 10, 10, ACC_G)
-			_px(img, 6, 8, Color(0.6, 0.6, 0.66))
-			_px(img, 9, 7, Color(0.6, 0.6, 0.66))
-			_px(img, 7, 5, Color(0.5, 0.5, 0.56))
-		"berry":  # ягода: три ягоды + лист
-			for c in [[6, 9], [9, 10], [7, 12]]:
-				_rect(img, c[0], c[1], c[0] + 1, c[1] + 1, Color(0.75, 0.25, 0.4))
-			_vline(img, 8, 4, 7, Color(0.4, 0.65, 0.32))
-			_px(img, 9, 4, Color(0.5, 0.75, 0.38))
-		"glowcap":  # светособака: купол со свечением
-			_rect(img, 5, 6, 10, 10, Color(0.45, 0.75, 0.85))
-			_px(img, 4, 11, Color(0.35, 0.6, 0.7))
-			_px(img, 11, 11, Color(0.35, 0.6, 0.7))
-			_px(img, 7, 4, Color(0.8, 0.95, 1.0))
-			_px(img, 9, 3, Color(0.8, 0.95, 1.0))
+		"herb", "mushroom", "root", "ash", "berry", "glowcap":
+			_cv = img
+			_cv_ox = 0
+			match id:
+				"herb": _ic_item_herb()
+				"mushroom": _ic_item_mushroom()
+				"root": _ic_item_root()
+				"ash": _ic_item_ash()
+				"berry": _ic_item_berry()
+				"glowcap": _ic_item_glowcap()
+			_cv = null
+			_cv_ox = 0
 		_:
 			_hline(img, 4, 11, 8, ACC_G)
