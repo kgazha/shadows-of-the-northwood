@@ -126,6 +126,7 @@ func _ready() -> void:
 	await _t16()
 	await _t17()
 	await _t18()
+	_t23()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2363,3 +2364,106 @@ func _t18() -> void:
 				tint_rat = true
 	chk(tint_arch and tint_rat,
 			"t20: modulate-тинты мобов зоны оставлены как есть (лесные листы; перекраска — c22)")
+
+## c23 «перекраска персонажей в игре» (вердикт пользователя «да» по листу c22).
+## Карта — tools_art/c22_recolor.gd (таблица корзин B = 606 соответствий);
+## золотые легаси-PNG 13 атласов описи c17 §1 — res://c23_golden.gd (HEAD до
+## перепёка). Пины: инструмент в репо; каждый атлас == карта, применённая к
+## золотому легаси, ПОБАЙТОВО; альфа (маска/силуэт) == золотая побайтово;
+## PixelPalette off суммарно: легаси 486 -> в игре 0; размеры атласов
+## заморожены (ни нового кадра/рисовалки).
+## Честный RED на голом HEAD: инструмента и золотого файла нет, атласы в игре
+## вне палитры (486 off-пикселей).
+func _t23() -> void:
+	var RT = load("res://tools_art/c22_recolor.gd")
+	var has_recolor := false
+	if RT != null:
+		for mi in RT.get_script_method_list():
+			if String(mi.get("name", "")) == "recolor_atlas":
+				has_recolor = true
+	chk(has_recolor, "c23: инструмент tools_art/c22_recolor.gd с recolor_atlas в репо (голый HEAD: RED)")
+	var GD = load("res://c23_golden.gd")
+	chk(GD != null, "c23: золотые легаси-атласы res://c23_golden.gd (голый HEAD: RED)")
+	if GD == null:
+		chk(false, "c23: атлас == карта c22 побайтово (золото отсутствует)")
+		return
+	var cidx: Dictionary = PAL.color_index()
+	# список и пути заморожены в пине (голый HEAD без инструмента тоже краснеет числом)
+	var assets := {
+		"class_warrior": "res://assets/class_warrior.png",
+		"class_archer": "res://assets/class_archer.png",
+		"class_mage": "res://assets/class_mage.png",
+		"npc_elder": "res://assets/npc_elder.png",
+		"npc_farmer": "res://assets/npc_farmer.png",
+		"npc_hermit": "res://assets/npc_hermit.png",
+		"npc_merchant": "res://assets/npc_merchant.png",
+		"npc_smith": "res://assets/npc_smith.png",
+		"slime": "res://assets/slime.png",
+		"swarmling": "res://assets/mobs_swarmling.png",
+		"mob_archer": "res://assets/mobs_archer.png",
+		"wraith": "res://assets/mobs_wraith.png",
+		"brute": "res://assets/brute.png",
+	}
+	var names: Array = assets.keys()
+	names.sort()
+	var raw_all_ok := true
+	var alpha_all_ok := true
+	var sizes_ok := true
+	var off_after_set := {}
+	var legacy_uniq := {}
+	var off_before_set := {}
+	for a in names:
+		var lraw: PackedByteArray = Marshalls.base64_to_raw(String(GD.GOLD[a]))
+		var legacy := Image.new()
+		if legacy.load_png_from_buffer(lraw) != OK:
+			chk(false, "c23: золотой PNG декодируется (%s)" % a)
+			raw_all_ok = false
+			continue
+		var exp: Image = null
+		if has_recolor:
+			exp = RT.recolor_atlas(String(a), legacy)
+		else:
+			raw_all_ok = false
+		var ship := Image.new()
+		if ship.load_png_from_buffer(FileAccess.get_file_as_bytes(String(assets[a]))) != OK:
+			chk(false, "c23: атлас читается из res://assets (%s)" % a)
+			raw_all_ok = false
+			continue
+		if String(GD.SIZES[a]) != "%dx%d" % [ship.get_width(), ship.get_height()]:
+			sizes_ok = false
+		if exp != null and exp.get_data() != ship.get_data():
+			raw_all_ok = false
+		var la: PackedByteArray = legacy.get_data()
+		var sa: PackedByteArray = ship.get_data()
+		if la.size() != sa.size():
+			alpha_all_ok = false
+		else:
+			for i in range(3, la.size(), 4):
+				if la[i] != sa[i]:
+					alpha_all_ok = false
+					break
+		var seen := {}
+		for y in legacy.get_height():
+			for x in legacy.get_width():
+				var c := legacy.get_pixel(x, y)
+				if c.a == 0.0:
+					continue
+				var k: int = PAL.key(Color(c.r, c.g, c.b, 1.0))
+				if not seen.has(k):
+					seen[k] = true
+					legacy_uniq["%s|%d" % [a, k]] = true
+					if not cidx.has(k):
+						off_before_set[k] = true
+		for y in ship.get_height():
+			for x in ship.get_width():
+				var c2 := ship.get_pixel(x, y)
+				if c2.a > 0.0:
+					var k2: int = PAL.key(Color(c2.r, c2.g, c2.b, 1.0))
+					if not cidx.has(k2):
+						off_after_set[k2] = true
+	chk(sizes_ok, "c23: размеры 13 атласов заморожены (ни нового кадра/рисовалки)")
+	chk(alpha_all_ok, "c23: альфа (маска/силуэт) каждого кадра == золотая побайтово")
+	chk(raw_all_ok, "c23: каждый атлас == карта c22, применённая к золотому легаси, побайтово")
+	chk(legacy_uniq.size() == 606, "c23: соответствий в карте — 606 (золото дало %d)" % legacy_uniq.size())
+	chk(off_before_set.size() == 486, "c23: легаси off (union 13 атласов) = 486 (золото дало %d)" % off_before_set.size())
+	chk(off_after_set.size() == 0, "c23: PixelPalette off в игровых атласах = 0 (486 -> %d)" % off_after_set.size())
