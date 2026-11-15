@@ -128,6 +128,7 @@ func _ready() -> void:
 	await _t18()
 	_t23()
 	_t25()
+	_t27()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2543,3 +2544,68 @@ func _t25() -> void:
 	chk(sat2.get_width() == 192 and sat2.get_height() == 16, "c25: атлас скиллов 192x16 не тронут")
 	# popcount-различимость 15 пар листа — числа в логе генератора (sheet_items.gd),
 	# здесь не считаем: instantiating SceneTree-скрипта внутри батареи недопустим.
+
+## c27 «волна w1: портреты на палитру» (план c26, без вердикта).
+## Пины: карта c27_portraits в репо; золотые легаси-портреты (base64) ==
+## HEAD-состояние; ожидание = карта, применённая к золоту, == ассет побайтово;
+## альфа-маска байт-в-байт; размеры 120x40 заморожены; off 6175 -> 0 числами.
+## Честный RED на голом HEAD: инструмента нет, ассет == золото != ожиданию, off=6175.
+func _t27() -> void:
+	var G = load("res://c27_golden.gd")
+	chk(G != null, "c27: золотые легаси-портреты res://c27_golden.gd (голый HEAD: RED)")
+	if G == null:
+		return
+	var RT = load("res://tools_art/c27_portraits.gd")
+	chk(RT != null, "c27: карта c27_portraits в репо (голый HEAD: RED)")
+	var cidx: Dictionary = PAL.color_index()
+	var assets := {
+		"portraits": "res://assets/portraits.png",
+		"portraits2": "res://assets/portraits2.png",
+	}
+	var raw_all_ok := true
+	var alpha_all_ok := true
+	var sizes_ok := true
+	var off_before := 0
+	var off_after := 0
+	for a in ["portraits", "portraits2"]:
+		var legacy := Image.new()
+		if legacy.load_png_from_buffer(Marshalls.base64_to_raw(String(G.GOLD[a]))) != OK:
+			chk(false, "c27: золотой PNG декодируется (%s)" % a)
+			raw_all_ok = false
+			continue
+		var exp: Image = null
+		if RT != null:
+			exp = legacy.duplicate()
+			RT.bake(String(a), exp)
+		var ship := Image.new()
+		if ship.load_png_from_buffer(FileAccess.get_file_as_bytes(String(assets[a]))) != OK:
+			chk(false, "c27: ассет читается (%s)" % a)
+			raw_all_ok = false
+			continue
+		if "%dx%d" % [ship.get_width(), ship.get_height()] != "120x40":
+			sizes_ok = false
+		if exp != null and exp.get_data() != ship.get_data():
+			raw_all_ok = false
+		var la: PackedByteArray = legacy.get_data()
+		var sa: PackedByteArray = ship.get_data()
+		if la.size() != sa.size():
+			alpha_all_ok = false
+		else:
+			for i in range(3, la.size(), 4):
+				if la[i] != sa[i]:
+					alpha_all_ok = false
+					break
+		for y in legacy.get_height():
+			for x in legacy.get_width():
+				var k: int = legacy.get_pixel(x, y).to_argb32()
+				if ((k >> 24) & 0xFF) == 255 and not cidx.has(k):
+					off_before += 1
+		for y in ship.get_height():
+			for x in ship.get_width():
+				var k2: int = ship.get_pixel(x, y).to_argb32()
+				if ((k2 >> 24) & 0xFF) == 255 and not cidx.has(k2):
+					off_after += 1
+	chk(sizes_ok, "c27: размеры портретов 120x40 заморожены (ни нового кадра)")
+	chk(alpha_all_ok, "c27: альфа-маска портретов == золото побайтово")
+	chk(raw_all_ok, "c27: портреты == карта c27, применённая к золоту, побайтово (голый HEAD: RED)")
+	chk(off_after == 0, "c27: PixelPalette off на портретах = 0 (легаси давало %d, сейчас %d)" % [off_before, off_after])
