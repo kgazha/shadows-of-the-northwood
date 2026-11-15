@@ -475,6 +475,31 @@ static func _chest_frame() -> Image:
 		img.set_pixel(x, 14, P.c("CHAR", P.T_OUTLINE))
 	return img
 
+static func _chest_open_frame() -> Image:
+	# c34 (вердикт «Сундук пепелища ок», кадр v2 из c32b — draw2.ps1 Bake-Open,
+	# двойной bake md5 DC27EB9FFFA66FAADE1A9E5863AA8AB5). Побайтовый перенос
+	# v2-операций по закрытому кадру: корпус y8..15 байт-в-бит (оптика/кромка/
+	# замок-уголёк c20 целы), крышка — ТЕ ЖЕ пиксели закрытого подъёмом на 2
+	# (y4..7 -> y2..5) без перекраски и петель, жерло 2 ряда (y6..7): щёки
+	# CHAR DARK, нутро CHAR OUTLINE (темнее корпуса), содержимое ровно 2 px
+	# самых тёмных тонов своих рамп на полке y7.
+	var cl := _chest_frame()
+	var o := _img(16, 16)
+	for y in range(8, 16):
+		for x in 16:
+			o.set_pixel(x, y, cl.get_pixel(x, y))
+	for y in range(4, 8):
+		for x in 16:
+			o.set_pixel(x, y - 2, cl.get_pixel(x, y))
+	for y in range(6, 8):
+		o.set_pixel(4, y, P.c("CHAR", P.T_DARK))
+		o.set_pixel(11, y, P.c("CHAR", P.T_DARK))
+		for x in range(5, 11):
+			o.set_pixel(x, y, P.c("CHAR", P.T_OUTLINE))
+	o.set_pixel(7, 7, P.c("ASH_EMBER", P.T_DARK))
+	o.set_pixel(8, 7, P.c("HUD_GOLD", P.T_DARK))
+	return o
+
 # ------------------------------------------------------------------ атлас игры (c20)
 # Разметка assets/ashen_tiles.png (bake_atlas): строка 0 — ячейки 16×16
 # (0–3 полы листа, 4–6 «подложки» блокировщиков под prop-спрайтами,
@@ -487,6 +512,9 @@ const PROP_REGIONS := {
 	"TREE2": Rect2(16, 16, 16, 24),
 	"STUMP": Rect2(32, 16, 14, 12),
 	"LOG": Rect2(48, 16, 20, 10),
+	# c34: открытый сундук (кадр v2) в свободной prop-зоне строки 1; TileMap
+	# строку 1 не читает (create_tile только (i,0)), формат карты не тронут
+	"CHEST_OPEN": Rect2(96, 16, 16, 16),
 }
 
 static func bake_atlas() -> Image:
@@ -504,6 +532,8 @@ static func bake_atlas() -> Image:
 	img.blit_rect(_tree2(), Rect2i(0, 0, 16, 24), Vector2i(16, 16))
 	img.blit_rect(_stump(), Rect2i(0, 0, 14, 12), Vector2i(32, 16))
 	img.blit_rect(_log(), Rect2i(0, 0, 20, 10), Vector2i(48, 16))
+	# c34: открытый сундук (вердикт «ок») в prop-зону строки 1
+	img.blit_rect(_chest_open_frame(), Rect2i(0, 0, 16, 16), Vector2i(96, 16))
 	return img
 
 # ------------------------------------------------------------------ наборы
@@ -532,6 +562,7 @@ static func _build_props() -> Array:
 		["SKELETON", "SKL", "~1H", _skeleton()],
 		["PORTAL", "PRT", "TILE16", _portal_tile(), true],
 		["CHEST", "CHS", "~0.9H", _chest_frame()],
+		["CHEST_OPEN", "CHO", "TILE16", _chest_open_frame()],
 	]
 	var out: Array = []
 	for m in meta:

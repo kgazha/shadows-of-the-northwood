@@ -132,6 +132,7 @@ func _ready() -> void:
 	_t29()
 	_t30()
 	_t34()
+	_t35()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2325,8 +2326,8 @@ func _t18() -> void:
 			% [n_block, got.size(), bad_pos])
 	chk(layer != null and bad_z == 0,
 			"t20: стопы спрайтов — низ клетки, z-сортировка fposmod(стопа, 4800) как у актёров (сбоев %d)" % bad_z)
-	chk(regs.size() == 4,
-			"t20: layout инструмента PROP_REGIONS (4 региона) запинен и используется зоной (регионов %d)" % regs.size())
+	chk(regs.size() == 5,
+			"t20: layout инструмента PROP_REGIONS запинен и используется зоной (регионов %d; c34: +CHEST_OPEN)" % regs.size())
 	# 5) тон листа: self_modulate земли убран
 	var tm = az.get("tilemap")
 	chk(tm != null and (tm as CanvasItem).self_modulate == Color.WHITE,
@@ -2952,7 +2953,9 @@ const C33_DIFF := {
 	"portraits2.png": 113,
 }
 const C33_MD5_KEPT29 := {
-	"ashen_tiles.png": "2b6949dcf2cf0a82a4e5fa27561d13bd",
+	# c34: ashen_tiles.png УБРАН из списка — атлас легитимно изменён волной c34
+	# (открытый сундук v2 в prop-зону строки 1, вердикт «Сундук пепелища ок»);
+	# побайтовая целостность нового атласа пинится в _t35 (== bake_atlas и == v2)
 	"brute.png": "73dedb5b9b26420c5466832e9032fabf",
 	"campfire.png": "e2efeb093d3dc1579e97afbc12bcda32",
 	"class_archer.png": "8b00142c7ffcf2ca6f161a59b63f8388",
@@ -3090,13 +3093,112 @@ func _t34() -> void:
 	chk(sum_diff == 4832 and bad_total == 0,
 		"c33: суммарный diff 13 файлов == 4832 px таблицы c31 (получено %d, bad=%d)" % [sum_diff, bad_total])
 	chk(resid == 0, "c33: старых CAVE/snap hex не осталось (остаток %d)" % resid)
-	# 3) остальные 29 трекаемых PNG — бит-в-бит HEAD
+	# 3) остальные трекаемые PNG — бит-в-бит HEAD (28: ashen_tiles легитимно
+	# изменён c34 и запинен в _t35)
 	var keep_ok := true
 	for rel in C33_MD5_KEPT29:
 		if _t11_md5("res://assets/" + rel) != String(C33_MD5_KEPT29[rel]):
 			keep_ok = false
 			print("c33: ИЗМЕНЁН сверх scope: ", rel)
-	chk(keep_ok, "c33: остальные 29 трекаемых PNG бит-в-бит HEAD (md5)")
+	chk(keep_ok, "c33: остальные %d трекаемых PNG бит-в-бит HEAD (md5)" % C33_MD5_KEPT29.size())
 	# 4) POTENTIAL_GRAY легаси — нетронутость доказывается п.3 (tiles/player) и
 	# п.2 для dungeon_tiles: diff там строго из old-домена snap/CAVE (bad==0).
 	print("qa_lp c33: GOLDEN-пины сеток (CHAR_TO_TILE/BLOCKING t16) выше, без пересчёта")
+
+# ------------------------------------------------------------------ c34 (контракт: «qa_lp _t34»; имя занято рампой c33 → _t35)
+# Открытый сундук Пепелища (вердикт пользователя «Сундук пепелища ок», кадр v2
+# волны c32b: двойной bake md5 DC27EB9FFFA66FAADE1A9E5863AA8AB5).
+const C34_OPEN_B64 := "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACVSURBVDhPYxh8INTL9T+UiQF01JRxysGBg7nxf5AhILx4xab/zR2TwGyQOAhDleEGMIUgDNIMwiA2yHaiXUCRASBFkqIiWDHJBhzyEv+/ukabNANweQGGocpwA5AiWKiDNINcAWKDbCfJBSAngwz4Wm1IugHILoB5gWQXwAyIT8mDByDJBiBjog2ARRkuDFVGLcDAAACeEKfPlA/gNAAAAABJRU5ErkJggg=="
+const C34_BASE_MD5_UNTOUCHED := {  # чужие сундуки (деревня t10→t14, пещера t11→t12): код и кадр не тронуты
+	"res://scripts/world.gd": "a8c8f14e0c4080e1a82a290f8ff1a50e",
+	"res://scripts/dungeon_zone.gd": "32f41f498e243548f4756a2e14338adb",
+	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
+	"res://assets/tiles.png": "cb3e05695831f27d6b183140441a2a80",
+}
+
+func _t35() -> void:
+	# 1) кадр v2 в атласе: prop-зона строки 1 (96,16,16,16) побайтово == доставленный v2
+	var v2 := Image.new()
+	var ok2 := v2.load_png_from_buffer(Marshalls.base64_to_raw(C34_OPEN_B64)) == OK
+	var fi := Image.new()
+	var okf := fi.load_png_from_buffer(FileAccess.get_file_as_bytes("res://assets/ashen_tiles.png")) == OK
+	var dv := 256
+	if ok2 and okf and fi.get_width() >= 112 and fi.get_height() >= 32:
+		dv = 0
+		for y in 16:
+			for x in 16:
+				if fi.get_pixel(96 + x, 16 + y).to_argb32() != v2.get_pixel(x, y).to_argb32():
+					dv += 1
+	chk(dv == 0, "c34: атлас prop-зона (96,16,16,16) == доставленный v2-кадр побайтово (diff %d)" % dv)
+	# 2) кадр печатает генератор (единый источник) и layout согласован с зоной
+	var SH = load("res://tools_art/sheet_ashen_v1.gd")
+	var has_open_fn := false
+	if SH != null:
+		for mi in SH.get_script_method_list():
+			if String(mi.get("name", "")) == "_chest_open_frame":
+				has_open_fn = true
+	chk(has_open_fn, "c34: _chest_open_frame() есть в sheet_ashen_v1.gd — единый источник (голо-HEAD: RED)")
+	var dgb := 256
+	var rgn_gen = null
+	if SH != null and has_open_fn:
+		var baked: Image = SH.bake_atlas()
+		if baked != null:
+			dgb = 0
+			for y in 16:
+				for x in 16:
+					if baked.get_pixel(96 + x, 16 + y).to_argb32() != v2.get_pixel(x, y).to_argb32():
+						dgb += 1
+		var smap: Dictionary = SH.get_script_constant_map()
+		rgn_gen = (smap.get("PROP_REGIONS", {}) as Dictionary).get("CHEST_OPEN", null)
+	chk(dgb == 0, "c34: bake_atlas() генератора печатает v2 в (96,16) побайтово (diff %d)" % dgb)
+	chk(rgn_gen == Rect2(96, 16, 16, 16), "c34: layout инструмента: CHEST_OPEN == Rect2(96,16,16,16)")
+	var AZ = load("res://scripts/ashen_zone.gd")
+	var rgn_zone = (AZ.get_script_constant_map().get("PROP_REGIONS", {}) as Dictionary).get("CHEST_OPEN", null)
+	chk(rgn_zone == Rect2(96, 16, 16, 16), "c34: зона использует тот же регион (layout синхронен)")
+	# 3) ветка поведения: ни одного queue_free в AshenChest; персист-ключ не менялся
+	var src := String(FileAccess.get_file_as_string("res://scripts/ashen_zone.gd"))
+	var ci := src.find("class AshenChest:")
+	var body := src.substr(ci) if ci >= 0 else ""
+	chk(ci >= 0 and body.length() > 0 and not body.contains("queue_free("),
+			"c34: в AshenChest нет queue_free — сундук остаётся в мире (голо-HEAD: RED)")
+	chk(body.contains("open()") and body.contains("PROP_REGIONS[\"CHEST_OPEN\"]"),
+			"c34: try_interact -> open() с открытым кадром v2 (идемпотентен, узел живёт)")
+	chk(src.contains("\"chest@ashen:%d,%d\""), "c34: персист-ключ \"chest@ashen:x,y\" — без изменений")
+	# 4) поведение на живом мире: открытие = used, кадр v2, узел и коллайдер целы
+	var az = world.ashen_grid
+	var chest = az.get("chest_node") if az != null else null
+	if chest == null:
+		chk(String(GameState.flags.get("ashen.chest", "")) == "taken",
+				"c34: при taken узел спавнится (в qa_lp флаг не taken — узел обязан быть)")
+	else:
+		var g0: int = GameState.gold
+		chest.try_interact()
+		var g1: int = GameState.gold  # награда выдана; защита — от СЛЕДУЮЩИх вызовов
+		var spr: Sprite2D = null
+		for n in (chest as Node).get_children():
+			if n is Sprite2D:
+				spr = n as Sprite2D
+		var reg_ok := spr != null and spr.texture is AtlasTexture \
+				and (spr.texture as AtlasTexture).region == Rect2(96, 16, 16, 16)
+		chk(reg_ok, "c34: после вскрытия спрайт — открытый кадр v2 (96,16), а не исчезновение")
+		chk(bool(chest.get("used")) and is_instance_valid(chest),
+				"c34: used=true, узел в дереве (коллайдер не снят)")
+		var ncol := 0
+		for n in (chest as Node).get_children():
+			if n is CollisionShape2D:
+				ncol += 1
+		chk(ncol == 1, "c34: коллайдер сундука сохранён (декорация, а не пустая клетка)")
+		chest.try_interact()
+		chk(GameState.gold == g1, "c34: повторный interact не удваивает награду (защита прежняя)")
+		chk(String(chest.call("get_hint")) == "", "c34: вскрытый сундук не подсказывает «Открыть»")
+		chk(String(GameState.flags.get("ashen.chest", "")) == "taken",
+				"c34: флаг taken выставлен (автосейв), uid-схема не тронута")
+	# 5) регресс чужих сундуков (village t10→t14, cave t11→t12): код и кадр побайтово целы
+	var okall := true
+	for p in C34_BASE_MD5_UNTOUCHED:
+		if _t11_md5(String(p)) != String(C34_BASE_MD5_UNTOUCHED[p]):
+			okall = false
+			print("c34: ИЗМЕНЕНО сверх scope: ", p)
+	chk(okall, "c34: world/dungeon_zone/interactable/tiles.png бит-в-бит HEAD — деревня и пещера не тронуты")
+	# 6) пересборка мира с taken (спавн сразу открытым) — раннер qa_z1._phase_rebuild
+	print("qa_lp c34: taken=>spawn-open запинен поведением в qa_z1 (пересборка мира)")

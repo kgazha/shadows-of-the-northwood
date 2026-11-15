@@ -154,6 +154,8 @@ const PROP_REGIONS := {
 	"TREE2": Rect2(16, 16, 16, 24),
 	"STUMP": Rect2(32, 16, 14, 12),
 	"LOG": Rect2(48, 16, 20, 10),
+	# c34: открытый сундук (кадр v2, вердикт «ок») — проп-зона строки 1 атласа
+	"CHEST_OPEN": Rect2(96, 16, 16, 16),
 }
 
 ## c20: prop-слой поверх блокировщиков T/K/# (вердикт «берём»). Стоит ровно на
@@ -226,12 +228,15 @@ func _spawn_entities(meta: Dictionary) -> void:
 		add_child(p)
 		p.setup(self, Vector2i(int(ep[0]), int(ep[1])))
 		portal_node = p
-	# сундук награды — персист по флагу, без has_sword-побочного эффекта деревенского сундука
-	if str(GameState.flags.get("ashen.chest", "")) != "taken" \
-			and chest_tile.x >= 0:
+	# сундук награды — персист по флагу, без has_sword-побочного эффекта деревенского сундука.
+	# c34 (вердикт «Сундук пепелища ок»): сундук НЕ исчезает — после вскрытия стоит
+	# открытым кадром v2; при taken спавним узел сразу открытым (персист-ключ не менялся)
+	if chest_tile.x >= 0:
 		var c := AshenChest.new()
 		add_child(c)
 		c.setup(self, chest_tile)
+		if str(GameState.flags.get("ashen.chest", "")) == "taken":
+			c.open()  # без награды: вид уже вскрытый
 		chest_node = c
 	# травы — штатный interactable.gd (респаун 50 с, общий счётчик трав)
 	var it_script := load("res://scripts/interactable.gd")
@@ -347,6 +352,8 @@ class AshenChest:
 		body_entered.connect(_on_enter)
 		body_exited.connect(_on_exit)
 	func get_hint() -> String:
+		if used:
+			return ""
 		return "Открыть сундук"
 	func try_interact() -> void:
 		if used or str(GameState.flags.get("ashen.chest", "")) == "taken":
@@ -358,8 +365,24 @@ class AshenChest:
 		Loot._give_item(GameState, "potion", 1)  # гарантированная награда-экипировка
 		Achv.on_chest_opened()
 		GameState.quest_changed.emit()          # автосейв: флаг осядет в сохранении
-		queue_free()
+		open()  # c34 (вердикт «Сундук пепелища ок»): вместо queue_free — открытый кадр v2
+	func open() -> void:
+		## c34: вскрытый вид — тот же узел и коллайдер, спрайт меняется на кадр v2
+		## из prop-зоны строки 1 атласа (TileMap строку 1 не читает). Персист
+		## (флаг/uid) не меняется; повторный вызов идемпотентен.
+		used = true
+		for n in get_children():
+			var spr := n as Sprite2D
+			if spr != null:
+				var at := AtlasTexture.new()
+				at.atlas = load(zone.TEX_PATH)
+				at.region = zone.PROP_REGIONS["CHEST_OPEN"]
+				spr.texture = at
+		if zone.world != null:
+			zone.world.near.erase(self)  # подсказка «Открыть» больше не предлагается
 	func _on_enter(b: Node) -> void:
+		if used:
+			return  # вскрытый сундук — не интерактив (стоит декорацией)
 		if b.is_in_group("player"):
 			zone.world.near.append(self)
 	func _on_exit(b: Node) -> void:

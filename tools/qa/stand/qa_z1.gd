@@ -304,7 +304,7 @@ func _phase_chest() -> void:
 	chk(GameState.gold - g0 >= 8, "награда сундука золотом")
 	chest = az.chest_node
 	if chest != null and is_instance_valid(chest):
-		chest.try_interact()  # защита от двойного нажатия до queue_free
+		chest.try_interact()  # защита от двойного нажатия (после c34 узел живёт, used=true)
 	chk(GameState.gold - g0 < 60, "повторный interact не удваивает награду")
 
 # ---------------------------------------------------------------- персист флагов
@@ -327,7 +327,11 @@ func _phase_rebuild() -> void:
 	world = await _spawn_world()
 	var az = world.ashen_grid
 	chk(az != null and az.boss_node == null, "пересборка: ведьмы нет (флаг dead)")
-	chk(az.chest_node == null, "пересборка: сундука нет (флаг taken)")
+	# c34 (вердикт «Сундук пепелища ок»): при taken сундук спавнится СРАЗУ
+	# открытым — тот же узел/коллайдер, кадр v2; прежнее ожидание (пусто) отменено
+	chk(az.chest_node != null and is_instance_valid(az.chest_node) \
+			and bool(az.chest_node.get("used")),
+			"пересборка: сундук стоит открытым (флаг taken, used=true; c34)")
 	var c := _count_mobs(world.ashen_zone)
 	chk(int(c["archer"]) == 3 and int(c["wraith"]) == 4,
 		"пересборка: аркадные спавны на месте, тенеплётов 4 (c21)")
