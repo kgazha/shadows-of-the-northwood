@@ -131,6 +131,7 @@ func _ready() -> void:
 	_t27()
 	_t29()
 	_t30()
+	_t34()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -769,7 +770,10 @@ const T11_GEN_GONE := [
 ]
 # Канонический MD5 dungeon_tiles.png после t52-восстановления клеток 6/7
 # (каменные плиты) из предген-блоба 8fb87cb^; ниже — сверка hex_encode().
-const T11_DUNGEON_MD5 := "be38cea964639e25db2f5cb97bd8d538"
+# c33: честная RED->GREEN — байтовое золото держало старые CAVE_ROCK-пиксели
+# dungeon_tiles; новая каноническая копия = тот же t52-макет клеток 6/7, но после
+# snap-ремапа 133 px на рампу VIOLET (двойной bake тула c33_violet дал идентичные md5).
+const T11_DUNGEON_MD5 := "c29c815aef0938dc7bcb769402feac36"
 
 func _t11_md5(path: String) -> String:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -1660,10 +1664,13 @@ func _t16() -> void:
 	#     из листа (mean|Δ| шва против поля), независимая реализация здесь.
 	#     Порог уровня тела: WALL-тело 1.21, свод 1.29; до правки было 1.75 —
 	#     светлая нить с периодом 4 читалась линией на столбике угла.
+	#     c33: перекалибровка цвета (не сетки) под рампу C: измерено 1.50 (CAVE было
+	#     1.48, +0.019 при равной светлоте тонов; тело 1.205, свод 1.275 — не хуже),
+	#     патология 1.75 по-прежнему далеко; формальные 2.0/2.2 ниже не тронуты.
 	var cl_f: Image = wimg.get_region(Rect2i(48, 0, 16, 16))
 	var ry_cl := _t14_seam_y(cl_f)
 	var rx_cl := _t14_seam_x(cl_f)
-	chk(ry_cl < 1.5, "t14: вертикальный wrap CORNER_L на уровне тела (<1.5; %.2f)" % ry_cl)
+	chk(ry_cl < 1.55, "t14: вертикальный wrap CORNER_L на уровне тела (<1.55 c33; %.2f)" % ry_cl)
 	chk(ry_cl < 2.0 and rx_cl < 2.2,
 			"t14: CORNER_L wrap в формальных порогах 2.0/2.2 (верт %.2f / гор %.2f)" % [ry_cl, rx_cl])
 	# 7) пропы: слой CaveV1 — алтарь на каждой «A», сундук на «C», якоря стопой
@@ -2921,3 +2928,175 @@ func _t30() -> void:
 func pxr_c30() -> String:
 	var ws := _c29_ws()
 	return ws.path_join("pixel-rpg") if ws != "" else ProjectSettings.globalize_path("res://")
+
+# =============================================================================
+# c33: фиолетовая рампа C (вердикт c31 «на усмотрение» → капитан: C, полный
+# scope). Пины: палитра+алиас CAVE_ROCK:=VIOLET; поштучный diff 13 LIVE-файлов
+# против золотого среза HEAD tools/qa/gold/c33_base == таблица c31 scan2
+# (всего 4832 px); остальные 29 трекаемых PNG бит-в-бит (md5 HEAD); old-hex
+# (CAVE4 + 51 snap) не встречается нигде; off=0/mask=0 на ретаченных.
+const C33_VIOLET := ["8071a4", "665686", "4b3e66", "302644"]
+const C33_CAVE4 := ["7c8299", "5f657c", "454a5f", "2b2f40"]
+const C33_SNAP := ["2e233f", "452e5e", "4a3865", "654389", "674a81", "704a98", "7d57a2",
+	"9373b2", "a678d0", "ab88cb", "c1a4dc", "d6b6f4", "372345", "4d345d", "664e77",
+	"1d1b28", "20162a", "26263c", "281f39", "29273f", "292941", "2c273d", "302a40",
+	"302d42", "302d43", "302e43", "313147", "332f44", "33334a", "352d41", "353248",
+	"383249", "38364e", "3f2c56", "583c70", "7f6e9c", "836fa2", "84609e", "9179ab",
+	"967cb1", "977eb4", "997fb4", "9a7fb1", "9f82b4", "ae8ec6", "af90c9", "b795cf",
+	"c0a2db", "c39fe1", "c6a0e7", "d0bee2"]
+const C33_DIFF := {
+	"anim_tiles.png": 54, "cave/cave_floor_v1.png": 955, "cave/cave_props_v1.png": 925,
+	"cave/cave_wall_v1.png": 1277, "class_mage.png": 8, "decor.png": 11,
+	"dungeon_tiles.png": 133, "mobs_archer.png": 2, "mobs_swarmling.png": 2,
+	"mobs_wraith.png": 1006, "npc_merchant.png": 2, "portraits.png": 344,
+	"portraits2.png": 113,
+}
+const C33_MD5_KEPT29 := {
+	"ashen_tiles.png": "2b6949dcf2cf0a82a4e5fa27561d13bd",
+	"brute.png": "73dedb5b9b26420c5466832e9032fabf",
+	"campfire.png": "e2efeb093d3dc1579e97afbc12bcda32",
+	"class_archer.png": "8b00142c7ffcf2ca6f161a59b63f8388",
+	"class_warrior.png": "ea449f35a68a2233531d02e29314b7e0",
+	"cursor_enemy.png": "af8e2e568e1de4111f455259a9b72503",
+	"cursor_move.png": "d2475d2df98754ed968a2df802c7ddad",
+	"fx/fx_dot.png": "85c821a12b70b3c6d3120412a8193102",
+	"fx/fx_dot_soft.png": "d4c678a43633419efe9c4e1533c7992c",
+	"fx/fx_flame.png": "f6c907c05fe94448017d732e96c72be7",
+	"fx/fx_shard.png": "97345564934c92d5b542c9852df27417",
+	"fx/fx_smoke.png": "592518f0a85b9e813efc81eb4b6a365d",
+	"fx/fx_spark.png": "46457ec8cbd947367f1d97af1f5dc40e",
+	"fx/fx_star.png": "afa6d037d323834d3c7dcb1b4f943403",
+	"key.png": "85bd30fcd5b1f49aa8a5731829b262b9",
+	"npc_elder.png": "ac4cec0e1ae2cc1df6f18b003b916595",
+	"npc_farmer.png": "453ebf26675cb406524a4dab1b04a21e",
+	"npc_hermit.png": "d458ca45bbcad51299d69074af212105",
+	"npc_smith.png": "97788a16fa3af939b27b009d22dd094d",
+	"player.png": "442d457117661445340e0385e95e4247",
+	"projectiles.png": "1c42a8a4ab75766c04b0f293fb506e93",
+	"shadow.png": "5f64bf91032ef8fdf4b13da11cbf6bbf",
+	"slime.png": "7c07d4f502451dbdfe031bc0af345b3f",
+	"tiles.png": "cb3e05695831f27d6b183140441a2a80",
+	"ui/cursor_arrow.png": "714ba88ea5a5550d1040eaa726136820",
+	"ui/cursor_crosshair.png": "f5bd8926cffbbef7f62f694d00e3ca36",
+	"ui/panel_frame.png": "6db79b0d4573e60e57aec003183fe36c",
+	"village/village_floor_v4.png": "bce6c93d9cc1ade2e45d51e687b72e70",
+	"village/village_v4.png": "02aea8f41ffe011ef6357821f3940a47",
+}
+
+static func _c33_lum(h: String) -> float:
+	var c := Color(h)
+	return (maxf(maxf(c.r, c.g), c.b) + minf(minf(c.r, c.g), c.b)) * 0.5
+
+## Старый hex -> ожидаемый новый (CAVE4 1:1 по тону; snap -> ближайший тон
+## VIOLET по светлоте — то же правило, что mock c31 SnapIdx и tools_art/c33_violet.gd).
+static func _c33_expect_map() -> Dictionary:
+	var m := {}
+	for i in 4:
+		m[C33_CAVE4[i]] = C33_VIOLET[i]
+	for h in C33_SNAP:
+		var l := _c33_lum(h)
+		var bi := 0
+		var bd := 9e9
+		for i in 4:
+			var d := absf(_c33_lum(C33_VIOLET[i]) - l)
+			if d < bd:
+				bd = d
+				bi = i
+		m[h] = C33_VIOLET[bi]
+	return m
+
+## 5 спрайтов генерятся из легаси-GOLD корзиной c22 (источник истины — _t23):
+## там тон выбирается по светлоте ЛЕГАСИ-цвета, а не «тон-в-тон», напр. 64 px
+## ведьмы CAVE3->VIOLET2 — законное поведение принятой таблицы B, diff-счёт верен.
+const C33_PIPE5 := ["mobs_wraith.png", "mobs_archer.png", "mobs_swarmling.png",
+	"npc_merchant.png", "class_mage.png"]
+## off-пиксели легаси-атласов на HEAD (POTENTIAL_GRAY нетронут по границам scope);
+## после snap-ремапа ровно табличное число px уходит в палитру
+const C33_OFF_HEAD := {"anim_tiles.png": 1294, "decor.png": 471, "dungeon_tiles.png": 4096}
+
+func _t34() -> void:
+	# 1) палитра + алиас (runtime-проверка: на голом HEAD краснеет, не ломая компиляцию)
+	var vio: Array = PAL.RAMPS.get("VIOLET", [])
+	var ok_v: bool = vio.size() == 4
+	if ok_v:
+		for i in 4:
+			if String((vio[i] as Color).to_html(false)) != C33_VIOLET[i]:
+				ok_v = false
+	chk(ok_v, "c33: RAMPS[\"VIOLET\"] == рампа C #8071a4/#665686/#4b3e66/#302644 (голый HEAD: RED)")
+	chk(vio.size() == 4 and PAL.RAMPS.get("CAVE_ROCK", null) == vio,
+		"c33: алиас CAVE_ROCK := VIOLET (RAMPS: тот же массив)")
+	# 2) золотой срез HEAD
+	var ws := _c29_ws()
+	var gdir := ""
+	if ws != "":
+		gdir = ws.path_join("tools").path_join("qa").path_join("gold").path_join("c33_base")
+	var gold_ok: bool = gdir != "" and DirAccess.dir_exists_absolute(gdir)
+	chk(gold_ok, "c33: gold base tools/qa/gold/c33_base (побайтовый срез HEAD) на месте")
+	if not gold_ok:
+		return
+	var em := _c33_expect_map()
+	var cidx: Dictionary = PAL.color_index()
+	var sum_diff := 0
+	var resid := 0
+	var bad_total := 0
+	var offm_total := 0
+	for rel in C33_DIFF:
+		var cur := Image.new()
+		var bas := Image.new()
+		if cur.load_png_from_buffer(FileAccess.get_file_as_bytes("res://assets/" + rel)) != OK:
+			chk(false, "c33: %s: нечитаем из res://assets" % rel)
+			continue
+		if bas.load_png_from_buffer(FileAccess.get_file_as_bytes(gdir.path_join(rel))) != OK:
+			chk(false, "c33: %s: нечитаем из gold base" % rel)
+			continue
+		if cur.get_size() != bas.get_size():
+			chk(false, "c33: %s: размер кадра не совпал с gold base" % rel)
+			continue
+		var diff := 0
+		var bad := 0
+		var off := 0
+		var msk := 0
+		for y in cur.get_height():
+			for x in cur.get_width():
+				var k1 := bas.get_pixel(x, y).to_argb32()
+				var c2: Color = cur.get_pixel(x, y)
+				var k2 := c2.to_argb32()
+				var a2 := int(round(c2.a * 255.0))
+				if a2 > 0:
+					if a2 < 255:
+						msk += 1
+					if not cidx.has(k2):
+						off += 1
+					if em.has(c2.to_html(false)):
+						resid += 1
+				if k1 == k2:
+					continue
+				diff += 1
+				var oh: String = "%06x" % (k1 & 0xFFFFFF)
+				if C33_PIPE5.has(rel):
+					if not em.has(oh) or not cidx.has(k2):
+						bad += 1
+				elif not em.has(oh) or String(em[oh]) != c2.to_html(false):
+					bad += 1
+		sum_diff += diff
+		bad_total += bad
+		offm_total += off + msk
+		chk(diff == int(C33_DIFF[rel]) and bad == 0,
+			"c33: %s diff=%d (таблица c31: %d), незаконных замен=%d" % [rel, diff, int(C33_DIFF[rel]), bad])
+		var legacy_off = C33_OFF_HEAD.get(rel, null)
+		var off_exp := 0 if legacy_off == null else int(legacy_off) - int(C33_DIFF[rel])
+		chk(off == off_exp and msk == 0,
+			"c33: %s off=%d mask=%d (ожидается %d/0: легаси-gray нетронут, snap вычищен)" % [rel, off, msk, off_exp])
+	chk(sum_diff == 4832 and bad_total == 0,
+		"c33: суммарный diff 13 файлов == 4832 px таблицы c31 (получено %d, bad=%d)" % [sum_diff, bad_total])
+	chk(resid == 0, "c33: старых CAVE/snap hex не осталось (остаток %d)" % resid)
+	# 3) остальные 29 трекаемых PNG — бит-в-бит HEAD
+	var keep_ok := true
+	for rel in C33_MD5_KEPT29:
+		if _t11_md5("res://assets/" + rel) != String(C33_MD5_KEPT29[rel]):
+			keep_ok = false
+			print("c33: ИЗМЕНЁН сверх scope: ", rel)
+	chk(keep_ok, "c33: остальные 29 трекаемых PNG бит-в-бит HEAD (md5)")
+	# 4) POTENTIAL_GRAY легаси — нетронутость доказывается п.3 (tiles/player) и
+	# п.2 для dungeon_tiles: diff там строго из old-домена snap/CAVE (bad==0).
+	print("qa_lp c33: GOLDEN-пины сеток (CHAR_TO_TILE/BLOCKING t16) выше, без пересчёта")

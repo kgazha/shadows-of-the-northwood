@@ -45,7 +45,12 @@ const CLOTH := [Color("d4614a"), Color("ab4433"), Color("7c2e24"), Color("4e1b15
 const IRON := [Color("a3a8b2"), Color("838892"), Color("5f646e"), Color("3a3e46")]
 
 # --- Пещеры -------------------------------------------------------------------
-const CAVE_ROCK := [Color("7c8299"), Color("5f657c"), Color("454a5f"), Color("2b2f40")]
+## VIOLET (c31-состав C, утверждён вердиктом c33): холодная аметистовая,
+## hue ~258, светлота 1:1 со старым псевдофиолетовым камнем CAVE_ROCK.
+const VIOLET := [Color("8071a4"), Color("665686"), Color("4b3e66"), Color("302644")]
+## CAVE_ROCK — алиас VIOLET (вердикт c33, стратегия 1 REBAKE c31): все
+## генераторы (cave_paint/sheet_cave/c27/c22) читают RAMPS["CAVE_ROCK"].
+const CAVE_ROCK := VIOLET
 const CRYSTAL := [Color("a5e2f2"), Color("6fb7d4"), Color("4887a8"), Color("2a5570")]
 const MOSS_GLOW := [Color("8fdba0"), Color("5fae76"), Color("3d7a52"), Color("234c33")]
 const CAVE_WATER := [Color("7fb8d8"), Color("5688ac"), Color("38607e"), Color("203c52")]
@@ -77,7 +82,7 @@ const RAMPS := {
 	"GRASS": GRASS, "PATH": PATH, "WOOD": WOOD, "BARK": BARK, "ROOF": ROOF,
 	"STONE": STONE, "STONE_WARM": STONE_WARM, "WATER": WATER, "LEAF": LEAF,
 	"PINE": PINE, "FIRE": FIRE, "CLOTH": CLOTH, "IRON": IRON,
-	"CAVE_ROCK": CAVE_ROCK, "CRYSTAL": CRYSTAL, "MOSS_GLOW": MOSS_GLOW,
+	"CAVE_ROCK": CAVE_ROCK, "VIOLET": VIOLET, "CRYSTAL": CRYSTAL, "MOSS_GLOW": MOSS_GLOW,
 	"CAVE_WATER": CAVE_WATER,
 	"ASH_GROUND": ASH_GROUND, "CHAR": CHAR, "ASH_EMBER": ASH_EMBER, "BONE": BONE,
 	"PARCHMENT": PARCHMENT, "BRONZE": BRONZE, "UI_BLUE": UI_BLUE,
