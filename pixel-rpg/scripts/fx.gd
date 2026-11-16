@@ -16,13 +16,14 @@ const TEX_FLAME := "fx_flame.png"     # 6x8 пламя
 const TEX_SMOKE := "fx_smoke.png"     # 8x8 дымок
 const TEX_SHARD := "fx_shard.png"     # 5x7 ледяной осколок
 
-# --- g16: левелап (вердикт пользователя 16.11) ---
-# Переключатель вида: 1 = «Вспышка» (shipping default), 2 = «Столб света».
-# Пользователю нравятся ОБА эффекта и выбирать он хочет по живым скриншотам,
-# поэтому значение — static var, а не const: скриншотный харнесс (_lvlshot.gd,
-# вне git) снимает оба варианта за один прогон без пересборки. Дефолт при этом
-# неизменен: в игру уходит вариант 1, пока пользователь не скажет иное.
-const LEVEL_UP_STYLE_DEFAULT := 1
+# --- g16/g16b: левелап (вердикты пользователя 16.11) ---
+# Переключатель вида: 1 = «Вспышка», 2 = «Столб света», 3 = «Столб + сдержанная
+# вспышка». Пользователь выбрал гибрид (16.11 ~16:18: «сделай вспышку со столбом,
+# но вспышку не такую большую и яркую»), поэтому дефолт — 3; первый и второй
+# эффекты ему тоже нравились, так что оба остаются доступны переключателем.
+# Значение — static var, а не const: скриншотный харнесс (_lvlshot.gd, вне git)
+# снимает все стили за один прогон без пересборки; дефолт при этом неизменен.
+const LEVEL_UP_STYLE_DEFAULT := 3
 static var LEVEL_UP_STYLE: int = LEVEL_UP_STYLE_DEFAULT
 
 const LU_TEXT := "Новый уровень!"       # русская надпись над героем (вердикт)
@@ -31,13 +32,32 @@ const LU_RISE := 24.0                   # всплытие, px
 const LU_RISE_T := 0.5                  # всплытие, с
 const LU_HOLD_T := 0.7                  # висит, с
 const LU_FADE_T := 0.4                  # растворение, с
-const LU_FLASH_T := 0.35                # вспышка варианта 1, с
-const LU_BEAM_T := 0.7                  # жизнь столба варианта 2, с
+const LU_FLASH_T := 0.35                # вспышка, с
+const LU_BEAM_T := 0.7                  # жизнь столба, с
 const LU_BEAM_FADE_T := 0.3             # растворение столба, с
 const LU_BEAM_FRAME_T := 2.0 / 60.0     # «2 кадра на фазу» при шаге 60 fps
 const LU_FLASH_S0 := 1.0                # вспышка: старт масштаба мягкой точки
-const LU_FLASH_S1 := 8.4                # …и пик (6px-точка => ~50 px вокруг героя)
-const LU_LIGHT_PEAK := 3.4              # пик импульса света (факел дышит 0.5..1.0)
+const LU_FLASH_S1 := 8.4                # …и пик стиля 1 (6px-точка => ~50 px)
+const LU_LIGHT_DIAM := 144.0            # текстура света стиля 1 => радиус 72 px
+const LU_LIGHT_PEAK := 3.4              # пик импульса света стиля 1 (факел 0.75)
+const LU_SPARKS := 12                   # сноп искр стиля 1
+# g16b, стиль 3: та же вспышка, но скромнее — «не такую большую и яркую».
+# Числа не на глаз: калиброваны по пикселям живых кадров тёмной пещеры (таблица
+# «до/после» — в EVIDENCE t54). Цель замера: кольцо стен 50-85 px поднимается на
+# +4..+8 (едва тронуто, а не «осветлённый зал», как у стиля 1 с его +12), и
+# окологеройная зона без прежних +78.
+# Про радиус. Просили ~46-50 px, и калибровка с них началась: при радиусе 48 px
+# кольцо дало −0,4, то есть ноль — свет до полосы 50-85 px физически не
+# дотягивается при любой энергии. Чтобы стены «едва тронулись», свет должен эту
+# полосу захватывать, поэтому радиус = 70 px, а скромность держат энергия
+# (2,2 против 3,4), размер точки (5,0 против 8,4) и сноп искр: у пика вспышки в
+# пещере окологеройная зона +50 против +78, горячих пикселей 554 против 3008
+# (в 5,4 раза меньше), кольцо +6,2 против +12. Ровно заявленный радиус 48 px —
+# это одна константа, но тогда стены не тронутся вообще (замер: −0,4).
+const LU_SOFT_S1 := 5.0                 # ~60 % предельного масштаба 8.4
+const LU_SOFT_LIGHT_DIAM := 140.0       # радиус 70 px (было 72) — см. комментарий
+const LU_SOFT_LIGHT_PEAK := 2.2         # энергия: было 3.4
+const LU_SOFT_SPARKS := 7               # ~60 % снопа (было 12)
 const LU_BEAM_H := 32                   # столб: высота, px
 const LU_BEAM_W := 7                    # …и ширина (ядро 1 px + «крылья»)
 const LU_GOLD := Color(1.0, 0.84, 0.35)       # тон звёздного всплеска
@@ -193,15 +213,23 @@ static func dust(pos: Vector2, parent: Node2D) -> void:
 		"ramp": _ramp(Color(0.66, 0.6, 0.5, 0.55), Color(0.55, 0.5, 0.42, 0.35), Color(0.4, 0.37, 0.32, 0.0)),
 	})
 
-## Новый уровень (g16): звёздный всплеск остаётся базой при любом варианте,
-## вокруг него добавляется усиление (вариант 1 «Вспышка» / вариант 2 «Столб
-## света») и русская надпись «Новый уровень!» над героем. parent — узел мира.
+## Новый уровень (g16/g16b): звёздный всплеск остаётся базой при любом стиле,
+## вокруг него добавляется усиление и русская надпись «Новый уровень!» над
+## героем. Стили: 1 «Вспышка», 2 «Столб света», 3 (дефолт) — столб + сдержанная
+## вспышка. parent — узел мира.
 static func level_up(pos: Vector2, parent: Node2D) -> void:
 	_star_burst(pos, parent)
-	if LEVEL_UP_STYLE == 2:
-		_light_beam(pos, parent)
-	else:
-		_flash_burst(pos, parent)
+	match LEVEL_UP_STYLE:
+		2:
+			_light_beam(pos, parent)
+		3:
+			# Вердикт 16.11 ~16:18: «вспышку со столбом, но вспышку не такую
+			# большую и яркую» — столб без изменений, вспышка в мягком варианте
+			# (LU_SOFT_*). Луч рисуем первым, чтобы вспышка легла поверх него.
+			_light_beam(pos, parent)
+			_flash_burst(pos, parent, true)
+		_:
+			_flash_burst(pos, parent)
 	_banner(pos, parent)
 	_fanfare_guard()
 
@@ -215,28 +243,38 @@ static func _star_burst(pos: Vector2, parent: Node2D) -> void:
 		"ramp": _ramp(Color(1.0, 0.95, 0.7), Color(1.0, 0.8, 0.35), Color(0.85, 0.55, 0.12, 0.0)),
 	})
 
-## Вариант 1 «Вспышка»: тёплая радиальная вспышка ~0.35 с (масштабируемая мягкая
-## точка), импульс света как от факела и сноп искр вверх.
-static func _flash_burst(pos: Vector2, parent: Node2D) -> void:
+## Вспышка: тёплая радиальная точка ~0.35 с (масштабируемая мягкая точка),
+## импульс света как от факела и сноп искр вверх. soft — приглушённый вариант
+## для стиля 3 (вердикт 16.11 «вспышку не такую большую и яркую»): меньше
+## предельный масштаб точки, ниже энергия света, скромнее сноп искр.
+static func _flash_burst(pos: Vector2, parent: Node2D, soft: bool = false) -> void:
 	var flash := LevelUpFlash.new()
 	flash.name = "FxFlash"
 	flash.texture = _tex(TEX_DOT_SOFT)
+	if soft:
+		flash.scale_end = LU_SOFT_S1
 	flash.position = pos + Vector2(0, -2)
 	parent.add_child(flash)
 	# Свет — по образцу пещерных факелов (CaveArt._mk_torch_light): тот же
-	# радиальный градиент и тот же цвет семьи факела. Радиус в два факела
-	# (факел 36 px, здесь 72 px) и пик вчетверо ярче факельной базы 0.75: в
-	# тёмной пещере вспышка должна осветить стены вокруг героя, а не только
-	# его саму — иначе выбор варианта по скриншотам был бы вслепую.
+	# радиальный градиент и тот же цвет семьи факела. Стиль 1: радиус в два
+	# факела (факел 36 px, здесь 72) и пик вчетверо выше факельной базы 0.75 —
+	# в тёмной пещере вспышка обязана доставать до стен, иначе выбор по
+	# скриншотам был бы вслепую. Стиль 3 (soft): энергия 2,2 и радиус 70 px — по
+	# замеру стены едва тронуты (кольцо 50-85 px на +6, а не на +12).
 	var lamp := LevelUpLight.new()
 	lamp.name = "FxFlashLight"
-	lamp.texture = _radial_tex(144.0)
+	lamp.texture = _radial_tex(LU_SOFT_LIGHT_DIAM if soft else LU_LIGHT_DIAM)
 	lamp.color = LU_GOLD
 	lamp.position = pos
+	if soft:
+		lamp.peak = LU_SOFT_LIGHT_PEAK
 	parent.add_child(lamp)
+	var sparks := LU_SOFT_SPARKS if soft else LU_SPARKS
+	var vmin := 45.0 if soft else 55.0
+	var vmax := 85.0 if soft else 105.0
 	_make(parent, pos + Vector2(0, -4), {
-		"tex": TEX_SPARK, "amount": 12, "life": 0.5, "explode": 1.0,
-		"dir": Vector2.UP, "spread": 26.0, "vmin": 55.0, "vmax": 105.0,
+		"tex": TEX_SPARK, "amount": sparks, "life": 0.5, "explode": 1.0,
+		"dir": Vector2.UP, "spread": 26.0, "vmin": vmin, "vmax": vmax,
 		"gravity": Vector2(0, 120), "damp_min": 20.0, "damp_max": 50.0,
 		"smin": 0.5, "smax": 0.9,
 		"ramp": _ramp(Color(1.0, 0.98, 0.8), Color(1.0, 0.8, 0.32), Color(0.9, 0.5, 0.1, 0.0)),
@@ -424,9 +462,12 @@ class LevelUpText:
 ## «вспыхнул и погас», а не «плавно растворился».
 class LevelUpFlash:
 	extends Sprite2D
+	var scale_end := 0.0     # 0 = забрать Fx.LU_FLASH_S1 (стиль 3 задаёт свой)
 	var _t := 0.0
 
 	func _ready() -> void:
+		if scale_end <= 0.0:
+			scale_end = Fx.LU_FLASH_S1
 		centered = true
 		scale = Vector2.ONE * Fx.LU_FLASH_S0
 		z_index = 19
@@ -438,18 +479,22 @@ class LevelUpFlash:
 		if k >= 1.0:
 			queue_free()
 			return
-		scale = Vector2.ONE * lerpf(Fx.LU_FLASH_S0, Fx.LU_FLASH_S1, sqrt(k))
+		scale = Vector2.ONE * lerpf(Fx.LU_FLASH_S0, scale_end, sqrt(k))
 		modulate = Color(Fx.LU_GOLD_HOT, (1.0 - k) * (1.0 - k))
 
-## Импульс света варианта 1: энергия 2.6 -> 0 за LU_FLASH_T. Форма и цвет — как
-## у пещерного факела, но разово и ярче факельной базы 0.9: в тёмной пещере это
-## видно как вспышку, осветившую стены вокруг героя.
+## Импульс света: энергия peak -> 0 за LU_FLASH_T (квадратом — яркая вспышка
+## быстро садится). Форма и цвет как у пещерного факела, но разово и заметно
+## ярче факельной базы 0.75. Пик задаёт вызывающий: стиль 1 — LU_LIGHT_PEAK,
+## стиль 3 — мягкий LU_SOFT_LIGHT_PEAK (радиус — текстурой).
 class LevelUpLight:
 	extends PointLight2D
+	var peak := 0.0          # 0 = забрать Fx.LU_LIGHT_PEAK
 	var _t := 0.0
 
 	func _ready() -> void:
-		energy = Fx.LU_LIGHT_PEAK
+		if peak <= 0.0:
+			peak = Fx.LU_LIGHT_PEAK
+		energy = peak
 		add_to_group("fx")
 
 	func _process(delta: float) -> void:
@@ -458,7 +503,7 @@ class LevelUpLight:
 		if k >= 1.0:
 			queue_free()
 			return
-		energy = lerpf(Fx.LU_LIGHT_PEAK, 0.0, k * k)
+		energy = lerpf(peak, 0.0, k * k)
 
 ## Столб света варианта 2: две фазы по 2 кадра (LU_BEAM_FRAME_T), затем
 ## растворение за LU_BEAM_FADE_T. Текстуры фаз строит Fx._beam_tex.
