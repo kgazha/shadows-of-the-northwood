@@ -34,7 +34,7 @@ extends SceneTree
 ##     для читаемости; 1x-ряды листа = нативный экран игры при зуме 1).
 ##   Godot ... -- bake <out_dir>
 ##   — режим bake: пещерные атласы игры (cave_floor_v1.png 64×16,
-##     cave_wall_v1.png 80×16, cave_props_v1.png 128×64 + regions-манифест).
+##     cave_wall_v1.png 80×16, cave_props_v1.png 128×80 + regions-манифест).
 ## Выход 0 — все самопроверки PASS, иначе 1.
 
 const P := preload("res://scripts/pixel_palette.gd")
@@ -147,6 +147,7 @@ func _build_props_all() -> Array:
 		by[String(s["name"])] = s["img"]
 	var meta := [
 		["ALTAR", "ALT", "1.6H"], ["CHEST", "CST", "~0.8H"],
+		["CHEST_OPEN", "CSTO", "~0.8H"],  # c36 (вердикт c35): открытый кадр
 		["BRAZIER", "BRZ", "~1.2H"],
 		["STALC1", "C1", "0.5H"], ["STALC2", "C2", "0.75H"], ["STALC3", "C3", "1.2H"],
 		["STALAG1", "G1", "0.5H"], ["STALAG2", "G2", "0.75H"], ["STALAG3", "G3", "1.2H"],

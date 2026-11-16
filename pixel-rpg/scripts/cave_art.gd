@@ -60,11 +60,15 @@ const FLOOR_PATH := "res://assets/cave/cave_floor_v1.png"
 const WALL_PATH := "res://assets/cave/cave_wall_v1.png"
 const P := preload("res://scripts/pixel_palette.gd")
 
-## Регионы атласа пропов — alpha-trim кадры (лист 128×64). Ноги нижнего яруса
-## на y=64, «с потолка» — ярусы сталактитов выровнены по своей верхней кромке.
+## Регионы атласа пропов — alpha-trim кадры (лист 128×80). Ноги нижнего яруса
+## на y=80, «с потолка» — ярусы сталактитов выровнены по своей верхней кромке.
 const REGIONS := {
 	"ALTAR": Rect2(0, 39, 13, 25),
 	"CHEST": Rect2(14, 51, 26, 13),
+	# c36 (вердикт c35 «пещерный сундук берём»): открытый кадр 26×15 — крышка
+	# подъём 2 ряда, жерло 2 ряда, корпус байт-в-бит закрытого; новый ярус
+	# атласа под CHEST (лист вырос 128×64 -> 128×80, сам CHEST не сдвинут)
+	"CHEST_OPEN": Rect2(14, 65, 26, 15),
 	"BRAZIER": Rect2(48, 47, 17, 17),
 	"STALC3": Rect2(66, 45, 9, 19),
 	"STALAG3": Rect2(76, 45, 13, 19),
@@ -78,7 +82,7 @@ const REGIONS := {
 	# стопа кадра — нижняя граница региона (одна арка на обе стороны входа)
 	"STAIRS": Rect2(20, 1, 16, 24),
 }
-const ATLAS_SIZE := Vector2i(128, 64)
+const ATLAS_SIZE := Vector2i(128, 80)
 const FLOOR_SIZE := Vector2i(64, 16)
 const WALL_SIZE := Vector2i(80, 16)
 
@@ -316,12 +320,15 @@ static func build(world) -> Node2D:
 			world._ys_prop(altar)
 			world._ys_props_dim.append(altar)
 	# широкий сундук поверх стандартного клеточного коллайдера «C»:
-	# стопа на нижнюю границу клетки; в открытом состоянии (амулет взят)
-	# визуал не меняется — состояние держат тайл 12 и снятие фантома.
+	# стопа на нижнюю границу клетки; состояние держат тайл 12 и снятие
+	# фантома, а c36 (вердикт c35) добавляет и визуал вскрытия: амулет взят —
+	# ставится открытый кадр CHEST_OPEN (группа для swaps в open_chest).
 	if dz.chest_tile.x >= 0:
 		var cfoot := Vector2(float(dz.chest_tile.x) * 16.0 + 8.0,
 				float(dz.chest_tile.y + 1) * 16.0)
-		var chest := _spr(layer, atlas, "CHEST", cfoot)
+		var chest := _spr(layer, atlas,
+				"CHEST_OPEN" if GameState.has_amulet else "CHEST", cfoot)
+		chest.add_to_group("cave_chest_prop")
 		world._ys_prop(chest)
 		world._ys_props_dim.append(chest)
 	# декор свода: сталагмиты (на полу под «#», в реестр дима) и сталактиты

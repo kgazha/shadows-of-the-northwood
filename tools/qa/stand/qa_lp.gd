@@ -133,6 +133,7 @@ func _ready() -> void:
 	_t30()
 	_t34()
 	_t35()
+	_t36()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -772,9 +773,11 @@ const T11_GEN_GONE := [
 # Канонический MD5 dungeon_tiles.png после t52-восстановления клеток 6/7
 # (каменные плиты) из предген-блоба 8fb87cb^; ниже — сверка hex_encode().
 # c33: честная RED->GREEN — байтовое золото держало старые CAVE_ROCK-пиксели
-# dungeon_tiles; новая каноническая копия = тот же t52-макет клеток 6/7, но после
-# snap-ремапа 133 px на рампу VIOLET (двойной bake тула c33_violet дал идентичные md5).
-const T11_DUNGEON_MD5 := "c29c815aef0938dc7bcb769402feac36"
+# dungeon_tiles; волна c36 (вердикт c35 «пещерный сундук берём»): легаси-тайл 12
+# v2 пересобран детерминированным тулом c36_chest12.gd СТРОГО из тайла 11
+# (зона раскрытия 48 px рядов 0..3, корпус байт-в-бит, новых цветов 0; двойной
+# bake тула дал идентичные md5 — канон ниже честным RED->GREEN обновлён).
+const T11_DUNGEON_MD5 := "d39709f47d2ee25cbfc9e7a1432431cd"
 
 func _t11_md5(path: String) -> String:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -1561,7 +1564,7 @@ func _t16() -> void:
 	var pimg: Image = (load(paths[2]) as Texture2D).get_image()
 	chk(fimg.get_size() == CA.FLOOR_SIZE and wimg.get_size() == CA.WALL_SIZE \
 			and pimg.get_size() == CA.ATLAS_SIZE,
-		"t16: размеры атласов 64x16/80x16/128x64 (%s/%s/%s)" \
+		"t16: размеры атласов 64x16/80x16/128x80 (%s/%s/%s)" \
 		% [str(fimg.get_size()), str(wimg.get_size()), str(pimg.get_size())])
 	# 2) alpha-trim: bbox силуэта == кадр региона (пустых полей нет — аудит c2 F2),
 	#    нижний ряд «стоячих» кадров — только OUTLINE (стопа-якорь)
@@ -1575,7 +1578,7 @@ func _t16() -> void:
 		var bb := _t16_bbox(crop)
 		if bb != Rect2i(0, 0, crop.get_width(), crop.get_height()):
 			bad_tight += 1
-		if String(k) in ["ALTAR", "CHEST", "STALAG1", "STALAG2", "STALAG3", "STAIRS"]:
+		if String(k) in ["ALTAR", "CHEST", "CHEST_OPEN", "STALAG1", "STALAG2", "STALAG3", "STAIRS"]:
 			var last := crop.get_height() - 1
 			var seen := 0
 			for x in crop.get_width():
@@ -2946,9 +2949,14 @@ const C33_SNAP := ["2e233f", "452e5e", "4a3865", "654389", "674a81", "704a98", "
 	"967cb1", "977eb4", "997fb4", "9a7fb1", "9f82b4", "ae8ec6", "af90c9", "b795cf",
 	"c0a2db", "c39fe1", "c6a0e7", "d0bee2"]
 const C33_DIFF := {
-	"anim_tiles.png": 54, "cave/cave_floor_v1.png": 955, "cave/cave_props_v1.png": 925,
+	# c36 (вердикт c35): cave/cave_props_v1.png УБРАН — props-атлас легитимно
+	# вырос 128×64->128×80 (регион CHEST_OPEN); dungeon_tiles.png УБРАН — легаси-
+	# тайл 12 v2 пересобран (зона 48 px). Побайтовая целостность обоих файлов
+	# пинится в _t36 (== кандидаты, == rebake, md5 двойного bake). Прежние
+	# суммы таблицы: 925 и 133 входили в 4832 — стало 3774.
+	"anim_tiles.png": 54, "cave/cave_floor_v1.png": 955,
 	"cave/cave_wall_v1.png": 1277, "class_mage.png": 8, "decor.png": 11,
-	"dungeon_tiles.png": 133, "mobs_archer.png": 2, "mobs_swarmling.png": 2,
+	"mobs_archer.png": 2, "mobs_swarmling.png": 2,
 	"mobs_wraith.png": 1006, "npc_merchant.png": 2, "portraits.png": 344,
 	"portraits2.png": 113,
 }
@@ -3090,8 +3098,8 @@ func _t34() -> void:
 		var off_exp := 0 if legacy_off == null else int(legacy_off) - int(C33_DIFF[rel])
 		chk(off == off_exp and msk == 0,
 			"c33: %s off=%d mask=%d (ожидается %d/0: легаси-gray нетронут, snap вычищен)" % [rel, off, msk, off_exp])
-	chk(sum_diff == 4832 and bad_total == 0,
-		"c33: суммарный diff 13 файлов == 4832 px таблицы c31 (получено %d, bad=%d)" % [sum_diff, bad_total])
+	chk(sum_diff == 3774 and bad_total == 0,
+		"c33: суммарный diff 11 файлов == 3774 px таблицы c31 (без двух легаси-атласов c36; получено %d, bad=%d)" % [sum_diff, bad_total])
 	chk(resid == 0, "c33: старых CAVE/snap hex не осталось (остаток %d)" % resid)
 	# 3) остальные трекаемые PNG — бит-в-бит HEAD (28: ashen_tiles легитимно
 	# изменён c34 и запинен в _t35)
@@ -3110,8 +3118,9 @@ func _t34() -> void:
 # волны c32b: двойной bake md5 DC27EB9FFFA66FAADE1A9E5863AA8AB5).
 const C34_OPEN_B64 := "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACVSURBVDhPYxh8INTL9T+UiQF01JRxysGBg7nxf5AhILx4xab/zR2TwGyQOAhDleEGMIUgDNIMwiA2yHaiXUCRASBFkqIiWDHJBhzyEv+/ukabNANweQGGocpwA5AiWKiDNINcAWKDbCfJBSAngwz4Wm1IugHILoB5gWQXwAyIT8mDByDJBiBjog2ARRkuDFVGLcDAAACeEKfPlA/gNAAAAABJRU5ErkJggg=="
 const C34_BASE_MD5_UNTOUCHED := {  # чужие сундуки (деревня t10→t14, пещера t11→t12): код и кадр не тронуты
+	# c36 (вердикт c35): dungeon_zone.gd УБРАН — open_chest() легитимно расширен
+	# (проп-кадр CHEST_OPEN вместо только тайла); поведение запинено в _t36.
 	"res://scripts/world.gd": "a8c8f14e0c4080e1a82a290f8ff1a50e",
-	"res://scripts/dungeon_zone.gd": "32f41f498e243548f4756a2e14338adb",
 	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
 	"res://assets/tiles.png": "cb3e05695831f27d6b183140441a2a80",
 }
@@ -3202,3 +3211,152 @@ func _t35() -> void:
 	chk(okall, "c34: world/dungeon_zone/interactable/tiles.png бит-в-бит HEAD — деревня и пещера не тронуты")
 	# 6) пересборка мира с taken (спавн сразу открытым) — раннер qa_z1._phase_rebuild
 	print("qa_lp c34: taken=>spawn-open запинен поведением в qa_z1 (пересборка мира)")
+
+# ------------------------------------------------------------------ c36 (контракт: пин пещерного сундука)
+# Пещерный сундук (вердикт пользователя «новый пещерный сундук берём»).
+# Кандидаты волны c35 (лист «Пещера: открытый сундук»): проп-кадр 26×15
+# (доставленный md5 7BFED0BF73B3D3168F02AC51EB171F0B) и легаси-тайл 12 v2
+# (md5 ED81740F44833CDFDF49365FA478B433) — пинятся побайтово инлайн-b64
+# (qa самодостаточен, паттерн _t35). Полосовой дефект прежнего «открытия»
+# (перекрашенный корпус 182/256 + 20 px фиолетового свечения над крышкой)
+# устранён структурно: тайл 12 = кандидат, зона раскрытия ровно 48 px,
+# свечения нет — пин «на отсутствие» ниже.
+const C36_OPEN_PROP_B64 := "iVBORw0KGgoAAAANSUhEUgAAABoAAAAPCAYAAAD6Ud/mAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAD0SURBVDhPY8AFLi5K+48NL16xCYyxybUmWP2HascPQAb0314AxxuaPDFwc8ek//EpeVjlQBhkIcgckBqosRCA7CKYRfHryrAaAsKELAJhmBqYuWCfghjoCpA1oWNcapAdh64GHqRWdm7/aYnBloAANklceHWN9n+t0AKscrgw2JJwBy2wt0Heg3kZxMaGYSkOhrGpAWF0c0B2gC2DxROyAuTwhbFB8ksfffqfv/0KPA6wqUWOI5AY2BIQIMUikCUe7StoaxGIDYofEKaaRTAxdIOQDcEmD6Kp4qPhYRGMD6IpsgiUzkEYlsFgfGyYHDUMDAwMAKCsKXc3wUylAAAAAElFTkSuQmCC"
+const C36_TILE12_B64 := "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAEFSURBVDhPnZNNCoJQFIVdgRQ0ax7SD/RPZoU4iKIG1cCikTSIRi0gJFpBo1bQKhq0lrZy67y4j9Sn8Boc0eM9n0euGrYzpW5vTI/bQUvjyZqQNSq1PpWsNt0vWy0tVjtC1mi0XBqM5pTLF7WEDLIGng6aaigMqmSaBeU9AJCVDXy3rKV60/02cIYz0UD1nlnCQ5EVDUBT1cwS6osGOMD4rRcGXuRa5SEjAFgFA07nq6iH4Xhl9jDDALlGBsSHX8/j57wa8aBIA7xLGgDhLIBcYxoA3wD060GRBlgFA/zNPjHMYg8zDJBrlAANyQYM+EcCwL8zfk9WyeoID8IQPNdbJjzbmdIb0DXWehG3TG0AAAAASUVORK5CYII="
+# канон двойного bake c36_chest12.gd (T11_DUNGEON_MD5 обновлён тем же значением)
+const C36_TILES_MD5 := "d39709f47d2ee25cbfc9e7a1432431cd"
+# сейв и чужие сундуки не тронуты: проводка c36 живёт только в
+# cave_art/dungeon_zone/cave_paint (world/game_state/interactable бит-в-бит)
+const C36_UNTOUCHED := {
+	"res://scripts/game_state.gd": "84da789043ddd693e1580a73c057a0f1",
+	"res://scripts/world.gd": "a8c8f14e0c4080e1a82a290f8ff1a50e",
+	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
+}
+
+func _t36() -> void:
+	var CA = load("res://scripts/cave_art.gd")
+	var CP = load("res://tools_art/cave_paint.gd")
+	# 1) регион и размер: CHEST_OPEN(14,65,26,15), атлас 128×80 (файл и константа)
+	var regv = (CA.REGIONS as Dictionary).get("CHEST_OPEN", null)
+	chk(regv != null and regv == Rect2(14, 65, 26, 15),
+		"c36: REGIONS[\"CHEST_OPEN\"] == Rect2(14,65,26,15) (голо-HEAD: RED)")
+	var cp := Image.new()
+	var okp := cp.load_png_from_buffer(Marshalls.base64_to_raw(C36_OPEN_PROP_B64)) == OK
+	var pbytes: PackedByteArray = FileAccess.get_file_as_bytes("res://assets/cave/cave_props_v1.png")
+	var pimg := Image.new()
+	var okpi := pimg.load_png_from_buffer(pbytes) == OK
+	chk(okp and okpi and pimg.get_size() == Vector2i(128, 80)
+			and CA.ATLAS_SIZE == Vector2i(128, 80),
+		"c36: props-атлас 128×80 — файл и ATLAS_SIZE (self-check c2 на новом размере)")
+	var dvp := 26 * 15
+	if okp and okpi and pimg.get_size() == Vector2i(128, 80):
+		dvp = 0
+		for y in 15:
+			for x in 26:
+				if pimg.get_pixel(14 + x, 65 + y).to_argb32() != cp.get_pixel(x, y).to_argb32():
+					dvp += 1
+	chk(dvp == 0, "c36: атлас (14,65,26,15) == доставленный кадр 26×15 побайтово (md5 7BFED0BF…, diff %d)" % dvp)
+	# 2) генератор — единый источник: build_chest_open() печатает те же байты;
+	#    rebake всего props-атласа == закоммиченный файл (двойной bake md5 канон)
+	var by := {}
+	for s in CP.prop_set_canon():
+		by[String(s["name"])] = s["img"]
+	var gen = by.get("CHEST_OPEN", null)
+	var dvg := 26 * 15
+	if gen != null and okp and (gen as Image).get_size() == Vector2i(26, 15):
+		dvg = 0
+		for y in 15:
+			for x in 26:
+				if (gen as Image).get_pixel(x, y).to_argb32() != cp.get_pixel(x, y).to_argb32():
+					dvg += 1
+	chk(gen != null and dvg == 0,
+		"c36: cave_paint.build_chest_open() печатает кандидат побайтово (diff %d, голо-HEAD: RED)" % dvg)
+	var pb: Dictionary = CP.bake_props_atlas(CA.REGIONS, CA.ATLAS_SIZE)
+	chk((pb["fails"] as Array).is_empty()
+			and (pb["img"] as Image).save_png_to_buffer() == pbytes,
+		"c36: rebake props-атласа == committed (двойной bake md5 %s)" % _t11_md5("res://assets/cave/cave_props_v1.png"))
+	# 3) легаси-тайл 12 v2: побайтово == кандидат; зона раскрытия ровно 48 px
+	#    (ряды 0..3), корпус y4..15 байт-в-бит тайла 11, новых цветов 0;
+	#    пин «на отсутствие» полосы: прежнее свечение 8071a4/665686 в тайле 12
+	var t12 := Image.new()
+	var okt := t12.load_png_from_buffer(Marshalls.base64_to_raw(C36_TILE12_B64)) == OK
+	var dg := Image.new()
+	var okd := dg.load_png_from_buffer(FileAccess.get_file_as_bytes("res://assets/dungeon_tiles.png")) == OK
+	var dvt := 256
+	var zone := 0
+	var body := 0
+	var newc := 0
+	var glow := 0
+	if okt and okd and dg.get_size() == Vector2i(256, 16):
+		dvt = 0
+		var set11 := {}
+		for y in 16:
+			for x in 16:
+				set11[dg.get_pixel(176 + x, y).to_html(false)] = true
+		for y in 16:
+			for x in 16:
+				var a: Color = dg.get_pixel(176 + x, y)
+				var b: Color = dg.get_pixel(192 + x, y)
+				if a.to_argb32() != b.to_argb32():
+					if y <= 3:
+						zone += 1
+					else:
+						body += 1
+				if b.a > 0.5 and not set11.has(b.to_html(false)):
+					newc += 1
+				if b.to_html(false) in ["8071a4", "665686", "4b3e66", "302644"]:
+					glow += 1
+				if dg.get_pixel(192 + x, y).to_argb32() != t12.get_pixel(x, y).to_argb32():
+					dvt += 1
+	chk(dvt == 0, "c36: dungeon_tiles тайл 12 == кандидат ED81740F… побайтово (diff %d)" % dvt)
+	chk(zone == 48 and body == 0 and newc == 0,
+		"c36: зона раскрытия 48/256 (ряды 0..3), корпус == тайл 11, новых цветов 0 (z=%d b=%d n=%d)" % [zone, body, newc])
+	chk(glow == 0 and _t11_md5("res://assets/dungeon_tiles.png") == C36_TILES_MD5,
+		"c36: полоса легаси устранена — свечения нет, файл == канон двойного bake (%s)" % C36_TILES_MD5)
+	# 4) живая проводка: проп один, закрыт; вскрытие реальным интерактивом —
+	#    тайл 12 и проп-кадр CHEST_OPEN (без полосы над крышкой: кадр 26×15
+	#    закрывает клетку, подложка — кандидат v2)
+	var dz = world.dungeon_zone
+	var props: Array = get_tree().get_nodes_in_group("cave_chest_prop")
+	chk(props.size() == 1, "c36: в слое пещеры ровно один широкий проп сундука (получено %d)" % props.size())
+	var spr: Sprite2D = (props[0] as Sprite2D) if props.size() == 1 else null
+	var r0 := Rect2()
+	if spr != null and spr.texture is AtlasTexture:
+		r0 = (spr.texture as AtlasTexture).region
+	chk(r0 == Rect2(14, 51, 26, 13),
+		"c36: при has_amulet=false проп — закрытый CHEST (получено %s)" % str(r0))
+	GameState.door_opened = true  # канон-гейт сундука: сначала дверь зала
+	GameState.has_key = true      # ключ Геральда — штатный путь try_interact
+	if dz.chest_node != null:
+		dz.chest_node.try_interact()
+	chk(bool(GameState.has_amulet) and dz.tilemap != null
+			and dz.tilemap.get_cell_atlas_coords(dz.chest_tile) == Vector2i(12, 0),
+		"c36: вскрытие — has_amulet и клетка сундука на тайле 12 (амулет не убегает)")
+	var r1 := Rect2()
+	if spr != null and is_instance_valid(spr) and spr.texture is AtlasTexture:
+		r1 = (spr.texture as AtlasTexture).region
+	chk(r1 == Rect2(14, 65, 26, 15),
+		"c36: вскрытие — проп сменил кадр на CHEST_OPEN (получено %s)" % str(r1))
+	# 5) перезаход: пересборка слоя (build читает has_amulet) — сундук открытый
+	var layer2 = CA.build(world)
+	var reopen := Rect2()
+	if layer2 != null:
+		for c in layer2.get_children():
+			if c is Sprite2D and (c as Sprite2D).texture is AtlasTexture:
+				var rr: Rect2 = ((c as Sprite2D).texture as AtlasTexture).region
+				if rr.size == Vector2(26, 15):
+					reopen = rr
+		layer2.queue_free()
+	chk(reopen == Rect2(14, 65, 26, 15),
+		"c36: перезаход (пересборка слоя при has_amulet) — стоит открытый (получено %s)" % str(reopen))
+	# 6) сейв и соседи: game_state/world/interactable бит-в-бит, ключи на месте
+	var okall := true
+	for p in C36_UNTOUCHED:
+		if _t11_md5(String(p)) != String(C36_UNTOUCHED[p]):
+			okall = false
+			print("c36: ИЗМЕНЕНО сверх scope: ", p)
+	chk(okall, "c36: game_state/world/interactable бит-в-бит — сейв open_chest/has_amulet не менялся")
+	var gs := FileAccess.get_file_as_string("res://scripts/game_state.gd")
+	chk(gs.contains("\"has_amulet\"") and gs.contains("chest_mark_used"),
+		"c36: персист-ключи has_amulet/chest_mark_used на месте")
+	print("qa_lp c36: GOLDEN-пины сеток не пересчитывались (тайл 12 — визуальное состояние)")

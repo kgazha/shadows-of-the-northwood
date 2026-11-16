@@ -621,6 +621,37 @@ static func build_chest() -> Image:
 	return img
 
 
+## Открытый сундук пещеры (вердикт c35 «пещерный сундук берём», волна c36).
+## Порт принятого канона c32b: КОРПУС байт-в-бит закрытого кадра (rows 4..12 ->
+## 6..14), КРЫШКА — те же пиксели подъём ровно 2 ряда БЕЗ перекраски (rows
+## 0..3), ЖЕРЛО ровно 2 ряда темнее корпуса (IRON OUTLINE), СОДЕРЖИМОЕ ровно
+## 2 px тёмных тонов палитры (HUD_GOLD DARK + CRYSTAL OUTLINE). Кадр
+## собирается из канонизированного ЗАКРЫТОГО кадра — побайтовое совпадение с
+## телом региона CHEST и с утверждённым кандидатом (md5 7BFED0BF...); повторный
+## canon_pass не применяется, иначе байты разъедутся (см. prop_set_canon).
+static func build_chest_open() -> Image:
+	var c := build_chest()
+	canon_pass(c)  # основа — канон-байты региона CHEST (alpha-trim тождествен)
+	var out := im(26, 15)
+	out.fill(Color(0, 0, 0, 0))
+	# крышка: подъём ровно 2 ряда относительно корпуса, пиксели те же
+	for y in 4:
+		for x in 26:
+			out.set_pixel(x, y, c.get_pixel(x, y))
+	# жерло 2 ряда — IRON OUTLINE (темнее любой точки корпуса)
+	for y in [4, 5]:
+		for x in range(1, 25):
+			out.set_pixel(x, y, C("IRON", P.T_OUTLINE))
+	# содержимое: ровно 2 px тёмных тонов (тёмное золото + кристальная тень)
+	out.set_pixel(12, 5, C("HUD_GOLD", P.T_DARK))
+	out.set_pixel(13, 5, C("CRYSTAL", P.T_OUTLINE))
+	# корпус с замком и плахой — байт-в-бит закрытого
+	for y in range(4, 13):
+		for x in 26:
+			out.set_pixel(x, y + 2, c.get_pixel(x, y))
+	return out
+
+
 ## Сталактиты: ярусы 0.5H / 0.75H / 1.2H (диапазон задания 0.5–1.2H).
 ## Висят с потолка: нижний ряд — остриё, canon_pass кладёт его в OUTLINE.
 static func build_stalactite_1() -> Image:  # 5×8 — 0.5H
@@ -964,8 +995,14 @@ static func prop_set_canon() -> Array:
 		{"name": "TORCH1", "img": build_torch_1()},
 		{"name": "TORCH2", "img": build_torch_2()},
 		{"name": "STAIRS", "img": build_stairs()},
+		# c36 (вердикт c35): открытый кадр — из канон-байтов закрытого,
+		# повторная канонизация нему не применяется (иначе байты кандидата
+		# 7BFED0BF... разъедутся); все добавленные тона — из палитры.
+		{"name": "CHEST_OPEN", "img": build_chest_open()},
 	]
 	for s in props:
+		if String(s["name"]) == "CHEST_OPEN":
+			continue
 		canon_pass(s["img"])
 	return props
 

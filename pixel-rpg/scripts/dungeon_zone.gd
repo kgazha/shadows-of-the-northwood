@@ -164,10 +164,17 @@ func _build_tiles() -> void:
 	if chest_tile.x >= 0 and GameState.has_amulet:
 		tilemap.set_cell(chest_tile, 0, Vector2i(12, 0))
 
-## Сундук открыт: тайл 11 -> 12 (chest_big_open). Публичный API.
+## Сундук открыт: тайл 11 -> 12 (chest_big_open) + широкий проп меняет кадр на
+## открытый CHEST_OPEN (c36, вердикт c35). Публичный API.
 func open_chest() -> void:
 	if chest_tile.x >= 0 and tilemap != null:
 		tilemap.set_cell(chest_tile, 0, Vector2i(12, 0))
+	# c36: проп-сундук вскрывается вместе с тайлом — прежнему «закрытому» кадру
+	# над новым тайлом-подложкой больше нечего делать (полоса легаси устранена)
+	for n in get_tree().get_nodes_in_group("cave_chest_prop"):
+		var spr := n as Sprite2D
+		if spr != null and CaveArt.have_art():
+			spr.texture = CaveArt.region_texture("CHEST_OPEN")
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
