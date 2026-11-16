@@ -3663,7 +3663,10 @@ const G12_UNTOUCHED := {
 	"res://scripts/run_summary.gd": "6404ba292ef8ea899d6a0c0db43655f8",
 	"res://scripts/npc.gd": "419a3887918731d4d2207f3bcf51fd23",
 	"res://scripts/first_hint.gd": "93520eda37ea1e453cd2bc4c737e04d4",
-	"res://scripts/alchemy.gd": "605eb9d4f55b048fa79914285eb3b635",
+	# 16.11 вечер: текст-фикс пользователя «здрав->здоров» тронул alchemy.gd —
+	# ре-пин по прецеденту вердиктных волн (g13/g14/g15), базис прежний: md5
+	# файла на диске архива (CRLF), измерен распаковкой git archive HEAD.
+	"res://scripts/alchemy.gd": "abbb8e8687fe4c9c289bcfa1e7254845",
 	# g14 (рубрики+значки достижений, просьба пользователя 16.11) ЦЕЛЕНАПРАВЛЕННО
 	# изменил journal.gd — ре-пин по прецеденту g13 (hud/shop/game_state убраны
 	# из таблицы): поведение g12-приёмки живое, новый хеш принятого файла.
