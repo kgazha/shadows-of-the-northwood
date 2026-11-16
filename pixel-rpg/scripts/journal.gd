@@ -41,6 +41,12 @@ var _list: VBoxContainer
 var _frame_tex: Texture2D
 var _tab := TAB_QUESTS
 var _tab_btns: Array = []        # Button на вкладку (стилизация flat-тегми)
+# 16.11 (просьба пользователя): подвкладки внутри «Квестов» — Активные /
+# Завершённые. При каждом open() активна «Активные» (требование юзера).
+const QSUB_TITLES := ["Активные", "Завершённые"]
+var _qsub := 0
+var _qsub_row: HBoxContainer
+var _qsub_btns: Array = []
 var _ach_list: VBoxContainer     # список 12 строк достижений (вкладка TAB_ACHV)
 var _ach_sig := -1               # подпись состояния ачивок: анлоки + счётчики
 var _tal_list: VBoxContainer     # колонки веток талантов (вкладка TAB_TALENTS)
@@ -97,6 +103,19 @@ func _ready() -> void:
 		tb.pressed.connect(select_tab.bind(i))
 		tabs.add_child(tb)
 		_tab_btns.append(tb)
+	# подвкладки раздела «Квесты» (видны только на этой вкладке)
+	_qsub_row = HBoxContainer.new()
+	_qsub_row.add_theme_constant_override("separation", 10)
+	_qsub_row.visible = true
+	vb.add_child(_qsub_row)
+	for i in QSUB_TITLES.size():
+		var qb := Button.new()
+		qb.flat = true
+		qb.text = String(QSUB_TITLES[i])
+		qb.add_theme_font_size_override("font_size", 8)
+		qb.pressed.connect(select_qsub.bind(i))
+		_qsub_row.add_child(qb)
+		_qsub_btns.append(qb)
 	_scroll = ScrollContainer.new()
 	_scroll.custom_minimum_size = Vector2(344, 164)  # t24: 400-2*28; min панели ровно 400x276
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -124,6 +143,7 @@ func _ready() -> void:
 	# снята — окно журнала остаётся на код-панели HUD-стиля (9-slice panel_frame
 	# + тема); фон однотонный, фоновых картинок нет.
 	_tab_style()
+	_qsub_style()
 	close()  # стартовое состояние: скрыт, мышь насквозь
 	GameState.quest_changed.connect(func() -> void: _dirty = true)
 
@@ -137,6 +157,7 @@ func _process(delta: float) -> void:
 		close()  # открылся диалог/модалка — журнал не должен мешать
 	if _open and _dirty:
 		_dirty = false
+		_rebuild()  # 16.11: на квестах пересборка также при смене подвкладки (_rebuild сам роутит по вкладкам)
 		_rebuild()
 	# вкладка достижений живая: анлок/счётчик могли измениться при открытом
 	# журнале (покупка у Гриима, варка) — дешёвая подпись вместо пересборки вслепую
@@ -154,11 +175,12 @@ func open() -> void:
 		return
 	_open = true
 	_dirty = false
+	_qsub = 0  # 16.11 пользователя: журнал всегда открывается на «Активных»
 	_rebuild()
 	_root.visible = true
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
-	for b in _tab_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
+	for b in _tab_btns + _qsub_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
 		(b as Button).mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.scroll_vertical = 0
 	GameAudio.sfx("book")  # шелест страниц; нет файла — тихий пропуск
@@ -185,11 +207,29 @@ func select_tab(i: int) -> void:
 	_list.visible = _tab == TAB_QUESTS
 	_ach_list.visible = _tab == TAB_ACHV
 	_tal_list.visible = _tab == TAB_TALENTS
+	_qsub_row.visible = _tab == TAB_QUESTS  # подвкладки живут только в «Квестах»
 	_scroll.scroll_vertical = 0
 	if _tab == TAB_ACHV:
 		_rebuild_achv()  # свежие статусы на каждый вход во вкладку
 	if _tab == TAB_TALENTS:
 		_rebuild_talents()  # свежие ранги/очки на каждый вход + мышь на кнопки
+
+## 16.11 (просьба пользователя): переключение подвкладок раздела «Квесты».
+func select_qsub(i: int) -> void:
+	if i < 0 or i >= QSUB_TITLES.size() or i == _qsub:
+		return
+	_qsub = i
+	_qsub_style()
+	_dirty = true  # пересборку списка сделает _process в ближайший тик
+	_scroll.scroll_vertical = 0
+
+func _qsub_style() -> void:
+	for i in _qsub_btns.size():
+		var b: Button = _qsub_btns[i]
+		b.add_theme_color_override(
+			"font_color", Color(1, 0.85, 0.45) if i == _qsub else Color(1, 1, 1, 0.55))
+		b.add_theme_color_override(
+			"font_hover_color", Color(1, 0.85, 0.45) if i == _qsub else Color(1, 1, 1, 0.5))
 
 func _tab_style() -> void:
 	for i in _tab_btns.size():
@@ -248,8 +288,31 @@ func _rebuild() -> void:
 				if int(GameState.cave_state) < 1:
 					continue
 		entries.append(ev)
+	# 16.11 (просьба пользователя): фильтр по подвкладке — Активные vs Завершённые
+	var total_done := 0
+	var total_active := 0
+	var filtered: Array = []
+	for raw_e0 in entries:
+		var e0: Dictionary = raw_e0
+		if int(e0.get("status", 0)) == QuestsData.STATUS_DONE:
+			total_done += 1
+			if _qsub == 1:
+				filtered.append(raw_e0)
+		else:
+			total_active += 1
+			if _qsub == 0:
+				filtered.append(raw_e0)
+	entries = filtered
+	# счётчики на самих подвкладках — чтобы «завершённые» были видны, не заходя
+	for i in _qsub_btns.size():
+		var bq: Button = _qsub_btns[i]
+		bq.text = "%s · %d" % [String(QSUB_TITLES[i]), total_done if i == 1 else total_active]
+	_qsub_style()
 	if entries.is_empty():
-		_list.add_child(_mk_label("Записей пока нет.\nПоговори со старейшиной в деревне.", 8, Color(0.85, 0.8, 0.7, 0.8)))
+		if _qsub == 1:
+			_list.add_child(_mk_label("Завершённых пока нет.\nПервое — у старейшины.", 8, Color(0.85, 0.8, 0.7, 0.8)))
+		else:
+			_list.add_child(_mk_label("Записей пока нет.\nПоговори со старейшиной в деревне.", 8, Color(0.85, 0.8, 0.7, 0.8)))
 		return
 	for raw_e in entries:
 		var e: Dictionary = raw_e
