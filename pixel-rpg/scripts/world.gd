@@ -60,9 +60,12 @@ const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нав
 # только там, где контракт молчал (крона рядом, но героя не касается — и
 # держит врага за собой как ширмой). Зоны без крон (пещера/Пепелище) — реестр
 # пуст, изменений ноль; масштаб zoom = 1 => пиксельные радиусы канонны.
-const YS_CANOPY_HALO_R := 88.0    # px от центра героя: внешняя граница ореола
+# g18 (второй вердикт того же вечера 16.11, «всё равно плохо видно — нужно
+# больше прозрачности»): радиус 88->110, прозрачность ядра 0.55->0.60
+# (целевая alpha кроны 0.45->0.40). Механика прежняя, только два числа.
+const YS_CANOPY_HALO_R := 110.0   # px от центра героя: внешняя граница ореола
 const YS_CANOPY_HALO_IN := 40.0   # px: внутри — полное растворение до HALO_ALPHA
-const YS_CANOPY_HALO_ALPHA := 0.45
+const YS_CANOPY_HALO_ALPHA := 0.40
 const YS_PROP_DIM_AT := 0.4      # t41: мелкий проп деревни димится, когда накрывает >= 40% бокса героя
                                  # (порог ниже крон: пропы мелкие, цель — hero visibility на тяжёлых тайлах)
 const YS_HUD_Z := 4000           # цифры урона поверх любой глубины: локальная y зон ≤ 480 << 4000 ≤ 4096
@@ -982,7 +985,10 @@ func _ys_update(delta: float) -> void:
 			var sz := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height())) * spr.get_global_transform().get_scale().abs()
 			var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
 			if cr.intersects(hr) and cr.intersection(hr).get_area() / maxf(hr.get_area(), 1.0) >= YS_PROP_DIM_AT:
-				target = YS_CANOPY_DIM_ALPHA
+				# g18 (траве в лесу нужно читаться): проп может задать собственный
+				# пол дима meta "ys_dim_alpha" (лесный подлесок — 0.8, а не 0.5);
+				# остальные пропы — прежний YS_CANOPY_DIM_ALPHA
+				target = float(spr.get_meta("ys_dim_alpha", YS_CANOPY_DIM_ALPHA))
 		var a := spr.modulate.a
 		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
 		spr.modulate.a = a

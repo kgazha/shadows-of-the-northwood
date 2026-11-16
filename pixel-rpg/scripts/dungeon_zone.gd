@@ -24,6 +24,7 @@ var spawn_world_pos := Vector2.ZERO
 var tilemap: TileMapLayer
 var _door_shapes := {}  # Vector2i -> CollisionShape2D: форму двери убираем при открытии
 var chest_tile := Vector2i(-1, -1)  # тайл алтарного сундука (для chest_big_open = 12)
+var _chest_open_painted := false    # g18: v1-арт — состояние клетки рисовалось (тайл больше не держит)
 var door_tile := Vector2i(-1, -1)   # тайл запертой двери (для маркера цели)
 # ссылки для HUD-маркера цели
 var hermit_node: Node2D
@@ -158,17 +159,32 @@ func _build_tiles() -> void:
 							Vector2i(CaveArt.wall_slot(map_rows, x, y), 0))
 					continue
 				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(idx, 0))
-	# амулет уже взят — сундук рисуем открытым (dungeon_tiles.png, тайл 12);
-	# широкий сундук v1 — поверх, состояние по-прежнему держит тайл 12
-	# (_sync_chest проверяет именно его).
+	# амулет уже взят — состояние (тайл 12) только в легаси-раскраске; при v1-арте
+	# клетка остаётся полом (g18: широкий проп — единственный рисунок сундука,
+	# легаси-подложка тайла 12 из-под него убрана вердиктом 16.11 ~22:27
+	# «большой широкий сундук поверх маленького»). Состояние держит GameState.
 	if chest_tile.x >= 0 and GameState.has_amulet:
+		_set_chest_open_cell()
+
+## g18: клетка сундука во «вскрытом» виде. v1-арт: тот же пол, что и под
+## закрытым (рисунок сундука — только проп); легаси: канонический тайл 12.
+func _set_chest_open_cell() -> void:
+	if chest_tile.x < 0 or tilemap == null:
+		return
+	if CaveArt.have_art():
+		tilemap.set_cell(chest_tile, CaveArt.SRC_FLOOR,
+				Vector2i(CaveArt.floor_slot(map_rows, chest_tile.x, chest_tile.y, 12), 0))
+		# g18: при v1-арте клетка «закрыта» и «открыта» — один и тот же пол,
+		# тайл больше не держит состояние; флаг — его честная замена в _sync_chest
+		_chest_open_painted = true
+	else:
 		tilemap.set_cell(chest_tile, 0, Vector2i(12, 0))
 
-## Сундук открыт: тайл 11 -> 12 (chest_big_open) + широкий проп меняет кадр на
-## открытый CHEST_OPEN (c36, вердикт c35). Публичный API.
+## Сундук открыт: состояние + широкий проп меняет кадр на открытый CHEST_OPEN
+## (c36, вердикт c35). g18: клетка при v1-арте — пол, легаси-тайл 12 только
+## в легаси-раскраске (двойная отрисовка сундука устранена). Публичный API.
 func open_chest() -> void:
-	if chest_tile.x >= 0 and tilemap != null:
-		tilemap.set_cell(chest_tile, 0, Vector2i(12, 0))
+	_set_chest_open_cell()
 	# c36: проп-сундук вскрывается вместе с тайлом — прежнему «закрытому» кадру
 	# над новым тайлом-подложкой больше нечего делать (полоса легаси устранена)
 	for n in get_tree().get_nodes_in_group("cave_chest_prop"):
@@ -234,10 +250,12 @@ func _sync_door() -> void:
 func _sync_chest() -> void:
 	if not GameState.has_amulet:
 		return
-	# stats_changed летит и на хилке/уроне, поэтому тайл перекрашиваем, только если
-	# он всё ещё «закрыт» — иначе лишняя перекраска на каждом тике.
-	if chest_tile.x >= 0 and tilemap != null \
-			and tilemap.get_cell_atlas_coords(chest_tile).x != 12:
+	if not CaveArt.have_art():
+		# legacy: состояние держит тайл 12, перекрашиваем только «закрытый»
+		if chest_tile.x >= 0 and tilemap != null \
+				and tilemap.get_cell_atlas_coords(chest_tile).x != 12:
+			open_chest()
+	elif not _chest_open_painted:
 		open_chest()
 	for n in get_children():
 		if n is CaveChest:

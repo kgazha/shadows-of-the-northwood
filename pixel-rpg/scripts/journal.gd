@@ -506,6 +506,10 @@ func _rebuild_achv() -> void:
 		var d := _mk_label(String(c.get("desc", "")), 8,  # t27 P1-1: 7 -> 8
 			Color(0.85, 0.8, 0.7, 0.7) if unlocked else Color(0.85, 0.8, 0.7, 0.4))
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		# g18 (просьба 16.11 «блоки достижений должны быть равны по высоте»):
+		# описание — максимум 2 строки с переносом, остаток обрезается (clip);
+		# итоговая высота карточки всем одинаковая (_equalize_cards ниже)
+		d.max_lines_visible = 2
 		# t24-лимит скролла 344 с учётом плашки: 4+28+6+300+4 = 342 < 344
 		d.custom_minimum_size = Vector2(300, 0)
 		col.add_child(d)
@@ -524,6 +528,24 @@ func _rebuild_achv() -> void:
 		row.add_child(col)
 		card.add_child(row)
 		_ach_list.add_child(card)
+	_equalize_cards()
+
+## g18: выровнять высоты карточек вкладки по самой высокой (min-size считается
+## синхронно от структуры: заголовок + описание<=2 строк + строка прогресса).
+## Кастомная высота — floor, контейнер не утянет её вниз.
+func _equalize_cards() -> void:
+	var hmax := 0.0
+	for ch in _ach_list.get_children():
+		var card := ch as Control
+		if card == null:
+			continue
+		hmax = maxf(hmax, card.get_combined_minimum_size().y)
+	if hmax <= 0.0:
+		return
+	for ch in _ach_list.get_children():
+		var card := ch as Control
+		if card != null:
+			card.custom_minimum_size = Vector2(card.custom_minimum_size.x, hmax)
 
 # --- построение вкладки талантов (CONTRACT_TALENTS §4) ---
 

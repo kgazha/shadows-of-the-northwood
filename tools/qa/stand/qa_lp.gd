@@ -3351,9 +3351,15 @@ func _t36() -> void:
 	GameState.has_key = true      # ключ Геральда — штатный путь try_interact
 	if dz.chest_node != null:
 		dz.chest_node.try_interact()
-	chk(bool(GameState.has_amulet) and dz.tilemap != null
-			and dz.tilemap.get_cell_atlas_coords(dz.chest_tile) == Vector2i(12, 0),
-		"c36: вскрытие — has_amulet и клетка сундука на тайле 12 (амулет не убегает)")
+	# g18 (вердикт 16.11 ~22:27 «большой широкий сундук поверх маленького»):
+	# при v1-арте легаси-подложка тайла 12 из-под пропа убрана — клетка остаётся
+	# полом, рисунок сундука — только проп. Перепин легитимный: состояние держит
+	# GameState.has_amulet + кадр пропа (пинеется ниже), а не тайл 12.
+	var src_open: int = dz.tilemap.get_cell_source_id(dz.chest_tile)
+	chk(bool(GameState.has_amulet) and dz.tilemap != null \
+			and (src_open == CA.SRC_FLOOR if CA.have_art() \
+					else dz.tilemap.get_cell_atlas_coords(dz.chest_tile) == Vector2i(12, 0)),
+		"c36/g18: вскрытие — has_amulet; клетка: пол v1 (легаси-тайл 12 убран) / тайл 12 в легаси (амулет не убегает)")
 	var r1 := Rect2()
 	if spr != null and is_instance_valid(spr) and spr.texture is AtlasTexture:
 		r1 = (spr.texture as AtlasTexture).region
@@ -3681,7 +3687,10 @@ const G12_UNTOUCHED := {
 	# ЦЕЛЕНАПРАВЛЕННО изменили journal.gd — ре-пин по прецедентам g13 (hud/shop/
 	# game_state убраны из таблицы) и t50 (базис = md5 файла на диске стенда,
 	# CRLF из git archive; его считает _t11_md5). Поведение g12-приёмки живое.
-	"res://scripts/journal.gd": "8b418dc49c66d1c5d4139b74bf612196",
+	# g18 (вердикт 16.11 ~22:07 «блоки достижений должны быть равны по высоте»)
+	# ЦЕЛЕНАПРАВЛЕННО изменили journal.gd — равная высота карточек + описание
+	# <=2 строк; ре-пин тем же прецедентом (базис — md5 файла на диске).
+	"res://scripts/journal.gd": "b854bd0d34e14ab7906539799ce8739c",
 }
 
 var _g12_toasts: Array = []
