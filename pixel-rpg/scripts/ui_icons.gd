@@ -710,9 +710,13 @@ static func brewed_icon() -> Texture2D:
 
 # ---------------------------------------------------------------- g14: рубрики
 ## Эмблемы рубрик достижений (просьба пользователя 16.11): код-ген 8×8, тот же
-## язык, что brewed_icon (рукописная маска-силуэт, СЗ-блик, тональный контур).
-## Состояния: закрытая — тусклый IRON, открытая — янтарь HUD_GOLD. Растровых
-## файлов ноль; палитра — только PixelPalette (пин QA _inv12).
+## язык, что brewed_icon (рукописная маска-силуэт, тональный контур).
+## g15 (просьба пользователя «крупнее и привлекательнее»): объём в 3 тона —
+## СЗ-ребро LIGHT, тело MID, ЮВ-тень DARK, контур OUTLINE; у янтарной версии
+## горячая точка блика FIRE_HOT (FLATS-прецедент). Состояния: закрытая — тусклый
+## IRON, открытая — янтарь HUD_GOLD. Крупный вариант achv_big_icon — тот же арт,
+## отпечатанный скейлом 3× (24×24, NEAREST): пиксель-арт не интерполируется,
+## растровых файлов по-прежнему ноль; палитра — только PixelPalette (пины _inv12).
 const _ACH_BODY := {
 	# меч (боевые): клинок, гарде, рукоять
 	"combat": ["4,0", "3,1", "4,1", "3,2", "4,2", "3,3", "4,3", "3,4", "4,4",
@@ -734,25 +738,40 @@ const _ACH_BODY := {
 }
 static var _ach_tex_cache := {}
 
-## Эмблема рубрики: cat — ключ из AchvCatalog.CAT_TITLES; unlocked — янтарь.
-static func achv_icon(cat: String, unlocked: bool) -> Texture2D:
-	var key := cat + ("|1" if unlocked else "|0")
-	if _ach_tex_cache.has(key):
-		return _ach_tex_cache[key]
+## 8×8 художественная эмблема в Image (тело-градиент + контур + блик).
+static func _ach8(cat: String, unlocked: bool) -> Image:
 	var rn := "HUD_GOLD" if unlocked else "IRON"
 	var im := Image.create(8, 8, false, Image.FORMAT_RGBA8)
 	im.fill(Color(0, 0, 0, 0))
 	var body := {}
 	for c in _ACH_BODY.get(cat, []):
 		body[String(c)] = true
-	# тело MID, СЗ-ребро LIGHT (нет соседа слева и сверху) — свет как в каноне
+	# объём: СЗ-ребро LIGHT (нет соседа слева и сверху), ЮВ-тень DARK (нет
+	# соседа справа и снизу), остальное MID — три тона палитры на силуэт
 	for k in body:
 		var p: PackedStringArray = String(k).split(",")
 		var x := int(p[0])
 		var y := int(p[1])
 		var hi := (not body.has("%d,%d" % [x - 1, y])) \
 				and (not body.has("%d,%d" % [x, y - 1]))
-		im.set_pixel(x, y, PAL.c(rn, _L if hi else _M))
+		var lo := (not body.has("%d,%d" % [x + 1, y])) \
+				and (not body.has("%d,%d" % [x, y + 1]))
+		var tone := _L if hi else (_D if (lo and not hi) else _M)
+		im.set_pixel(x, y, PAL.c(rn, tone))
+	# горячая точка блика — единственный FIRE_HOT на самый СЗ-пиксель тела,
+	# только у янтарной (закрытой) версии: тусклая остаётся тусклой
+	if unlocked:
+		var gx := 99
+		var gy := 99
+		for k in body:
+			var p2: PackedStringArray = String(k).split(",")
+			var x2 := int(p2[0])
+			var y2 := int(p2[1])
+			if y2 * 8 + x2 < gy * 8 + gx:
+				gx = x2
+				gy = y2
+		if gx < 99:
+			im.set_pixel(gx, gy, PAL.FLATS["FIRE_HOT"])
 	# контур OUTLINE: пустые соседние клетки вокруг силуэта (8-соседство)
 	for y in 8:
 		for x in 8:
@@ -767,6 +786,25 @@ static func achv_icon(cat: String, unlocked: bool) -> Texture2D:
 						near = true
 			if near:
 				im.set_pixel(x, y, PAL.c(rn, _O))
+	return im
+
+## Эмблема рубрики 8×8: cat — ключ из AchvCatalog.CAT_TITLES; unlocked — янтарь.
+static func achv_icon(cat: String, unlocked: bool) -> Texture2D:
+	var key := cat + ("|1" if unlocked else "|0")
+	if _ach_tex_cache.has(key):
+		return _ach_tex_cache[key]
+	var tex := ImageTexture.create_from_image(_ach8(cat, unlocked))
+	_ach_tex_cache[key] = tex
+	return tex
+
+## Крупная эмблема 24×24 (g15, плашка карточки): тот же 8×8 арт, скейл 3×
+## интерполяцией NEAREST — пиксели ложатся ровно квадратами 3×3, арт код-ген.
+static func achv_big_icon(cat: String, unlocked: bool) -> Texture2D:
+	var key := cat + ("|1b" if unlocked else "|0b")
+	if _ach_tex_cache.has(key):
+		return _ach_tex_cache[key]
+	var im := _ach8(cat, unlocked)
+	im.resize(24, 24, Image.INTERPOLATE_NEAREST)
 	var tex := ImageTexture.create_from_image(im)
 	_ach_tex_cache[key] = tex
 	return tex

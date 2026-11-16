@@ -1028,6 +1028,47 @@ func _inv12() -> void:
 	for k in sil:
 		uniq[String(sil[k])] = true
 	chk(uniq.size() == cats.size(), "inv12: силуэты пяти рубрик различны (меч/след/молот/монета/спираль)")
+	# 2б) g15 (просьба «крупнее и привлекательнее»): крупная плашечная версия
+	# 24×24 — тот же арт скейлом 3×, палитра чистая, объём 3 тона + блик
+	var big_ok := true
+	for k in cats:
+		for st in [false, true]:
+			var tb: Texture2D = ui.achv_big_icon(String(k), bool(st))
+			if tb == null or tb.get_size() != Vector2(24, 24):
+				big_ok = false
+				continue
+			var imb: Image = tb.get_image()
+			for y in 24:
+				for x in 24:
+					var cb: Color = imb.get_pixel(x, y)
+					if cb.a == 0.0:
+						continue
+					if not pal.has(PixelPalette.key(cb)):
+						big_ok = false
+			# скейл честный: каждый блок 3×3 однороден и == пикселю 8×8-арта
+			for y2 in 8:
+				for x2 in 8:
+					var base2: Color = imb.get_pixel(x2 * 3, y2 * 3)
+					for dy3 in 3:
+						for dx3 in 3:
+							if imb.get_pixel(x2 * 3 + dx3, y2 * 3 + dy3) != base2:
+								big_ok = false
+	chk(big_ok, "inv12/g15: крупные эмблемы 24×24 — код-ген скейл 3×, палитра чистая")
+	var imgB: Image = ui.achv_big_icon("combat", true).get_image()
+	var tones := {}
+	for y in 24:
+		for x in 24:
+			if imgB.get_pixel(x, y).a > 0.0:
+				tones[PixelPalette.key(imgB.get_pixel(x, y))] = true
+	var gold_n := 0
+	var hot := false
+	for tkey in tones:
+		if not hot and tkey == PixelPalette.key(PixelPalette.FLATS["FIRE_HOT"]):
+			hot = true
+		if String(PixelPalette.color_index()[tkey][0]) == "HUD_GOLD":
+			gold_n += 1
+	chk(gold_n >= 3 and hot,
+		"inv12/g15: янтарная эмблема объёмна: тонов HUD_GOLD %d (ждём >=3, LIGHT/MID/DARK) + блик FIRE_HOT" % gold_n)
 	# 3) вкладка: ряд рубрик, счётчик, автовход в первую непустую при open()
 	var asv: Variant = jr.get("_asub_btns")
 	if asv == null or (asv as Array).size() != cats.size():
@@ -1055,23 +1096,46 @@ func _inv12() -> void:
 	chk(rowr != null and (rowr as Control).visible, "inv12: ряд рубрик виден на «Достижениях»")
 	var btxt := String(((asv as Array)[a2] as Button).text)
 	chk(btxt.begins_with("Исследования · 1/2"), "inv12: счётчик готово/всего на рубрике: «%s»" % btxt)
-	# строки: только рубрика explore, у каждой эмблема; состояния оба (campfires
-	# закрыта — янтарь, treasure открыта — тусклая)
+	# строки: только рубрика explore, у каждой карточка (g15) с крупной эмблемой;
+	# состояния оба (campfires закрыта — янтарь/бронза, treasure — тусклая/железо)
 	var amb := 0
 	var dim := 0
 	var rows := 0
 	var heads2 := 0
 	var only := true
+	var cards := 0
+	var cards_unl := 0
+	var cards_dim := 0
+	var plates := 0
+	var gaps := -1
+	var alv: Variant = jr.get("_ach_list")
+	if alv != null:
+		gaps = (alv as Control).get_theme_constant("separation")
 	var stack: Array = [jr.get("_ach_list")]
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		if n is HBoxContainer:
 			rows += 1
+		if n is PanelContainer:
+			var sbox: StyleBoxFlat = (n as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+			if sbox != null and sbox.bg_color == PixelPalette.SHEET.PANEL \
+					and sbox.get_border_width(SIDE_LEFT) == 1:
+				cards += 1
+				if sbox.border_color == PixelPalette.RAMPS["BRONZE"][1]:
+					cards_unl += 1
+				elif sbox.border_color == PixelPalette.SHEET.LINE \
+						and (n as PanelContainer).get_child_count() > 0 \
+						and (n as PanelContainer).get_child(0).get_child_count() > 0 \
+						and (n as PanelContainer).get_child(0).get_child(0) is PanelContainer \
+						and ((n as PanelContainer).get_child(0).get_child(0) as PanelContainer) \
+								.get_theme_stylebox("panel").bg_color == PixelPalette.SHEET.BG:
+					cards_dim += 1
+					plates += 1
 		if n is TextureRect:
 			var t2: Texture2D = (n as TextureRect).texture
-			if t2 == ui.achv_icon("explore", true):
+			if t2 == ui.achv_big_icon("explore", true):
 				amb += 1
-			elif t2 == ui.achv_icon("explore", false):
+			elif t2 == ui.achv_big_icon("explore", false):
 				dim += 1
 		if n is Label:
 			var tx := String((n as Label).text)
@@ -1085,6 +1149,11 @@ func _inv12() -> void:
 		"inv12: список фильтрован рубрикой: %d строк (ждём %d), чужих нет, заголовки видны (%d)" % [rows, int(per["explore"]), heads2])
 	chk(amb == 1 and dim == 1,
 		"inv12: значки в обоих состояниях в строках (янтарь %d, тусклых %d)" % [amb, dim])
+	chk(cards == rows and cards_unl == 1 and cards_dim == 1 and plates == 1,
+		"inv12/g15: карточки с рамкой 1px и фоном SHEET.PANEL у каждой записи (%d/%d), бронза/железо %d/%d, плашка SHEET.BG %d" % [
+			cards, rows, cards_unl, cards_dim, plates])
+	chk(gaps >= 4 and gaps <= 8,
+		"inv12/g15: зазор между карточками %d px (в контракте 4–8)" % gaps)
 	# 4) сейв-совместимость: рубрика — только метаданные, флаг-ключи не тронуты;
 	# тестовые анлоки этого процесса убираем
 	GameState.flags.erase("ach.campfires")

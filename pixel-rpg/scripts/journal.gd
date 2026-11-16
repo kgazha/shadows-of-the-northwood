@@ -442,8 +442,13 @@ func _rebuild_achv() -> void:
 	_ach_sig = _ach_sig_calc()
 	for ch in _ach_list.get_children():
 		ch.queue_free()
-	# g14 (просьба пользователя): рубрики-подвкладки + код-ген эмблема 8×8
-	# (UiIcons.achv_icon) слева от текста; строки фильтруются по активной рубрике.
+	# g14 (просьба пользователя): рубрики-подвкладки + код-ген эмблема слева от
+	# текста; строки фильтруются по активной рубрике.
+	# g15 (просьба пользователя «как в WoW/Steam»): каждая запись — карточка:
+	# рамка 1px + внутренний отступ, зазор между карточками даёт separation(6)
+	# списка; фон карточки SHEET.PANEL чуть светлее фона вкладки; слева —
+	# иконка на плашке SHEET.BG (крупный код-ген 24×24), справа текст.
+	# Все тона — только PixelPalette (SHEET/UI), растровых файлов ноль.
 	var cats: Array = AchvCatalog.CAT_TITLES.keys()
 	if _asub < 0 or _asub >= cats.size():
 		_asub = _asub_first()  # автовход в первую непустую рубрику (open)
@@ -455,16 +460,36 @@ func _rebuild_achv() -> void:
 			continue
 		var id := String(c.get("id", ""))
 		var unlocked := _ach_unlocked(id)
+		var card := PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = PixelPalette.SHEET.PANEL
+		sb.set_border_width_all(1)
+		# открытая — тёплая бронзовая рамка, закрытая — железная (считается издалека)
+		sb.border_color = PixelPalette.RAMPS["BRONZE"][1] if unlocked \
+				else PixelPalette.SHEET.LINE
+		sb.set_content_margin_all(4.0)
+		card.add_theme_stylebox_override("panel", sb)
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 5)
+		row.add_theme_constant_override("separation", 6)
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# плашка-оконце под крупную эмблему: углубление темнее карточки
+		var plate := PanelContainer.new()
+		var ps := StyleBoxFlat.new()
+		ps.bg_color = PixelPalette.SHEET.BG
+		ps.set_border_width_all(1)
+		ps.border_color = PixelPalette.SHEET.LINE
+		ps.set_content_margin_all(1.0)
+		plate.add_theme_stylebox_override("panel", ps)
+		plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var ic := TextureRect.new()
-		ic.texture = UiIcons.achv_icon(rubric, unlocked)
+		ic.texture = UiIcons.achv_big_icon(rubric, unlocked)
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 		ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		ic.custom_minimum_size = Vector2(8, 8)
+		ic.custom_minimum_size = Vector2(24, 24)
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(ic)
+		plate.add_child(ic)
+		row.add_child(plate)
 		var col := VBoxContainer.new()
 		col.add_theme_constant_override("separation", 1)
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -481,7 +506,8 @@ func _rebuild_achv() -> void:
 		var d := _mk_label(String(c.get("desc", "")), 8,  # t27 P1-1: 7 -> 8
 			Color(0.85, 0.8, 0.7, 0.7) if unlocked else Color(0.85, 0.8, 0.7, 0.4))
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		d.custom_minimum_size = Vector2(330, 0)  # t24: +12 min ширины скролла < 344 (иначе панель распухнет)
+		# t24-лимит скролла 344 с учётом плашки: 4+28+6+300+4 = 342 < 344
+		d.custom_minimum_size = Vector2(300, 0)
 		col.add_child(d)
 		var spec := String(c.get("counter", ""))
 		if spec != "":
@@ -496,7 +522,8 @@ func _rebuild_achv() -> void:
 				col.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
 					7, Color(0.55, 0.85, 0.5) if cur >= goal else Color(1, 1, 1, 0.6)))
 		row.add_child(col)
-		_ach_list.add_child(row)
+		card.add_child(row)
+		_ach_list.add_child(card)
 
 # --- построение вкладки талантов (CONTRACT_TALENTS §4) ---
 
