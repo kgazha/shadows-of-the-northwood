@@ -105,6 +105,11 @@ var sv_import: LineEdit        # «Сейв»: поле вставки стро�
 var sv_apply_btn: Button
 var sv_msg: Label              # тост результата прямо в секции
 var ct_col: VBoxContainer      # правая колонка «Управление» (в _build переставляется в HBox)
+var gm_row: HBoxContainer      # c37: секция «Игра» — выход из залипшего забега
+var btn_new_game: Button       # «Новая игра»: двухступенчатое подтверждение
+var btn_load_game: Button      # «Загрузить»: тот же do_quickload, что F9
+var _ng_armed := false         # «Новая игра» в вооружённом состоянии («Точно?…»)
+var _ng_token := 0             # гаситель старых таймеров: disarm/перезаряд обнуляет смысл
 var _open := false
 var _holds_lock := false   # t29 B-07: input_locked сейчас поставлен НАМИ (паттерн Shop)
 
@@ -130,12 +135,16 @@ func open() -> void:
 	# lock: ни один кадр не существует «меню закрыто, а lock наш и непонятно чей».
 	GameState.input_locked = true
 	_holds_lock = true
+	_ng_disarm()  # c37: «Точно?» живёт внутри одного открытия; повторное Esc — сброс
+	btn_load_game.disabled = not FileAccess.file_exists(SaveVault.SAVE_PATH)  # c37: «Загрузить» — только при сейве
+	get_viewport().gui_release_focus()  # свежее открытие — без чужого фокуса (Tab наведёт с нуля)
 	_set_open(true)
 	GameAudio.sfx("ui_click")
 
 func close() -> void:
 	if not _open:
 		return
+	_ng_disarm()  # c37: закрыли меню — неостывшая «Новая игра» не доживает до нового открытия
 	_set_open(false)
 	_release_lock()
 	GameAudio.sfx("ui_click")
@@ -184,25 +193,58 @@ func _input(event: InputEvent) -> void:
 		# Меню мышиное: глотаем ВСЕ клавиатурные события, включая release:
 		# дошедшее до world-страховки release-событие снимало бы наш
 		# input_locked до перелока в _process (мигание блокировки).
-		# Исключение — редакторы текста секции «Сейв»: пока LineEdit в фокусе,
+		# Исключение №1 — редакторы текста секции «Сейв»: пока LineEdit в фокусе,
 		# пропускаем клавиши к GUI (набор/Ctrl+V/Ctrl+C). Просочившееся release
 		# безопасно: lock держит перелок в _process (страховка уже в контракте).
+		# Исключение №2 (c37) — клавиатурная навигация секции «Игра»: Tab
+		# наводит фокус (и перенаводит между двумя кнопками), Enter/Space/
+		# стрелки доходят до фокусной кнопки. Без фокуса на нашей кнопке
+		# пропускаем РОВНО Tab — остальной мир по-прежнему не видит ни Q, ни J,
+		# ни WASD (матрица qa_s2 «swallowed while open» не затронута).
 		var fo := get_viewport().gui_get_focus_owner()
-		if not (fo is LineEdit and is_ancestor_of(fo)):
+		if fo is LineEdit and is_ancestor_of(fo):
 			if event.pressed and event.physical_keycode == KEY_ESCAPE:
-				close()
-			get_viewport().set_input_as_handled()
+				close()  # Esc из поля — закрыть меню (по контракту Esc всегда закрывает)
+				get_viewport().set_input_as_handled()
+				return
 			return
-		if event.pressed and event.physical_keycode == KEY_ESCAPE:
-			close()  # Esc из поля — закрыть меню (по контракту Esc всегда закрывает)
-			get_viewport().set_input_as_handled()
-			return
+		var ev := event as InputEventKey
+		if _nav_key(ev):
+			if fo is Button and is_ancestor_of(fo):
+				if ev.pressed and ev.physical_keycode == KEY_TAB:
+					# Явная пересадка фокуса (шаг между двумя кнопками): не зависит
+					# от цепочки фокуса вьюпорта — клавиатура работает и на
+					# headless/экзотах, где GUI-фокус-машина молчит (probe c37).
+					if fo == btn_load_game:
+						btn_new_game.grab_focus()
+					else:
+						btn_load_game.grab_focus()
+					get_viewport().set_input_as_handled()
+					return
+				return  # Enter/Space — фокусная кнопка сама отжмёт в GUI-фазе
+			if ev.pressed and ev.physical_keycode == KEY_TAB:
+				# первый Tab: на «Загрузить» (если активна), иначе сразу «Новая игра»
+				(btn_new_game if btn_load_game.disabled else btn_load_game).grab_focus()
+				get_viewport().set_input_as_handled()
+				return
+		if ev.pressed and ev.physical_keycode == KEY_ESCAPE:
+			close()
+		get_viewport().set_input_as_handled()
 		return
 	if event.pressed and event.physical_keycode == KEY_ESCAPE:
 		if not _busy():
 			open()
 			get_viewport().set_input_as_handled()
 		return
+
+## c37: клавиши навигации меню (набор узкий специально — навигация «Игры»,
+## не планшеть всего GUI).
+func _nav_key(ev: InputEventKey) -> bool:
+	match ev.physical_keycode:
+		KEY_TAB, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, \
+		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
+			return true
+	return false
 
 ## Клик мимо панели — закрыть (вуаль под панелью, по панели клики не проходят).
 func _on_dim_input(event: InputEvent) -> void:
@@ -258,6 +300,33 @@ func _build() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(title)
+
+	# --- «Игра» (c37 P0): выход из залипшего забега. Первым блоком левой колонки:
+	# когда забег сломан (авторезюме в стену), эти две кнопки важнее громкостей.
+	# Мышь + клавиатура: это первые FOCUS_ALL-кнопки меню (прочие — мышиные),
+	# Tab наводит, Enter/Space жмут; эскалация Esc не затронута (_input ниже).
+	var gm_title := Label.new()
+	gm_title.text = "Игра"
+	gm_title.add_theme_font_size_override("font_size", 9)
+	gm_title.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+	gm_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(gm_title)
+	gm_row = HBoxContainer.new()
+	gm_row.add_theme_constant_override("separation", 6)
+	gm_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn_load_game = Button.new()
+	btn_load_game.text = "Загрузить"
+	btn_load_game.add_theme_font_size_override("font_size", 8)
+	btn_load_game.tooltip_text = "Тот же путь, что F9: последний сохранённый забег. Кнопка активна, только если сейв есть на диске."
+	btn_load_game.pressed.connect(_on_load_game)
+	btn_new_game = Button.new()
+	btn_new_game.text = "Новая игра"
+	btn_new_game.add_theme_font_size_override("font_size", 8)
+	btn_new_game.tooltip_text = "Конец круга решением, а не смертью: забег сгорает (пепел круга — по канону §4), вечный мета-прогресс и Амулет остаются. Требует подтверждения."
+	btn_new_game.pressed.connect(_on_new_game_pressed)
+	gm_row.add_child(btn_load_game)
+	gm_row.add_child(btn_new_game)
+	vb.add_child(gm_row)
 
 	# три строки громкости: подпись — слайдер 0..1 (шаг 0.05) — проценты
 	master_slider = HSlider.new()
@@ -673,6 +742,53 @@ func _sv_blink(btn: Button) -> void:
 	tw.set_loops(3)
 	tw.tween_property(btn, "modulate", Color(1.0, 0.72, 0.3), 0.07)  # t18: отказ UI — амбер-вспышка (красный = только смертельное)
 	tw.tween_property(btn, "modulate", Color.WHITE, 0.07)
+
+# --- «Игра» (c37 P0): «Загрузить» и «Новая игра» ---
+
+## «Загрузить» = ровно F9: зовём world.do_quickload() (тот же путь load_game+
+## apply_zone+страховка позиции — расхождение физически невозможно). Меню
+## закрываем до загрузки: тост «Игра загружена» виден, а не спрятан под панелью.
+## Повторное нажатие безопасно — сам do_quickload идемпотентен (паттерн F9),
+## а при промахе позиции работает фейлсейф входа.
+func _on_load_game() -> void:
+	var w = get_parent()
+	close()
+	if w != null and w.has_method("do_quickload"):
+		w.do_quickload()
+
+## «Новая игра» в два касания (мышь и Enter/Space по фокусу — одинаковый путь,
+## т.к. кнопка одна). Касание №1: надпись становится честным предупреждением,
+## таймер 3 с без второго касания отменяет (сигнал по токену — старый таймер
+## не имеет права тронуть перезаряженное/закрытое меню). Касание №2: конец
+## круга по канону смерти (§4) + удаление сейва + перезагрузка сцены.
+func _on_new_game_pressed() -> void:
+	if not _ng_armed:
+		_ng_armed = true
+		_ng_token += 1
+		var tok := _ng_token
+		btn_new_game.text = "Точно? — прогресс круга сгорит"
+		btn_new_game.modulate = Color(1.0, 0.72, 0.3)  # т18-канон: тревога — амбер, красный только смертельный
+		var t := get_tree().create_timer(3.0)
+		t.timeout.connect(func() -> void:
+			if _ng_armed and _ng_token == tok:
+				_ng_disarm())
+		GameAudio.sfx("ui_deny")
+		return
+	_ng_disarm()
+	GameState.start_fresh_game()  # вечный слой (§0/§4) жив; герой/мир/сейв-состояние — чистый лист
+	var dir := DirAccess.open("user://")
+	if dir != null:
+		dir.remove("save_morkheim.json")  # acceptance: сейв удаляется (не перезаписывается)
+	GameAudio.sfx("ui_confirm")
+	get_tree().reload_current_scene.call_deferred()  # новый мир: модалка выбора класса (class_id == "")
+
+## Снять вооружённое состояние «Точно?» (текст/цвет/смысл всех висящих таймеров).
+func _ng_disarm() -> void:
+	_ng_armed = false
+	_ng_token += 1
+	if btn_new_game != null:
+		btn_new_game.text = "Новая игра"
+		btn_new_game.modulate = Color.WHITE
 
 # --- занятость мира (по чужим окнам не открываемся) ---
 

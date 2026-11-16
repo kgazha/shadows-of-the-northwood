@@ -737,3 +737,34 @@ func start_new_run() -> void:
 	quest_changed.emit()
 	save_game()
 	ng_plus_started.emit()
+
+## c37 «Новая игра» (P0 «нет выхода из залипшего забега»): конец круга решением
+## игрока, а не смертью. Экономика — канон смерти (§4 pet-keep/ash-purse):
+## догорает НЕзачтённое круга (та же формула ASH_KEEP_RATE, ограничение текущим
+## балансом), gold = 0, общий вайп _wipe_circle(), герой обнуляется (§1.2/R3 —
+## как в start_new_run). ОТЛИЧИЯ сознательные: НЕ плодятся счётчики смерти
+## (ни Achv.on_death, ни meta.vd — отказ от забега не смерть; иначе «отказ»
+## стал бы фармом «Благословения волхвы») и НЕ растёт ng.wave. Вечный слой
+## (§0/§4: ach.*/meta.*/daily.*/hint.*, Амулет Леса, баланс пепла) — жив.
+## class_id = "" — новая игра значит нового героя: на старте следующего мира
+## выбор класса появится сам (world.gd гейтит по class_id == "").
+## save_game() НЕ зовём: вызывающий (меню) удаляет файл сейва и перезагружает
+## сцену — новый мир строится чистым из этой памяти, пустого диска и модалки.
+func start_fresh_game() -> void:
+	var earned := _num(flags.get("rs.earned", 0), 0)
+	if earned > 0:
+		var keep := int(floor(float(earned) * ASH_KEEP_RATE))
+		var burn: int = mini(earned - keep, int(flags.get(Ash.KEY, 0)))
+		if burn > 0:
+			flags[Ash.KEY] = int(flags.get(Ash.KEY, 0)) - burn
+	gold = 0
+	_wipe_circle()
+	level = 1
+	xp = 0
+	xp_next = 20
+	gear = {"weapon": "", "armor": ""}
+	has_sword = false
+	class_id = ""
+	recalc_max_hp()
+	recalc_max_mana()
+	heal_full()

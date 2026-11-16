@@ -220,10 +220,7 @@ func _ready() -> void:
 	GameState.ng_plus_started.connect(func() -> void: get_tree().reload_current_scene.call_deferred())
 	if loaded:
 		apply_zone(GameState.in_cave, false)
-		if GameState.pos_valid:
-			player.global_position = GameState.player_pos
-			if player.global_position.y > ASHEN_OFFSET.y:
-				apply_area("ashen", false)  # сейв оставил героя в Пепелище
+		_place_resumed_player()  # c37 P0: позиция сейва проходит проверку стены/границ
 		player.apply_class()
 		hud.refresh_skills()
 		_apply_chest_states()  # страховка: спавн уже видит сейв, идемпотентно (нужно для F9)
@@ -885,8 +882,10 @@ func _ys_update(delta: float) -> void:
 	# t51 «было»: бокс героя = клетка 16 px: макушка −8, стопа +8 от центра ноды
 	var hr := Rect2(player.global_position + Vector2(-8.0, -8.0), Vector2(16.0, 16.0))
 	for c in _ys_canopies:
+		if not is_instance_valid(c):  # c37: реестры живут между пересборками слоя (QA) —
+			continue              # каст освобождённой ссылки сам по себе ошибка, guard до каста
 		var spr := c as Sprite2D
-		if spr == null or not is_instance_valid(spr) or spr.texture == null:
+		if spr == null or spr.texture == null:
 			continue
 		var target := 1.0
 		if spr.z_index > hz:  # крона над героем (южнее — герой сам поверх, дим не нужен)
@@ -904,8 +903,10 @@ func _ys_update(delta: float) -> void:
 	# t48 (F1 t47): реестр общий с env4 (алтари пещеры, портал/сундук Пепелища) —
 	# ставятся _env4_place; rect-гейт различает этажи (зоны в 4800 px друг от друга).
 	for p in _ys_props_dim:
+		if not is_instance_valid(p):  # c37: см. guard крон — до каста, не после
+			continue
 		var spr := p as Sprite2D
-		if spr == null or not is_instance_valid(spr) or spr.texture == null:
+		if spr == null or spr.texture == null:
 			continue
 		var target := 1.0
 		if spr.z_index > hz:  # проп нарисован над героем (герой севернее стопы пропа)
@@ -1006,19 +1007,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			GameState.toast.emit("Не удалось сохранить")
 	elif event.is_action_pressed("quickload"):
-		if GameState.load_game():
-			apply_zone(GameState.in_cave, false)
-			if GameState.pos_valid:
-				player.global_position = GameState.player_pos
-				if player.global_position.y > ASHEN_OFFSET.y:
-					apply_area("ashen", false)  # F9 из Пепелища: сейв не знает про in_ashen
-			player.apply_class()
-			hud.refresh_skills()
-			_apply_chest_states()  # сундуки после F9-загрузки (фикс T2)
-			GameAudio.sfx("ui_confirm")  # F9-успех (аудио-аудит)
-			GameState.toast.emit("Игра загружена (F9)")
-		else:
-			GameState.toast.emit("Сохранение не найдено")
+		do_quickload()
 	# --- скиллы и зелье (атака ЛКМ опрашивается в player.gd) ---
 	elif event.is_action_pressed("potion"):
 		drink_potion()
@@ -1186,6 +1175,72 @@ func build_path(from_w: Vector2, to_w: Vector2) -> Array:
 func line_clear(a: Vector2, b: Vector2) -> bool:
 	var ctx := _active_nav()
 	return Nav.los(_world_to_tile(a, ctx["base"]), _world_to_tile(b, ctx["base"]), ctx["walk"])
+
+# --- загрузка сейва: единый путь и страховка позиции (c37 P0) ---
+
+## Единственный путь «загрузить» (F9 и кнопка «Загрузить» меню — один код,
+## чтобы они физически не могли разойтись). Повторное применение безопасно:
+## всё состояние мира переставляется из сейва идемпотентно (паттерн F9).
+func do_quickload() -> void:
+	if GameState.load_game():
+		apply_zone(GameState.in_cave, false)
+		_place_resumed_player()  # F9 в живой мир с легаси-позицией — тоже под защитой
+		player.apply_class()
+		hud.refresh_skills()
+		_apply_chest_states()  # сундуки после F9-загрузки (фикс T2)
+		GameAudio.sfx("ui_confirm")  # F9-успех (аудио-аудит)
+		GameState.toast.emit("Игра загружена (F9)")
+	else:
+		GameState.toast.emit("Сохранение не найдено")
+
+## Посадка героя при резюме забега (c37 P0 «стена вместо героя»). Позиция
+## сейва уважается ТОЛЬКО если она проходима в границах той зоны, куда зовёт
+## сейв: Пепелище (нижний этаж), пещера (флаг in_cave) или деревня. Проходимость —
+## существующие хелпы стен/границ (cell_walkable зон / _village_walkable),
+## никакой новой коллизии. Не прошла — штатный вход зоны: у apply_area с
+## teleport=true цель и есть легальный спавн (тот же код, что ход E у лестниц),
+## плюс тост — «запустись и управляй» вместо невидимки в скале (acceptance:
+## играбельный герой в первые секунды).
+func _place_resumed_player() -> void:
+	var p: Vector2 = GameState.player_pos
+	if GameState.pos_valid and _pos_walkable(p):
+		player.global_position = p
+		if p.y > ASHEN_OFFSET.y:
+			apply_area("ashen", false)  # сейв оставил героя в Пепелище
+		return
+	var zone := "village"
+	if GameState.pos_valid and p.y > ASHEN_OFFSET.y:
+		zone = "ashen"  # позитивная подсказка сейва: герой жил в Пепелище
+	elif GameState.in_cave:
+		zone = "cave"
+	if zone == "cave" and dungeon_zone == null:
+		zone = "village"
+	if zone == "ashen" and ashen_grid == null:
+		zone = "village"
+	# Вход зоны берём ЯВНО из её спавна, а не телепортом apply_area(true):
+	# последний помнит village/ashen_return_pos — после резюма это мусор прошлого
+	# забега (иногда и в стене). apply_area(false) — только видимость/флаги/камера.
+	var entry := tile_to_world(spawn_tile)
+	match zone:
+		"cave":
+			entry = CAVE_OFFSET + dungeon_zone.spawn_world_pos
+		"ashen":
+			entry = ASHEN_OFFSET + ashen_grid.spawn_world_pos
+	apply_area(zone, false)
+	player.global_position = entry
+	GameState.toast.emit("Герой вышел к входу")
+
+## Проходима ли мировая точка в зоне, которой она принадлежит по координате/флагу.
+func _pos_walkable(p: Vector2) -> bool:
+	if p.y > ASHEN_OFFSET.y:
+		if ashen_grid == null:
+			return false
+		return ashen_grid.cell_walkable(_world_to_tile(p, ASHEN_OFFSET))
+	if GameState.in_cave:
+		if dungeon_zone == null:
+			return false
+		return dungeon_zone.cell_walkable(_world_to_tile(p, CAVE_OFFSET))
+	return _village_walkable(_world_to_tile(p, Vector2.ZERO))
 
 # --- переход между зонами ---
 

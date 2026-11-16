@@ -134,6 +134,7 @@ func _ready() -> void:
 	_t34()
 	_t35()
 	_t36()
+	await _t37()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -3120,7 +3121,8 @@ const C34_OPEN_B64 := "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IAr
 const C34_BASE_MD5_UNTOUCHED := {  # чужие сундуки (деревня t10→t14, пещера t11→t12): код и кадр не тронуты
 	# c36 (вердикт c35): dungeon_zone.gd УБРАН — open_chest() легитимно расширен
 	# (проп-кадр CHEST_OPEN вместо только тайла); поведение запинено в _t36.
-	"res://scripts/world.gd": "a8c8f14e0c4080e1a82a290f8ff1a50e",
+	# c37 (P0 Esc-меню): world.gd УБРАН — do_quickload/фейлсейф легитимно изменили
+	# мир; поведение запинено в _t37. Кадры чужих сундуков по-прежнему бит-в-бит.
 	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
 	"res://assets/tiles.png": "cb3e05695831f27d6b183140441a2a80",
 }
@@ -3227,9 +3229,9 @@ const C36_TILE12_B64 := "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0I
 const C36_TILES_MD5 := "d39709f47d2ee25cbfc9e7a1432431cd"
 # сейв и чужие сундуки не тронуты: проводка c36 живёт только в
 # cave_art/dungeon_zone/cave_paint (world/game_state/interactable бит-в-бит)
+# c37 (P0 Esc-меню): game_state.gd и world.gd УБРАНЫ — start_fresh_game и
+# do_quickload/фейлсейф легитимно их изменили; поведение запинено в _t37.
 const C36_UNTOUCHED := {
-	"res://scripts/game_state.gd": "84da789043ddd693e1580a73c057a0f1",
-	"res://scripts/world.gd": "a8c8f14e0c4080e1a82a290f8ff1a50e",
 	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
 }
 
@@ -3355,8 +3357,235 @@ func _t36() -> void:
 		if _t11_md5(String(p)) != String(C36_UNTOUCHED[p]):
 			okall = false
 			print("c36: ИЗМЕНЕНО сверх scope: ", p)
-	chk(okall, "c36: game_state/world/interactable бит-в-бит — сейв open_chest/has_amulet не менялся")
+	chk(okall, "c36: interactable бит-в-бит — сейв open_chest/has_amulet не менялся (game_state/world: с37-правки запинены в _t37)")
 	var gs := FileAccess.get_file_as_string("res://scripts/game_state.gd")
 	chk(gs.contains("\"has_amulet\"") and gs.contains("chest_mark_used"),
 		"c36: персист-ключи has_amulet/chest_mark_used на месте")
 	print("qa_lp c36: GOLDEN-пины сеток не пересчитывались (тайл 12 — визуальное состояние)")
+
+# ------------------------------------------------------------------ c37 (контракт: P0 Esc-меню + фейлсейф старта)
+# P0 пользователя: «при запуске открывается подземелье, персонажа не видно,
+# ничего сделать не могу». Пины: валидация позиции Resume (скала/граница ->
+# штатный вход зоны + тост), секция «Игра» (Новая игра двухступенчатая с
+# отменой по 3 с, Загрузить == F9-путь), канон §4 (мета-пепел/амулет живы).
+const C37_STUCK := Vector2(8, 4808)  # клетка (0,0) пещеры PIN_SEED — граница '#'
+
+var _c37_toasts: Array = []
+
+func _t37() -> void:
+	# 0) чистый стол: тосты собираем, чужие диалоги (наследие _t36) дожимаем
+	_c37_toasts.clear()
+	GameState.toast.connect(func(t: String) -> void: _c37_toasts.append(t))
+	var guard := 0
+	while world.hud.is_dialog_open() and guard < 20:
+		guard += 1
+		world.hud.advance()
+	GameState.input_locked = false
+	# c37 probe-диагноз (4.7.2): у headless-Window size (64,64) и GUI-pick
+	# выбрасывает события вне этого квадрата — ни push_input, ни parse_input_event
+	# до кнопок не доходят. Раздуваем окно до канваса (headless-квота 1:1).
+	get_tree().root.size = Vector2i(640, 360)
+	# 1) текстовые пины проводки (голо-HEAD: RED)
+	var wsrc := FileAccess.get_file_as_string("res://scripts/world.gd")
+	chk(wsrc.contains("do_quickload()") and wsrc.contains("_place_resumed_player()"),
+		"c37: world — F9 и _ready идут единым путём do_quickload/_place_resumed_player (голо-HEAD: RED)")
+	var msrc := FileAccess.get_file_as_string("res://scripts/settings_menu.gd")
+	chk(msrc.contains("do_quickload") and msrc.contains("save_morkheim.json")
+			and msrc.contains("reload_current_scene.call_deferred"),
+		"c37: меню: «Загрузить» дерёт do_quickload, «Новая игра» удал сейв + перезагрузка (голо-HEAD: RED)")
+	var gsrc := FileAccess.get_file_as_string("res://scripts/game_state.gd")
+	chk(gsrc.contains("func start_fresh_game") and gsrc.contains("class_id = \"\""),
+		"c37: game_state.start_fresh_game с очисткой класса (голо-HEAD: RED)")
+	# 2) семантика «Новой игры» (память): забег сгорает, вечное живёт (§0/§4)
+	GameState.class_id = "warrior"
+	GameState.level = 5
+	GameState.xp = 99
+	GameState.gold = 777
+	GameState.has_amulet = true
+	GameState.in_cave = true
+	GameState.pos_valid = true
+	GameState.flags["meta.ash"] = 500
+	GameState.flags["rs.earned"] = 100
+	GameState.flags["ach.test"] = 1
+	GameState.flags["daily.test"] = 1
+	GameState.flags["hint.test"] = "1"
+	GameState.flags["q.smelt"] = 1
+	GameState.flags["tal.x"] = 1
+	var wave0 := GameState.ng_wave()
+	GameState.start_fresh_game()
+	chk(int(GameState.gold) == 0 and int(GameState.level) == 1 and int(GameState.xp) == 0
+			and String(GameState.class_id) == "" and not bool(GameState.has_sword),
+		"c37: fresh — герой/золото/класс обнулены (gold=%d lv=%d class=[%s])" % [int(GameState.gold), int(GameState.level), String(GameState.class_id)])
+	chk(int(GameState.flags.get("meta.ash", 0)) == 465,
+		"c37: пепел по канону смерти: 500 − догорание(100−65) = 465 (получено %d)" % int(GameState.flags.get("meta.ash", 0)))
+	chk(bool(GameState.has_amulet) and GameState.flags.has("ach.test")
+			and GameState.flags.has("daily.test") and GameState.flags.has("hint.test")
+			and not GameState.flags.has("q.smelt") and not GameState.flags.has("tal.x")
+			and not GameState.flags.has("rs.earned"),
+		"c37: вечный слой и Амулет живы; круговой (q./tal./rs.) сгорел")
+	chk(GameState.ng_wave() == wave0 and not bool(GameState.in_cave)
+			and not bool(GameState.pos_valid),
+		"c37: волна с отказа не растёт, вход мира — деревня")
+	# 3) фейлсейф размещения (живой мир): скала/за границей -> вход зоны + тост
+	_c37_write_save(true, C37_STUCK.x, C37_STUCK.y)
+	world.do_quickload()
+	var centry: Vector2 = world.CAVE_OFFSET + world.dungeon_zone.spawn_world_pos
+	chk(world.player.global_position == centry and _c37_toasts.has("Герой вышел к входу")
+			and bool(GameState.in_cave),
+		"c37: скала пещеры (0,0)='#' — герой на входе пещеры + тост (pos=%s)" % str(world.player.global_position))
+	_c37_write_save(false, 8.0, 9608.0)
+	world.do_quickload()
+	var aentry: Vector2 = world.ASHEN_OFFSET + world.ashen_grid.spawn_world_pos
+	chk(world.player.global_position == aentry and String(world.active_area) == "ashen",
+		"c37: скала Пепелища — вход Пепелища, не деревня (pos=%s)" % str(world.player.global_position))
+	var bad := Vector2i(-1, -1)
+	for yy in range(0, world.map_h, 2):
+		for xx in range(0, world.map_w, 2):
+			if not bool(world.call("_village_walkable", Vector2i(xx, yy))):
+				bad = Vector2i(xx, yy)
+				break
+		if bad.x >= 0:
+			break
+	var badw: Vector2 = world.tile_to_world(bad)
+	_c37_write_save(false, badw.x, badw.y)
+	world.do_quickload()
+	chk(world.player.global_position == world.tile_to_world(world.spawn_tile)
+			and bool(world.call("_village_walkable", world.spawn_tile)),
+		"c37: стена деревни (%s) — герой ровно на спавне деревни (pos=%s)" % [str(bad), str(world.player.global_position)])
+	# позитивная ветка: валидная позиция уважается, фейлсейф не лезет
+	var goodp: Vector2 = world.tile_to_world(world.spawn_tile)
+	var rescues := _c37_toasts.count("Герой вышел к входу")
+	_c37_write_save(false, goodp.x, goodp.y)
+	world.do_quickload()
+	chk(world.player.global_position == goodp
+			and _c37_toasts.count("Герой вышел к входу") == rescues,
+		"c37: валидная позиция сейва не тронута (pos=%s)" % str(world.player.global_position))
+	# 4) меню «Игра»: узлы, доступность «Загрузить» от сейва, мышь, клавиатура
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	var sm = null
+	for c in world.get_children():
+		if c is SettingsMenu:
+			sm = c
+	chk(sm != null, "c37: SettingsMenu найден в мире")
+	_c37_push_key(KEY_ESCAPE)
+	await _frames(3)
+	chk(sm != null and sm.is_open() and String(sm.btn_new_game.text) == "Новая игра"
+			and String(sm.btn_load_game.text) == "Загрузить"
+			and bool(sm.btn_load_game.disabled) and not bool(sm.btn_new_game.disabled),
+		"c37: сейва нет — «Загрузить» неактивна, «Новая игра» активна (голо-HEAD: RED)")
+	await _frames(6)
+	chk(sm.panel.size.y <= 340 and sm.panel.size.x <= 620,
+		"c37: панель %s влезает в 640×360 (секция не сломала мерку qa8)" % str(sm.panel.size))
+	# дальше — с сейвом на диске: «Загрузить» активна и фокусируема
+	_c37_write_save(false, goodp.x, goodp.y)
+	_c37_push_key(KEY_ESCAPE)  # закрыть
+	await _frames(3)
+	_c37_push_key(KEY_ESCAPE)  # открыть: сейв виден
+	await _frames(3)
+	# мышь: настоящее нажатие по центру кнопки -> armed
+	_c37_click(sm.btn_new_game)
+	await _frames(4)
+	chk(String(sm.btn_new_game.text) == "Точно? — прогресс круга сгорит",
+		"c37: касание мышь#1 — подтверждение вооружено (текст=[%s])" % String(sm.btn_new_game.text))
+	# клавиатура: без фокуса Tab наводит, Tab->Tab переводит, Enter вооружает/жмёт
+	_c37_push_key(KEY_TAB)
+	await _frames(3)
+	chk(get_viewport().gui_get_focus_owner() == sm.btn_load_game,
+		"c37: Tab — фокус на «Загрузить» (мышинное меню стало клавиатурным, голо-HEAD: RED)")
+	_c37_push_key(KEY_TAB)
+	await _frames(3)
+	chk(get_viewport().gui_get_focus_owner() == sm.btn_new_game,
+		"c37: Tab — перенос фокуса на «Новую игру»")
+	# отмена: 3.4 с без второго касания -> текст откатан, сейв/меню целые
+	await get_tree().create_timer(3.4).timeout
+	chk(String(sm.btn_new_game.text) == "Новая игра",
+		"c37: таймаут 3 с отменил подтверждение (текст=[%s])" % String(sm.btn_new_game.text))
+	# при появлении сейва «Загрузить» оживает (пересъём состояния на open)
+	_c37_write_save(false, goodp.x, goodp.y)
+	_c37_push_key(KEY_ESCAPE)  # закрыть
+	await _frames(3)
+	chk(not bool(sm.is_open()) and not bool(GameState.input_locked),
+		"c37: Esc закрыл меню и отпустил ввод (приоритет не съехал)")
+	_c37_push_key(KEY_ESCAPE)  # открыть заново
+	await _frames(3)
+	chk(bool(sm.is_open()) and not bool(sm.btn_load_game.disabled),
+		"c37: сейв есть — «Загрузить» активна")
+	# «Загрузить» реальной мышью (меню УЖЕ открыто chk-выше): закрытие + F9-тост,
+	# повторное нажатие (второй цикл) идемпотентен
+	var loads := _c37_toasts.count("Игра загружена (F9)")
+	_c37_click(sm.btn_load_game)
+	await _frames(8)
+	chk(not bool(sm.is_open()) and _c37_toasts.count("Игра загружена (F9)") == loads + 1,
+		"c37: мышиная «Загрузить» == F9-тост (меню закрыто, идемпотентно)")
+	_c37_push_key(KEY_ESCAPE)
+	await _frames(3)
+	_c37_click(sm.btn_load_game)
+	await _frames(8)
+	chk(_c37_toasts.count("Игра загружена (F9)") == loads + 2
+			and world.player.global_position == goodp,
+		"c37: повторное «Загрузить» безопасно (позиция стабильна)")
+	# глотание мира не сломано: Q под открытым меню не пьёт зелье (матрица qa_s2)
+	GameState.herbs = 3
+	_c37_push_key(KEY_ESCAPE)
+	await _frames(3)
+	if not sm.is_open():
+		_c37_push_key(KEY_ESCAPE)
+		await _frames(3)
+	_c37_push_key(KEY_Q)
+	await _frames(4)
+	chk(int(GameState.herbs) == 3 and sm.is_open(), "c37: Q под меню по-прежнему проглочен")
+	if sm.is_open():
+		_c37_push_key(KEY_ESCAPE)
+		await _frames(3)
+	print("qa_lp c37: фейлсейф старта и выход из залипшего забега запинены; "
+			+ "подтверждение «Новой игры» наживую (reload сцены) снято оконным прогоном")
+
+# --- хелперы c37 ---
+
+func _c37_write_save(in_cave: bool, px: float, py: float) -> void:
+	var d := GameState.to_dict()
+	d["in_cave"] = in_cave
+	d["px"] = px
+	d["py"] = py
+	d["pos_valid"] = true
+	d["class_id"] = "warrior"
+	d["seen_intro"] = true
+	d["seen_cave_intro"] = true
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify(d))
+		f.close()
+
+func _c37_push_key(phys: int) -> void:
+	# паттерн qa_ib/qa_s2: press+release синхронно через Window.push_input
+	var e := InputEventKey.new()
+	e.keycode = phys
+	e.physical_keycode = phys
+	e.pressed = true
+	get_tree().root.push_input(e)
+	var r := InputEventKey.new()
+	r.keycode = phys
+	r.physical_keycode = phys
+	r.pressed = false
+	get_tree().root.push_input(r)
+
+## Мышиное нажатие на центр контрола: паттерн qa_ib _click_at (motion+press+
+## release, координаты ОКНА через get_canvas_transform контрола) — работает
+## после раздутия headless-окна (см. начало _t37).
+func _c37_click(c: Control) -> void:
+	var t: Transform2D = c.get_canvas_transform()
+	var vp: Vector2 = t * c.get_global_rect().get_center()
+	var mm := InputEventMouseMotion.new()
+	mm.position = vp
+	mm.global_position = vp
+	get_tree().root.push_input(mm)
+	for press in [true, false]:
+		var b := InputEventMouseButton.new()
+		b.position = vp
+		b.global_position = vp
+		b.button_index = MOUSE_BUTTON_LEFT
+		b.pressed = press
+		get_tree().root.push_input(b)
+		await _frames(2)
+	await _frames(2)
