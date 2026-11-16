@@ -968,9 +968,78 @@ static func floor_tile_set() -> Array:
 	]
 
 
-## Порядок тайлов стены в атласе cave_wall_v1 (индекс = слот; 2..4 —
-## направленные кромки, по вертикали не репитятся).
-static func wall_tile_set() -> Array:
+# ------------------------------------------------- ретюн читаемости «Вариант А»
+## Вердикт пользователя 16.11.2026 (жалоба 16.11 «стены и пол одного цвета»,
+## лист t45 cave_read_sheet, выбран «Вариант А»): лицо стены на ступень темнее
+## пола; AO-ряд 14 подошвы усилен тем же сдвигом; у стекуемых тайлов стены
+## (индексы 0/3/4) вертикальный стык >1.9 смягчается на пол-ступени в колонках
+## выбросов. ГЕОМЕТРИЯ/ШУМЫ/ТРЕЩИНЫ бит-в-бит — меняются только тональные
+## карты утверждённых билдеров. Формулы идентичны tools_art/sheet_cave_read.gd
+## (генератор листа), пещерный atlas стен == candA_wall (md5 4A125B16...),
+## пол не тронут (его слоты генерит floor_tile_set без изменений).
+
+static func _a_darken() -> Dictionary:
+	return {C("CAVE_ROCK", P.T_LIGHT): C("CAVE_ROCK", P.T_MID),
+			C("CAVE_ROCK", P.T_MID): C("CAVE_ROCK", P.T_DARK),
+			C("CAVE_ROCK", P.T_DARK): C("CAVE_ROCK", P.T_OUTLINE),
+			C("CAVE_ROCK", P.T_OUTLINE): C("CAVE_ROCK", P.T_OUTLINE)}
+
+static func _a_lighten() -> Dictionary:
+	return {C("CAVE_ROCK", P.T_OUTLINE): C("CAVE_ROCK", P.T_DARK),
+			C("CAVE_ROCK", P.T_DARK): C("CAVE_ROCK", P.T_MID)}
+
+static func _a_db(img: Image, x0: int, y0: int, x1: int, y1: int) -> float:
+	var a := img.get_pixel(x0, y0)
+	var b := img.get_pixel(x1, y1)
+	return (absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)) * 255.0 / 3.0
+
+static func _a_field_y(img: Image) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var f := 0.0
+	for y in range(h - 1):
+		for x in w:
+			f += _a_db(img, x, y, x, y + 1)
+	return f / float((h - 1) * w)
+
+static func _a_wv(img: Image) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var seam := 0.0
+	for x in w:
+		seam += _a_db(img, x, h - 1, x, 0)
+	seam /= float(w)
+	return seam / maxf(_a_field_y(img), 0.001)
+
+## То же отмягчение, что в генераторе листа: ряд 15 на пол-ступени светлее
+## только в колонках, где стык row15<->row0 > 3x среднего дельта поля.
+static func _a_soften(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	var lm := _a_lighten()
+	var field := _a_field_y(img)
+	for x in w:
+		if _a_db(img, x, h - 1, x, 0) > 3.0 * field:
+			var col := img.get_pixel(x, h - 1)
+			if lm.has(col):
+				img.set_pixel(x, h - 1, lm[col])
+
+static func _a_wall(img: Image, soften: bool) -> Image:
+	var out: Image = img.duplicate()
+	var dm := _a_darken()
+	for y in out.get_height():
+		for x in out.get_width():
+			var col := out.get_pixel(x, y)
+			if dm.has(col):
+				out.set_pixel(x, y, dm[col])
+	if soften and _a_wv(out) >= 1.9:
+		_a_soften(out)
+	return out
+
+
+## Пред-ретюн-база (её читает генератор вердикт-листа sheet_cave_read.gd,
+## чтобы исторические кандидаты A/B оставались воспроизводимыми бит-в-бит).
+static func wall_tile_set_raw() -> Array:
 	return [
 		{"name": "WALL", "img": build_wall_solid()},
 		{"name": "WALL_TOP", "img": build_wall_top()},
@@ -978,6 +1047,18 @@ static func wall_tile_set() -> Array:
 		{"name": "WALL_CORNER_L", "img": build_wall_corner_l()},
 		{"name": "WALL_CORNER_R", "img": build_wall_corner_r()},
 	]
+
+
+## Порядок тайлов стены в атласе cave_wall_v1 (индекс = слот; 2..4 —
+## направленные кромки, по вертикали не репитятся). С вердикта 16.11 (w5int)
+## содержит ретюн читаемости «Вариант А» (см. секцию выше).
+static func wall_tile_set() -> Array:
+	var raw := wall_tile_set_raw()
+	var out: Array = []
+	for i in raw.size():
+		out.append({"name": String(raw[i]["name"]),
+				"img": _a_wall(raw[i]["img"], i == 0 or i == 3 or i == 4)})
+	return out
 
 
 ## Пропы с прогоном канона (тот же пиксель, что в листе и в атласе).

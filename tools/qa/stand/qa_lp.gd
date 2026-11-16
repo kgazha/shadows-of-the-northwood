@@ -2967,8 +2967,14 @@ const C33_DIFF := {
 	# тайл 12 v2 пересобран (зона 48 px). Побайтовая целостность обоих файлов
 	# пинится в _t36 (== кандидаты, == rebake, md5 двойного bake). Прежние
 	# суммы таблицы: 925 и 133 входили в 4832 — стало 3774.
+	# w5int (вердикт пользователя 16.11 «Вариант А»): cave/cave_wall_v1.png 1277->0 —
+	# золотой срез c33_base для ЭТОГО файла обновлён на принятый байт-атлас волны
+	# читаемости (wall после ретюна, md5 4A125B16...); запись таблицы вырождена в
+	# побайтовый пин (любой diff против него = bad), доказательство миграции VIOLET
+	# для стены держат _t16 (rebake генератора == файл) и off-скан c33 (off==0).
+	# Пол (955) не двигался.
 	"anim_tiles.png": 54, "cave/cave_floor_v1.png": 955,
-	"cave/cave_wall_v1.png": 1277, "class_mage.png": 8, "decor.png": 11,
+	"cave/cave_wall_v1.png": 0, "class_mage.png": 8, "decor.png": 11,
 	"mobs_archer.png": 2, "mobs_swarmling.png": 2,
 	"mobs_wraith.png": 1006, "npc_merchant.png": 2, "portraits.png": 344,
 	"portraits2.png": 113,
@@ -3111,8 +3117,8 @@ func _t34() -> void:
 		var off_exp := 0 if legacy_off == null else int(legacy_off) - int(C33_DIFF[rel])
 		chk(off == off_exp and msk == 0,
 			"c33: %s off=%d mask=%d (ожидается %d/0: легаси-gray нетронут, snap вычищен)" % [rel, off, msk, off_exp])
-	chk(sum_diff == 3774 and bad_total == 0,
-		"c33: суммарный diff 11 файлов == 3774 px таблицы c31 (без двух легаси-атласов c36; получено %d, bad=%d)" % [sum_diff, bad_total])
+	chk(sum_diff == 2497 and bad_total == 0,
+		"c33: суммарный diff 11 файлов == 2497 px (3774 минус wall 1277, срез стены = база волны w5int; получено %d, bad=%d)" % [sum_diff, bad_total])
 	chk(resid == 0, "c33: старых CAVE/snap hex не осталось (остаток %d)" % resid)
 	# 3) остальные трекаемые PNG — бит-в-бит HEAD (28: ashen_tiles легитимно
 	# изменён c34 и запинен в _t35)

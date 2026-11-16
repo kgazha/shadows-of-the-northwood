@@ -126,7 +126,9 @@ static func sets(which: String) -> Array:
 	var walls: Array = []
 	for t in CP.floor_tile_set():
 		floors.append(t["img"])
-	for t in CP.wall_tile_set():
+	# Пред-ретюн-база: с w5int wall_tile_set() содержит канон «Вариант А»,
+	# исторические кандидаты листа считаются от raw-билдеров (бит-в-бит t45).
+	for t in CP.wall_tile_set_raw():
 		walls.append(t["img"])
 	if which == "before":
 		return [floors, walls]
