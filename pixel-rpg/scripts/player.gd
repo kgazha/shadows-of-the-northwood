@@ -59,7 +59,6 @@ var boar_dest := Vector2.ZERO
 var boar_target: Node2D = null      # цель на старте; валидность проверяем на приземлении
 var boar_dust := 0                  # сколько промежуточных пылей шлейфа выпущено
 var boar_mid := Vector2.ZERO        # w3fix: точка у стены для «скольжения»; ZERO — один сегмент
-var boar_slot := -1                 # g17: слот каста — проку «Клык вепря» нужен для HUD-импульса на посадке
 # --- скиллы ---
 var skill_cd := [0.0, 0.0, 0.0, 0.0]  # НЕ сериализуются
 # g17 «таланты-проки» (TALENT_PROCS, утверждено 16.11): бросок — честный randf(),
@@ -148,7 +147,6 @@ func cancel_orders() -> void:
 	pending_mult = 1.0
 	boar_t = 0.0
 	boar_target = null
-	boar_slot = -1  # g17: прерванный рывок не оставляет проку «старый» слот для импульса
 	anim.modulate.a = 1.0
 
 func _physics_process(delta: float) -> void:
@@ -175,7 +173,6 @@ func _physics_process(delta: float) -> void:
 		roll_t = 0.0
 		boar_t = 0.0
 		boar_target = null  # диалог на середине рывка: отменяем полёт (как прерванный кувырок)
-		boar_slot = -1  # g17: и слот прока — тоже (посадки не будет, импульс не нужен)
 		anim.modulate.a = 1.0  # прерванный диалогом кувырок: не залипаем полупрозрачным (фикс T5)
 		move_and_slide()
 		return
@@ -513,12 +510,18 @@ func _spark(c: Vector2, color := Color(1, 1, 0.8, 0.85), size := 6.0) -> void:
 	t.tween_callback(spark.queue_free)
 
 # --- g17 «таланты-проки» (TALENT_PROCS, утверждено 16.11) --------------------
-# Рамка решения: ОДИН бросок на срабатывание; прок не прокает себя (вторые
-# удары — обычные melee_hit/hurt, катящего кода не вызывают); кулдаун и мана
-# не меняются; шанс <=40% (VALS 20/30/40 на доске). Ранг читаем с MetaBoard —
-# там же цены [2,3,5] и таблица шансов (единственный источник чисел).
-
-const BOAR_PROC_STUN := 0.5  # g17: «Клык вепря» — стан +0.5 с поверх обычного
+# Рамка решения: ОДИН бросок на активацию скилла; прок не прокает себя (сам
+# бросок ничего не кастит и не повторяет); шанс <=40% (VALS 20/30/40 на доске).
+# Ранг читаем с MetaBoard — там же цены [2,3,5] и таблица шансов (единственный
+# источник чисел).
+# g17b (вердикт 16.11 ~17:35): триггер воина — «Мощный удар» (реальный первый
+# скилл; порядок: Мощный удар, Вихрь, Рывок, Казнь).
+# g17c (корректировка вердикта 16.11 ~18:20, пользователь): эффект обоих проков —
+# СБРОС ОТКАТА своего скилла (кд этого слота в ноль, не всех; мана не трогается;
+# автоматических повторов/двойных стрел/вееров НЕТ — кнопку жмёт игрок). У
+# следопыта триггер переехал с «Дождя стрел» на «Пробивающий выстрел» (pierce,
+# первый скилл лучника). Янтарный сигнал теперь читается буквально: вспышка
+# кнопки = скилл снова готов.
 
 ## Один бросок на proc-событие. Ранг 0 -> гарантированный false (броска нет).
 func _proc_roll(id: String) -> bool:
@@ -527,13 +530,6 @@ func _proc_roll(id: String) -> bool:
 		return false
 	var r: float = proc_rng.randf() if proc_rng != null else randf()
 	return r < pct * 0.01
-
-## «Скрученная стрела» Р3: последняя метка каста всегда двойная (у «Дождя»
-## одна метка на каст — именно она), бросок не тратится. Р1/Р2 — один бросок.
-func _twisted_double() -> bool:
-	if MetaBoard.rank_of("twisted_arrow") >= 3:
-		return true
-	return _proc_roll("twisted_arrow")
 
 ## Янтарный сигнал прока: HUD-импульс по слоту скилла + «прок-клавесин».
 ## Звук — процедурный каталог (Sfx); каталога/голоса нет — канонический
@@ -607,13 +603,19 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			# t18 цветовая дисциплина: смертельный удар — красное семейство (золото = лут)
 			_slash_fx(Color(1.0, 0.45, 0.35, 0.95))
 			melee_hit(2.0, Vector2.INF, 13.0, tgt)
+			# g17c (корректировка вердикта 16.11, пользователь): «Клык вепря» =
+			# СБРОС ОТКАТА своего скилла. Один бросок на активацию; успех —
+			# обнуляем кд этого слота (не всех) + янтарный сигнал. Никакого
+			# автоматического второго удара — повторную кнопку жмёт игрок.
+			if _proc_roll("boar_fang"):
+				skill_cd[i] = 0.0
+				_proc_fx(i)
 		"whirlwind":
 			_spin_fx()
 			_ring_fx(28.0, Color(0.95, 0.92, 0.7, 0.4))
 			melee_hit(1.5, global_position, 28.0)
 		"second_wind":
-			_boar_dash(tgt)
-			boar_slot = i  # g17: «Клык вепря» проверит прок на посадке и подсветит этот слот
+			_boar_dash(tgt)  # g17b: прок «Клык вепря» с рывка снят (вердикт 16.11) — чистый рывок+стан
 		"execute":
 			face_to(tgt.global_position)
 			_lunge_fx(facing_dir(), 8.0)
@@ -635,6 +637,12 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 				melee_hit(1.5, Vector2.INF, 13.0, tgt)
 		"pierce":
 			fire_projectile(_shoot_dir(), 1.5, true, 0.0, 3)  # стрела-призрак
+			# g17c «Скрученная стрела» (корректировка 16.11): переехала с «Дождя
+			# стрел» на «Пробивающий выстрел» (первый скилл лучника): прок =
+			# сброс отката своего слота. Двойных стрел больше нет.
+			if _proc_roll("twisted_arrow"):
+				skill_cd[i] = 0.0
+				_proc_fx(i)
 		"volley":
 			var b := _shoot_dir()
 			fire_projectile(b.rotated(-deg_to_rad(20.0)))
@@ -649,11 +657,9 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 			if pt == Vector2.INF:
 				var t2 := _skill_target()
 				pt = t2.global_position if t2 != null else global_position
-			# g17 «Скрученная стрела»: один бросок на активацию (до падения
-			# дождя); смерть героя под меткой отменит прок в _rain_burst.
-			var dbl := _twisted_double()
+			# g17c: «Дождь стрел» снова чистая база (прок ушёл на pierce)
 			_rain_marker(pt)
-			get_tree().create_timer(0.5).timeout.connect(func(): _rain_burst(pt, dbl, i))
+			get_tree().create_timer(0.5).timeout.connect(func(): _rain_burst(pt))
 		"firebolt":
 			var fb_dir := _shoot_dir()
 			fire_projectile(fb_dir, 2.5, false, 12.0, 1)
@@ -815,8 +821,6 @@ func _slide_endpoint(from: Vector2, contact: Vector2, n: Vector2, dir: Vector2, 
 ## в полёте». Кулдаун потрачен на старте каста (канон) и в полёте не возвращается.
 func _boar_land() -> void:
 	boar_t = 0.0
-	var slot := boar_slot  # g17: забираем слот каста — он нужен только здесь
-	boar_slot = -1
 	anim.modulate.a = 1.0
 	_spawn_ghost()  # t18: последний силуэт в точке приземления
 	var t := boar_target
@@ -830,45 +834,14 @@ func _boar_land() -> void:
 	face_to(t.global_position)
 	if global_position.distance_to(t.global_position) > 13.0 + _enemy_size(t) * 0.5:
 		GameState.toast.emit("Стена помешала рывку")
-		return  # удара нет — момент срабатывания не наступал, прок не катается
+		return  # удара нет (в полёт-канон входить не может)
 	_lunge_fx(facing_dir(), 7.0)
 	_slash_fx(Color(0.95, 0.5, 0.38, 0.95))  # t18: красное семейство (смертельный удар)
 	if t.get("freeze_t") != null:
 		t.freeze_t = BOAR_STUN_BOSS if t.is_in_group("boss") else BOAR_STUN
 	melee_hit(1.0, Vector2.INF, 13.0, t)
-	# g17 «Клык вепря» (TALENT_PROCS, утверждено 16.11): один бросок на посадку.
-	# Прок — мгновенный повторный слэш по той же цели, стан +0.5 с поверх
-	# обычного, Р3 — вторым ударом «веером» и второй ближайший живой враг в
-	# мили. Вторые удары идут обычным melee_hit — прок не прокает себя;
-	# кулдаун/мана не менялись (изменён только исход приземления).
-	if slot >= 0 and _proc_roll("boar_fang"):
-		if t.get("freeze_t") != null:
-			t.freeze_t = float(t.freeze_t) + BOAR_PROC_STUN
-		_lunge_fx(facing_dir(), 5.0)
-		_slash_fx(Color(0.95, 0.5, 0.38, 0.95))
-		melee_hit(1.0, Vector2.INF, 13.0, t)
-		if MetaBoard.rank_of("boar_fang") >= 3:
-			var second := _second_melee_target(t)
-			if second != null:
-				face_to(second.global_position)
-				_slash_fx(Color(0.95, 0.5, 0.38, 0.95))
-				melee_hit(1.0, Vector2.INF, 13.0, second)
-		_proc_fx(slot)
-
-## Р3 «Клыка вепря»: второй ближайший живой враг в радиусе мили (после цели).
-func _second_melee_target(primary: Node2D) -> Node2D:
-	var best: Node2D = null
-	var bd := 1e20
-	for e in get_tree().get_nodes_in_group("enemy"):
-		if e == primary or not is_instance_valid(e) or not e.has_method("hurt"):
-			continue
-		if e.get("hp") != null and int(e.get("hp")) <= 0:
-			continue
-		var d := global_position.distance_to(e.global_position)
-		if d <= 13.0 + _enemy_size(e) * 0.5 and d < bd:
-			bd = d
-			best = e
-	return best
+	# g17b/c: прок «Клык вепря» с посадки снят (вердикт 16.11) — приземление
+	# рывка снова чистый канон 1x+стан; эффект живёт в ветке power_strike.
 
 func _shoot_dir() -> Vector2:
 	return _aim_dir()
@@ -885,21 +858,11 @@ func _rain_marker(p: Vector2) -> void:
 	t.tween_property(m, "modulate:a", 0.0, 0.05)
 	t.tween_callback(m.queue_free)
 
-## dbl — «Скрученная стрела» (g17): двойная стрела, по два попадания в цель.
-## slot_i — слот каста для янтарного сигнала прока (-1 — молча, прямой вызов).
-func _rain_burst(p: Vector2, dbl := false, slot_i := -1) -> void:
-	if GameState.hp <= 0:
-		return  # g17: герой погиб под меткой — дождь (и прок вместе с ним) отменён
+func _rain_burst(p: Vector2) -> void:
 	_spark(p)
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if is_instance_valid(e) and e.has_method("hurt") and p.distance_to(e.global_position) <= 30.0:
 			e.hurt(dmg_vs(e, 2.0), p)
-			if dbl:
-				e.hurt(dmg_vs(e, 2.0), p)  # вторая стрела того же залпа
-	if dbl:
-		_spark(p, Color(1.0, 0.72, 0.3, 0.9), 7.0)  # g17: семейство прока — амбер
-		if slot_i >= 0:
-			_proc_fx(slot_i)
 
 func _firestorm_tick() -> void:
 	if not is_instance_valid(self):

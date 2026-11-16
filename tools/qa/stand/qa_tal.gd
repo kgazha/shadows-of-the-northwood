@@ -447,8 +447,9 @@ func _run() -> void:
 	print("QA_TAL INFO struct zeal=%d stride=%d floor=%d ember=%d herb=%d/%d whisper=%d fury=%d wet=%d heavy=%d skin=%d breath=%d scholar=%d hint=%d talwipe=%d deny=%d confirm=%d purchase=%d cap=%d" % [cnt_zeal, cnt_stride, cnt_floor, cnt_ember, cnt_herb_b, cnt_herb_s, cnt_whisper, cnt_fury, cnt_wet, cnt_heavy, cnt_skin, cnt_breath, cnt_scholar, cnt_hint, cnt_talwipe, cnt_deny, cnt_confirm, cnt_purchase, cnt_cap])
 	_chk("t14_structural", structural, "все хуки применены ровно единожды (zeal=2 сайта), ui_purchase=0, CAP-128 док есть")
 
-	# ---- T15: g17 «таланты-проки» — шанс на фиксированном randf-сиде (инъекция),
-	#      «Клык вепря» (посадка: 2-й слэш, стан +0.5, Р3-веер), «Скрученная стрела» ----
+	# ---- T15: g17 «таланты-проки» — шанс на фиксированном randf-сиде (инъекция);
+	#      g17c: эффект обоих проков = сброс отката своего слота
+	#      («Клык вепря» -> Мощный удар, «Скрученная стрела» -> Пробивающий) ----
 	_fresh()
 	GameState.set_class("warrior")
 	_fresh()
@@ -518,82 +519,64 @@ func _run() -> void:
 	t15sl.setup(t15w, Vector2i(0, 0))
 	t15sl.global_position = t15pl.global_position + Vector2(8, 0)
 	await _frames(2)
-	# бросок false: обычная посадка — один удар, стан ровно BOAR_STUN, слот сброшен
-	GameState.flags["meta.mb.boar_fang"] = 3
+	# g17c (корректировка вердикта 16.11 ~18:20): прок «Клык вепря» («Мощный
+	# удар», слот 0 воина) и «Скрученная стрела» (pierce, слот 0 лучника) =
+	# СБРОС ОТКАТА своего слота. Тесты — честным e2e cast_skill: каст ->
+	# кд 4.0/5.0 -> форк через инъекцию шанса -> кд своего слота 0, чужие
+	# таймеры и мана не тронуты. Повторов удара/двойных стрел больше нет.
 	var gf := RandomNumberGenerator.new(); gf.seed = seed_false
-	PlayerScript.proc_rng = gf
-	var t15d1 := t15pl.dmg_vs(t15sl, 1.0)
-	t15sl.hp = 30; t15sl.freeze_t = 0.0
-	t15pl.boar_target = t15sl; t15pl.boar_slot = 1
-	t15pl._boar_land()
-	_chk("t15_miss_plain", t15d1 > 0 and t15sl.hp == 30 - t15d1 and absf(t15sl.freeze_t - 0.7) < 0.001 and t15pl.boar_slot == -1,
-		"промах прока: удар 1 шт (урон %d), стан 0.7, слот очищен" % t15d1)
-	# бросок true, Р1: двойной слэш (2 удара), стан 0.7+0.5; прок НЕ прокает себя
-	# (второй удар не катается — иначе 3 удара/стан 1.2 фиксировались бы здесь же)
 	var gt := RandomNumberGenerator.new(); gt.seed = seed_true
+	# ранг 0: штатный кд 4.0, сброса нет
+	GameState.flags["meta.mb.boar_fang"] = 0
 	PlayerScript.proc_rng = gt
+	t15sl.hp = 30
+	t15pl.skill_cd = [0.0, 8.0, 7.0, 12.0]
+	var cast_ok := t15pl.cast_skill(0, Vector2.INF)
+	_chk("t15c_rank0_cd", cast_ok and is_equal_approx(float(t15pl.skill_cd[0]), 4.0),
+		"ранг 0: «Мощный удар» тратит кд 4.0 как обычно, сброса нет")
+	# форк-true, Р1: кд своего слота в ноль; чужие таймеры (8/7/12) и мана целы
 	GameState.flags["meta.mb.boar_fang"] = 1
-	t15sl.hp = 30; t15sl.freeze_t = 0.0
-	t15pl.boar_target = t15sl; t15pl.boar_slot = 1
-	t15pl._boar_land()
-	_chk("t15_boar_r1", t15sl.hp == 30 - 2 * t15d1 and absf(t15sl.freeze_t - 1.2) < 0.001,
-		"Клык Р1 (20%% форк): 2 удара x%d, стан 0.7+0.5=1.2" % t15d1)
-	# Р3: веер — второй ближайший живой враг тоже бит (1 удар), цель — 2
-	var t15sl2 := SlimeScript.new()
-	t15w.add_child(t15sl2)
-	t15sl2.setup(t15w, Vector2i(0, 0))
-	t15sl2.global_position = t15pl.global_position + Vector2(10, 4)
-	await _frames(1)
+	PlayerScript.proc_rng = gt
+	var mana15 := GameState.mana
+	t15pl.skill_cd = [0.0, 8.0, 7.0, 12.0]
+	cast_ok = t15pl.cast_skill(0, Vector2.INF)
+	_chk("t15c_r1_cd_reset", cast_ok and is_equal_approx(float(t15pl.skill_cd[0]), 0.0) \
+			and is_equal_approx(float(t15pl.skill_cd[1]), 8.0) \
+			and is_equal_approx(float(t15pl.skill_cd[2]), 7.0) \
+			and is_equal_approx(float(t15pl.skill_cd[3]), 12.0) \
+			and GameState.mana == mana15,
+		"форк true, Р1: кд «Мощного» 4.0->0, чужие (8/7/12) и мана не тронуты")
+	# форк-false на ранге 3: сброса нет, кд 4.0 на месте
 	GameState.flags["meta.mb.boar_fang"] = 3
-	var gt3 := RandomNumberGenerator.new(); gt3.seed = seed_true
-	PlayerScript.proc_rng = gt3
-	var t15d2 := t15pl.dmg_vs(t15sl2, 1.0)
-	t15sl.hp = 40; t15sl.freeze_t = 0.0; t15sl2.hp = 30; t15sl2.freeze_t = 0.0
-	t15pl.boar_target = t15sl; t15pl.boar_slot = 1
-	t15pl._boar_land()
-	_chk("t15_boar_r3_fan", t15sl.hp == 40 - 2 * t15d1 and t15sl2.hp == 30 - t15d2,
-		"Клык Р3 (40%% форк): цель %d-x2, второй в мили %d-x1 (веер)" % [t15d1, t15d2])
-	# смерть героя в момент приземления отменяет прок (канон приземления)
-	GameState.flags["meta.mb.boar_fang"] = 3
-	var gtx := RandomNumberGenerator.new(); gtx.seed = seed_true
-	PlayerScript.proc_rng = gtx
-	t15sl.hp = 40; t15sl.freeze_t = 0.0
-	t15pl.boar_target = t15sl; t15pl.boar_slot = 1
-	GameState.hp = 0
-	t15pl._boar_land()
-	GameState.hp = GameState.max_hp
-	_chk("t15_death_cancel", t15sl.hp == 40 and t15sl.freeze_t == 0.0, "герой мёртв — приземление (и прок) отменены")
-	# «Скрученная стрела»: Р1 форк-true — двойная стрела (2 попадания), форк-false — одна;
-	# Р3 — всегда двойная БЕЗ броска (посидно проверяем прожиганием заведомо false-сида)
-	var wr := t15pl.dmg_vs(t15sl, 2.0)
+	PlayerScript.proc_rng = gf
+	t15pl.skill_cd = [0.0, 8.0, 7.0, 12.0]
+	cast_ok = t15pl.cast_skill(0, Vector2.INF)
+	_chk("t15c_false_no_reset", cast_ok and is_equal_approx(float(t15pl.skill_cd[0]), 4.0) \
+			and is_equal_approx(float(t15pl.skill_cd[1]), 8.0),
+		"форк false, Р3: кд 4.0 остался, ничего не сброшено")
+	# «Скрученная стрела» -> pierce (лучник, слот 0, кд 5.0): форк-true — сброс,
+	# форк-false — кд 5.0 на месте; чужие таймеры (3/6/9) не тронуты
+	GameState.class_id = "archer"
 	GameState.flags["meta.mb.twisted_arrow"] = 1
-	var gt1 := RandomNumberGenerator.new(); gt1.seed = seed_true
-	PlayerScript.proc_rng = gt1
-	t15sl.hp = 40
-	t15pl._rain_burst(t15pl.global_position, t15pl._twisted_double())
-	_chk("t15_arrow_double", wr > 0 and t15sl.hp == 40 - 2 * wr, "Стрела Р1 форк-true: 2 попадания x%d" % wr)
-	var gf1 := RandomNumberGenerator.new(); gf1.seed = seed_false
-	PlayerScript.proc_rng = gf1
-	t15sl.hp = 40
-	t15pl._rain_burst(t15pl.global_position, t15pl._twisted_double())
-	_chk("t15_arrow_single", t15sl.hp == 40 - wr, "Стрела Р1 форк-false: 1 попадание x%d" % wr)
-	GameState.flags["meta.mb.twisted_arrow"] = 3
-	var gf3 := RandomNumberGenerator.new(); gf3.seed = seed_false
-	PlayerScript.proc_rng = gf3
-	var dbl3 := t15pl._twisted_double()
-	t15sl.hp = 40
-	t15pl._rain_burst(t15pl.global_position, dbl3)
-	_chk("t15_arrow_r3_always", dbl3 and t15sl.hp == 40 - 2 * wr,
-		"Стрела Р3: последняя (и единственная) метка всегда двойная даже на заведомо false-сиде")
-	# ранг 0: проков нет вовсе
-	GameState.flags["meta.mb.twisted_arrow"] = 0
-	PlayerScript.proc_rng = null
-	t15sl.hp = 40
-	t15pl._rain_burst(t15pl.global_position, t15pl._twisted_double())
-	_chk("t15_arrow_rank0", t15sl.hp == 40 - wr, "Стрела ранг 0: одиночная (номинальный дождь не тронут)")
+	gt.seed = seed_true  # пересев: «первый randf заведомо true» действует только для первого броска
+	PlayerScript.proc_rng = gt
+	t15pl.skill_cd = [0.0, 3.0, 6.0, 9.0]
+	cast_ok = t15pl.cast_skill(0, Vector2.INF)
+	_chk("t15c_pierce_reset", cast_ok and is_equal_approx(float(t15pl.skill_cd[0]), 0.0) \
+			and is_equal_approx(float(t15pl.skill_cd[1]), 3.0) \
+			and is_equal_approx(float(t15pl.skill_cd[2]), 6.0) \
+			and is_equal_approx(float(t15pl.skill_cd[3]), 9.0),
+		"«Пробивающий» форк true: свой кд 5.0->0, чужие (3/6/9) целы")
+	gf.seed = seed_false  # пересев перед броском (гарантия только у первого randf)
+	PlayerScript.proc_rng = gf
+	t15pl.skill_cd = [0.0, 3.0, 6.0, 9.0]
+	cast_ok = t15pl.cast_skill(0, Vector2.INF)
+	_chk("t15c_pierce_false", cast_ok and is_equal_approx(float(t15pl.skill_cd[0]), 5.0),
+		"«Пробивающий» форк false: кд 5.0 остался")
+	GameState.class_id = "warrior"
 	PlayerScript.proc_rng = null
 	p15.free()
-	t15sl.free(); t15sl2.free(); t15pl.free(); t15w.free()
+	t15sl.free(); t15pl.free(); t15w.free()
 	_fresh()
 
 	print("QA_TAL SUMMARY checks=%d fails=%d" % [_checks, _fails])
