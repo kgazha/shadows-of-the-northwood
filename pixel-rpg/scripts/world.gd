@@ -1249,8 +1249,16 @@ func _place_resumed_player() -> void:
 	match zone:
 		"cave":
 			entry = CAVE_OFFSET + dungeon_zone.spawn_world_pos
+			# 16.11 юзер-фикс (баг «поднялся из пещеры — оказался на старте»):
+			# возвращать надо к арке входа в деревню, а не на спавн. Точка
+			# возврата — сам арочный тайл «T»: с него и заходят, он проходим.
+			if village_return_pos == Vector2.INF:
+				village_return_pos = tile_to_world(CAVE_ENTRANCE_TILE)
 		"ashen":
 			entry = ASHEN_OFFSET + ashen_grid.spawn_world_pos
+			# то же для Пепелища: выходим к портальному камню «A», а не к началу
+			if ashen_return_pos == Vector2.INF:
+				ashen_return_pos = tile_to_world(ASHEN_ENTRANCE_TILE)
 	apply_area(zone, false)
 	player.global_position = entry
 	GameState.toast.emit("Герой вышел к входу")
