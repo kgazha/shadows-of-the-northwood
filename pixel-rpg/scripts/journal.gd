@@ -47,6 +47,12 @@ const QSUB_TITLES := ["Активные", "Завершённые"]
 var _qsub := 0
 var _qsub_row: HBoxContainer
 var _qsub_btns: Array = []
+# 16.11 (просьба пользователя, g14): рубрики-подвкладки внутри «Достижений» —
+# тот же визуальный язык, что у квестовых (76f389b). _asub = -1 означает
+# «автовыбор»: при пересборке встать в первую рубрику с закрытой ачивкой.
+var _asub := -1
+var _asub_row: HBoxContainer
+var _asub_btns: Array = []
 var _ach_list: VBoxContainer     # список 12 строк достижений (вкладка TAB_ACHV)
 var _ach_sig := -1               # подпись состояния ачивок: анлоки + счётчики
 var _tal_list: VBoxContainer     # колонки веток талантов (вкладка TAB_TALENTS)
@@ -116,6 +122,20 @@ func _ready() -> void:
 		qb.pressed.connect(select_qsub.bind(i))
 		_qsub_row.add_child(qb)
 		_qsub_btns.append(qb)
+	# ряд рубрик раздела «Достижения» (виден только на этой вкладке; g14)
+	_asub_row = HBoxContainer.new()
+	_asub_row.add_theme_constant_override("separation", 10)
+	_asub_row.visible = false
+	vb.add_child(_asub_row)
+	for i in AchvCatalog.CAT_TITLES.size():
+		var ab := Button.new()
+		ab.flat = true
+		ab.text = String(AchvCatalog.CAT_TITLES.keys()[i])
+		ab.focus_mode = Control.FOCUS_NONE  # мышиные: клавиатурный фокус не воруем
+		ab.add_theme_font_size_override("font_size", 8)
+		ab.pressed.connect(select_asub.bind(i))
+		_asub_row.add_child(ab)
+		_asub_btns.append(ab)
 	_scroll = ScrollContainer.new()
 	_scroll.custom_minimum_size = Vector2(344, 164)  # t24: 400-2*28; min панели ровно 400x276
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -144,6 +164,7 @@ func _ready() -> void:
 	# + тема); фон однотонный, фоновых картинок нет.
 	_tab_style()
 	_qsub_style()
+	_asub_style()  # g14: стартовые подписи рубрик «титул · 0/0» без амбера
 	close()  # стартовое состояние: скрыт, мышь насквозь
 	GameState.quest_changed.connect(func() -> void: _dirty = true)
 
@@ -175,11 +196,12 @@ func open() -> void:
 	_open = true
 	_dirty = false
 	_qsub = 0  # 16.11 пользователя: журнал всегда открывается на «Активных»
+	_asub = -1  # g14: и на достижениях — автовход в первую непустую рубрику
 	_rebuild()
 	_root.visible = true
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
-	for b in _tab_btns + _qsub_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
+	for b in _tab_btns + _qsub_btns + _asub_btns:  # close() пряча subtree оставил их в IGNORE — вернуть клик
 		(b as Button).mouse_filter = Control.MOUSE_FILTER_STOP
 	_scroll.scroll_vertical = 0
 	GameAudio.sfx("book")  # шелест страниц; нет файла — тихий пропуск
@@ -207,6 +229,7 @@ func select_tab(i: int) -> void:
 	_ach_list.visible = _tab == TAB_ACHV
 	_tal_list.visible = _tab == TAB_TALENTS
 	_qsub_row.visible = _tab == TAB_QUESTS  # подвкладки живут только в «Квестах»
+	_asub_row.visible = _tab == TAB_ACHV  # рубрики — только в «Достижениях» (g14)
 	_scroll.scroll_vertical = 0
 	if _tab == TAB_ACHV:
 		_rebuild_achv()  # свежие статусы на каждый вход во вкладку
@@ -229,6 +252,53 @@ func _qsub_style() -> void:
 			"font_color", Color(1, 0.85, 0.45) if i == _qsub else Color(1, 1, 1, 0.55))
 		b.add_theme_color_override(
 			"font_hover_color", Color(1, 0.85, 0.45) if i == _qsub else Color(1, 1, 1, 0.5))
+
+## 16.11 (просьба пользователя, g14): переключение рубрик-подвкладок раздела
+## «Достижения». В отличие от квестов (_dirty-тик) пересобираем сразу — список
+## ачивок и так пересобирается целиком, а тесты/мышь ждут синхронного результата.
+func select_asub(i: int) -> void:
+	if i < 0 or i >= AchvCatalog.CAT_TITLES.size() or i == _asub:
+		return
+	_asub = i
+	_rebuild_achv()
+	_scroll.scroll_vertical = 0
+
+## Первая рубрика с хотя бы одной закрытой ачивкой; если закрытых нет — первая.
+func _asub_first() -> int:
+	var cats: Array = AchvCatalog.CAT_TITLES.keys()
+	for i in cats.size():
+		for raw_c in AchvCatalog.ITEMS:
+			var c: Dictionary = raw_c
+			if String(c.get("category", "")) == String(cats[i]) \
+					and _ach_unlocked(String(c.get("id", ""))):
+				return i
+	return 0
+
+## Подписи рубрик: «титул · готово/всего» + амбер активной (язык квестовых
+## подвкладок 76f389b — те же цвета). Счётчики пересчитываются на каждую сборку.
+func _asub_style() -> void:
+	var cats: Array = AchvCatalog.CAT_TITLES.keys()
+	var done := {}
+	var tot := {}
+	for k in cats:
+		done[String(k)] = 0
+		tot[String(k)] = 0
+	for raw_c in AchvCatalog.ITEMS:
+		var c: Dictionary = raw_c
+		var k := String(c.get("category", ""))
+		if not tot.has(k):
+			continue  # безключевых строк нет (покрытие 20/20 пинит QA); не считаем
+		tot[k] = int(tot[k]) + 1
+		if _ach_unlocked(String(c.get("id", ""))):
+			done[k] = int(done[k]) + 1
+	for i in _asub_btns.size():
+		var b: Button = _asub_btns[i]
+		var k := String(cats[i])
+		b.text = "%s · %d/%d" % [String(AchvCatalog.CAT_TITLES[k]), int(done[k]), int(tot[k])]
+		b.add_theme_color_override(
+			"font_color", Color(1, 0.85, 0.45) if i == _asub else Color(1, 1, 1, 0.55))
+		b.add_theme_color_override(
+			"font_hover_color", Color(1, 0.85, 0.45) if i == _asub else Color(1, 1, 1, 0.5))
 
 func _tab_style() -> void:
 	for i in _tab_btns.size():
@@ -372,10 +442,33 @@ func _rebuild_achv() -> void:
 	_ach_sig = _ach_sig_calc()
 	for ch in _ach_list.get_children():
 		ch.queue_free()
+	# g14 (просьба пользователя): рубрики-подвкладки + код-ген эмблема 8×8
+	# (UiIcons.achv_icon) слева от текста; строки фильтруются по активной рубрике.
+	var cats: Array = AchvCatalog.CAT_TITLES.keys()
+	if _asub < 0 or _asub >= cats.size():
+		_asub = _asub_first()  # автовход в первую непустую рубрику (open)
+	_asub_style()
+	var rubric := String(cats[_asub])
 	for raw_c in AchvCatalog.ITEMS:
 		var c: Dictionary = raw_c
+		if String(c.get("category", "")) != rubric:
+			continue
 		var id := String(c.get("id", ""))
 		var unlocked := _ach_unlocked(id)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 5)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var ic := TextureRect.new()
+		ic.texture = UiIcons.achv_icon(rubric, unlocked)
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		ic.custom_minimum_size = Vector2(8, 8)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(ic)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 1)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		# палитра как у квестов: выполнено — тёплое золото, нет — приглушённый
 		var head_col := Color(1, 0.9, 0.55) if unlocked else Color(0.6, 0.58, 0.54)
 		var head := _mk_label("%s %s — %s%s" % [
@@ -384,24 +477,26 @@ func _rebuild_achv() -> void:
 			String(c.get("reward", "")),
 			"  ✓ закрыто" if unlocked else "",
 		], 8, head_col)
-		_ach_list.add_child(head)
+		col.add_child(head)
 		var d := _mk_label(String(c.get("desc", "")), 8,  # t27 P1-1: 7 -> 8
 			Color(0.85, 0.8, 0.7, 0.7) if unlocked else Color(0.85, 0.8, 0.7, 0.4))
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		d.custom_minimum_size = Vector2(330, 0)  # t24: +12 min ширины скролла < 344 (иначе панель распухнет)
-		_ach_list.add_child(d)
+		col.add_child(d)
 		var spec := String(c.get("counter", ""))
 		if spec != "":
 			if unlocked:
 				# live-счётчики (campfires/chests/...) обнуляются сменой круга,
 				# а анлок вечен: «0/3» рядом с «✓ закрыто» врал бы игроку (Q5)
-				_ach_list.add_child(_mk_label("    %s: ✓" % String(c.get("hint", "Прогресс")),
+				col.add_child(_mk_label("    %s: ✓" % String(c.get("hint", "Прогресс")),
 					8, Color(0.55, 0.85, 0.5)))  # t27 P1-1: 7 -> 8
 			else:
 				var cur := _ach_cur(spec)
 				var goal := int(c.get("goal", 0))
-				_ach_list.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
+				col.add_child(_mk_label("    %s: %d/%d" % [String(c.get("hint", "Прогресс")), cur, goal],
 					7, Color(0.55, 0.85, 0.5) if cur >= goal else Color(1, 1, 1, 0.6)))
+		row.add_child(col)
+		_ach_list.add_child(row)
 
 # --- построение вкладки талантов (CONTRACT_TALENTS §4) ---
 

@@ -25,13 +25,29 @@ class_name AchvCatalog
 ##                            live-счётчики обнуляются кругом — для вечных
 ##                            целей используйте "n.<kind>");
 ##   goal     — цель счётчика для отображения «cur/goal»;
-##   hint     — подпись счётчика в UI.
+##   hint     — подпись счётчика в UI;
+##   category — рубрика вкладки «Достижения» (g14, просьба пользователя 16.11):
+##              ключ из CAT_TITLES; поле добавлено ПОСЛЕ id/spec/counters —
+##              идентификаторы и сейв-ключи "ach.<id>" не тронуты.
+##
+## Рубрики (g14): порядок словаря = порядок подвкладок. Покрытие таблицы 20/20,
+## отдельной «прочее» нет — смысл категорий взят из канона RETENTION_NG_PLUS
+## (§2 бои/быт/экономика, §D петля). Счётчик готово/всего считает journal.gd.
+const CAT_TITLES := {
+	"combat": "Боевые",
+	"explore": "Исследования",
+	"craft": "Ремесло",
+	"trade": "Сделка",
+	"loop": "Петля",
+}
+
 const ITEMS: Array = [
 	{
 		"id": "first_blood",
 		"name": "Первая кровь",
 		"desc": "Впервые убить моба.",
 		"reward": "+10g",
+		"category": "combat",
 	},
 	{
 		"id": "hunter_25",
@@ -41,6 +57,7 @@ const ITEMS: Array = [
 		"counter": "field:slime_kills",
 		"goal": 25,
 		"hint": "Слаймов убито",
+		"category": "combat",
 	},
 	{
 		"id": "hunter_100",
@@ -50,24 +67,28 @@ const ITEMS: Array = [
 		"counter": "field:slime_kills",
 		"goal": 40,
 		"hint": "Слаймов убито",
+		"category": "combat",
 	},
 	{
 		"id": "boss_slayer",
 		"name": "Победитель Грома",
 		"desc": "Победить Осквернённый Гром в алтарном зале.",
 		"reward": "+3 Пепла",
+		"category": "combat",
 	},
 	{
 		"id": "witch_slayer",
 		"name": "Пепел ведьмы",
 		"desc": "Победить Ведьму Пепелища.",
 		"reward": "+1 Пепел",
+		"category": "combat",
 	},
 	{
 		"id": "alchemist",
 		"name": "Алхимик",
 		"desc": "Сварить первое зелье (любой рецепт).",
 		"reward": "+20g",
+		"category": "craft",
 	},
 	{
 		"id": "brewer_10",
@@ -77,6 +98,7 @@ const ITEMS: Array = [
 		"counter": "n.brews",
 		"goal": 10,
 		"hint": "Сварено",
+		"category": "craft",
 	},
 	{
 		"id": "campfires",
@@ -86,6 +108,7 @@ const ITEMS: Array = [
 		"counter": "n.campfires",
 		"goal": 3,
 		"hint": "Костров",
+		"category": "explore",
 	},
 	{
 		"id": "treasure",
@@ -95,6 +118,7 @@ const ITEMS: Array = [
 		"counter": "size:chests_used",
 		"goal": 3,
 		"hint": "Сундуков",
+		"category": "explore",
 	},
 	{
 		"id": "collector",
@@ -104,6 +128,7 @@ const ITEMS: Array = [
 		"counter": "n.buys",
 		"goal": 5,
 		"hint": "Покупок",
+		"category": "trade",
 	},
 	{
 		"id": "wealth",
@@ -113,6 +138,7 @@ const ITEMS: Array = [
 		"counter": "field:gold",
 		"goal": 300,
 		"hint": "Золота",
+		"category": "trade",
 	},
 	{
 		"id": "herbalist",
@@ -122,12 +148,14 @@ const ITEMS: Array = [
 		"counter": "n.herbs",
 		"goal": 5,
 		"hint": "Трав выпито",
+		"category": "craft",
 	},
 	{
 		"id": "hardcore",
 		"name": "На волоске",
 		"desc": "Убить Грома, оставшись с 1 HP.",
 		"reward": "+3 Пепла",
+		"category": "combat",
 	},
 	# --- §D: цикл «Круги Пепла» (петля возврата). Имена — из трёх слов и только
 	# внутриигровыми терминами. Счётчики не используются: факты —
@@ -137,30 +165,35 @@ const ITEMS: Array = [
 		"name": "Второй Круг Пепла",
 		"desc": "Начать второй круг: войти в новый Круг Пепла (волна 1).",
 		"reward": "+1 Пепел",
+		"category": "loop",
 	},
 	{
 		"id": "ng_vet",
 		"name": "Ветеран Круга Пепла",
 		"desc": "Дойти до волны 3 на кругах Пепла.",
 		"reward": "+2 Пепла",
+		"category": "loop",
 	},
 	{
 		"id": "ng_finale",
 		"name": "Последний Круг Пепла",
 		"desc": "Дойти до пятого, предельного круга.",
 		"reward": "+3 Пепла",
+		"category": "loop",
 	},
 	{
 		"id": "ng_magnat",
 		"name": "Магнат Пепельных гор",
 		"desc": "Держать 20 Пепла на алтаре.",
 		"reward": "+2 Пепла",
+		"category": "trade",
 	},
 	{
 		"id": "ng_crowns",
 		"name": "Венец пятого круга",
 		"desc": "Победить Осквернённого Грома на финальной волне 5.",
 		"reward": "+3 Пепла",
+		"category": "loop",
 	},
 	# --- смерть-петля (CONTRACT_RUNLOOP §1.5, ADDENDUM 1.0 п.1–2): смерть гасит
 	# забег, но вечный счётчик n.deaths переживает её целиком — награды за то,
@@ -173,6 +206,7 @@ const ITEMS: Array = [
 		"counter": "n.deaths",
 		"goal": 5,
 		"hint": "Смертей",
+		"category": "loop",
 	},
 	{
 		"id": "undying",
@@ -182,6 +216,7 @@ const ITEMS: Array = [
 		"counter": "n.deaths",
 		"goal": 15,
 		"hint": "Смертей",
+		"category": "loop",
 	},
 ]
 
@@ -209,3 +244,13 @@ static func name_of(id: String) -> String:
 		if String(c.get("id", "")) == id:
 			return String(c.get("name", id))
 	return id
+
+## Ключ рубрики достижения (g14) — тот же путь таблицы, что name_of; для
+## неизвестного id пустая строка (полное покрытие 20/20 пинится в QA, так что
+## рубрики без ключа в живом каталоге быть не может).
+static func cat_of(id: String) -> String:
+	for raw_c in ITEMS:
+		var c: Dictionary = raw_c
+		if String(c.get("id", "")) == id:
+			return String(c.get("category", ""))
+	return ""

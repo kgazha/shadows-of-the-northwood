@@ -3664,7 +3664,10 @@ const G12_UNTOUCHED := {
 	"res://scripts/npc.gd": "419a3887918731d4d2207f3bcf51fd23",
 	"res://scripts/first_hint.gd": "93520eda37ea1e453cd2bc4c737e04d4",
 	"res://scripts/alchemy.gd": "605eb9d4f55b048fa79914285eb3b635",
-	"res://scripts/journal.gd": "53f70da0b331e9801a07d3390237ac71",
+	# g14 (рубрики+значки достижений, просьба пользователя 16.11) ЦЕЛЕНАПРАВЛЕННО
+	# изменил journal.gd — ре-пин по прецеденту g13 (hud/shop/game_state убраны
+	# из таблицы): поведение g12-приёмки живое, новый хеш принятого файла.
+	"res://scripts/journal.gd": "d3dbdf8150d344fd0913b105ff9c138c",
 }
 
 var _g12_toasts: Array = []

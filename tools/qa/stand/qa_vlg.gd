@@ -161,6 +161,7 @@ func _ready() -> void:
 	await _inv9()
 	await _inv10()
 	await _inv11()
+	await _inv12()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -935,3 +936,157 @@ func _inv11() -> void:
 	chk(empty_ok, "inv11: пустые «Завершённые» показывают заглушку, а не пустоту")
 	jr.call("close")
 	print("qa_vlg inv11: подвкладки журнала запинены: активные %d / завершённые %d, reset на открытии, амбер, мышь, ряд только на квестах, заглушка" % [act, done])
+
+# g14 (просьба пользователя 16.11): рубрики-подвкладки достижений + код-ген
+# значки 8×8. Пины поведенческие, как inv11: покрытие рубрик и неизменность
+# id (сейв-совместимость), иконки (палитра/оба состояния), UI-ряд со счётчиком
+# «готово/всего», автовход в первую непустую рубрику при open().
+const INV12_IDS := "first_blood;hunter_25;hunter_100;boss_slayer;witch_slayer;" \
+		+ "alchemist;brewer_10;campfires;treasure;collector;wealth;herbalist;hardcore;" \
+		+ "ng_second;ng_vet;ng_finale;ng_magnat;ng_crowns;rekindled;undying;"
+
+func _inv12() -> void:
+	var w: Node2D = game_world
+	if w == null:
+		chk(false, "inv12: мир не построен")
+		return
+	var jr: Node = null
+	for c in w.get_children():
+		if c is Journal:
+			jr = c
+	chk(jr != null, "inv12: Journal найден в дереве мира")
+	if jr == null:
+		return
+	# 1) данные: id 20 ачивок прежним порядком (сейвы живые), рубрика у всех
+	var ids := ""
+	for raw_c in AchvCatalog.ITEMS:
+		var c0: Dictionary = raw_c
+		ids += String(c0.get("id", "")) + ";"
+	chk(ids == INV12_IDS, "inv12: id достижений не перенумерованы (сейвы живые)")
+	var cats: Array = AchvCatalog.CAT_TITLES.keys()
+	var per := {}
+	for k in cats:
+		per[String(k)] = 0
+	var foreign := 0
+	for raw_c in AchvCatalog.ITEMS:
+		var c1: Dictionary = raw_c
+		var k := String(c1.get("category", ""))
+		if not per.has(k):
+			foreign += 1
+		else:
+			per[k] = int(per[k]) + 1
+	var empty_c := 0
+	for k in cats:
+		if int(per[String(k)]) == 0:
+			empty_c += 1
+	chk(foreign == 0 and AchvCatalog.ITEMS.size() == 20,
+		"inv12: рубрика у всех 20 записей, посторонних ключей %d" % foreign)
+	chk(cats.size() >= 4 and cats.size() <= 6 and empty_c == 0,
+		"inv12: рубрик %d (4–6), пустых нет: %s" % [cats.size(), str(per)])
+	# 2) значки: код-ген 8×8 (семейство brewed_icon), оба состояния, палитра
+	var ui := load("res://scripts/ui_icons.gd")
+	var pal: Dictionary = PixelPalette.color_index()
+	var icons_ok := true
+	var detail_min := 99
+	for k in cats:
+		for st in [false, true]:
+			var t: Texture2D = ui.achv_icon(String(k), bool(st))
+			if t == null or t.get_size() != Vector2(8, 8):
+				icons_ok = false
+				continue
+			var im: Image = t.get_image()
+			var colored := 0
+			for y in 8:
+				for x in 8:
+					var col: Color = im.get_pixel(x, y)
+					if col.a == 0.0:
+						continue
+					colored += 1
+					if not pal.has(PixelPalette.key(col)):
+						icons_ok = false
+			detail_min = mini(detail_min, colored)
+	chk(icons_ok and detail_min >= 12,
+		"inv12: 10 значков 8×8 код-ген, пиксели в палитре, силуэт не пустой (мин. пикселей %d)" % detail_min)
+	var imgA: Image = ui.achv_icon("combat", true).get_image()
+	var imgD: Image = ui.achv_icon("combat", false).get_image()
+	var differs := false
+	for y in 8:
+		for x in 8:
+			if imgA.get_pixel(x, y) != imgD.get_pixel(x, y):
+				differs = true
+	chk(differs, "inv12: янтарная (закрытая) и тусклая (открытая) различаются")
+	var sil := {}
+	for k in cats:
+		var sh := ""
+		var im2: Image = ui.achv_icon(String(k), false).get_image()
+		for y in 8:
+			for x in 8:
+				if im2.get_pixel(x, y).a > 0.0:
+					sh += "1"
+		sil[String(k)] = sh
+	var uniq := {}
+	for k in sil:
+		uniq[String(sil[k])] = true
+	chk(uniq.size() == cats.size(), "inv12: силуэты пяти рубрик различны (меч/след/молот/монета/спираль)")
+	# 3) вкладка: ряд рубрик, счётчик, автовход в первую непустую при open()
+	var asv: Variant = jr.get("_asub_btns")
+	if asv == null or (asv as Array).size() != cats.size():
+		chk(false, "inv12: кнопок рубрик %d, ждали %d" % [
+			0 if asv == null else (asv as Array).size(), cats.size()])
+		return
+	chk(true, "inv12: кнопок рубрик — %d" % cats.size())
+	# детерминизм: снимем все ach.*-флаги этого процесса (стенд умрёт вместе с ними)
+	var ak: Array = []
+	for fk in GameState.flags.keys():
+		if String(fk).begins_with("ach."):
+			ak.append(fk)
+	for fk in ak:
+		GameState.flags.erase(fk)
+	GameState.set_flag("ach.campfires", true)  # единственная закрытая — «Исследования»
+	jr.call("close")
+	jr.call("open")
+	jr.call("select_tab", int(Journal.TAB_ACHV))
+	await _frames(3)
+	var a2 := int(jr.get("_asub"))
+	chk(a2 >= 0 and a2 < cats.size() and String(cats[a2]) == "explore",
+		"inv12: автовход в первую непустую рубрику (_asub=%d, «%s»)" % [
+			a2, String(cats[a2]) if a2 >= 0 and a2 < cats.size() else "?"])
+	var rowr: Variant = jr.get("_asub_row")
+	chk(rowr != null and (rowr as Control).visible, "inv12: ряд рубрик виден на «Достижениях»")
+	var btxt := String(((asv as Array)[a2] as Button).text)
+	chk(btxt.begins_with("Исследования · 1/2"), "inv12: счётчик готово/всего на рубрике: «%s»" % btxt)
+	# строки: только рубрика explore, у каждой эмблема; состояния оба (campfires
+	# закрыта — янтарь, treasure открыта — тусклая)
+	var amb := 0
+	var dim := 0
+	var rows := 0
+	var heads2 := 0
+	var only := true
+	var stack: Array = [jr.get("_ach_list")]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is HBoxContainer:
+			rows += 1
+		if n is TextureRect:
+			var t2: Texture2D = (n as TextureRect).texture
+			if t2 == ui.achv_icon("explore", true):
+				amb += 1
+			elif t2 == ui.achv_icon("explore", false):
+				dim += 1
+		if n is Label:
+			var tx := String((n as Label).text)
+			if tx.contains("Первая кровь") or tx.contains("Богач"):
+				only = false  # чужие рубрики в список не leak'нули
+			if tx.begins_with("[x] Три костра") or tx.begins_with("[ ] Кладоискатель"):
+				heads2 += 1  # тексты строк на месте (не пустые ряды-заглушки)
+		for ch3 in n.get_children():
+			stack.append(ch3)
+	chk(rows == int(per["explore"]) and only and heads2 == 2,
+		"inv12: список фильтрован рубрикой: %d строк (ждём %d), чужих нет, заголовки видны (%d)" % [rows, int(per["explore"]), heads2])
+	chk(amb == 1 and dim == 1,
+		"inv12: значки в обоих состояниях в строках (янтарь %d, тусклых %d)" % [amb, dim])
+	# 4) сейв-совместимость: рубрика — только метаданные, флаг-ключи не тронуты;
+	# тестовые анлоки этого процесса убираем
+	GameState.flags.erase("ach.campfires")
+	jr.call("close")
+	print("qa_vlg inv12: рубрики достижений запинены: покрытие, id-порядок, иконки-палитра, автовход, счётчик, фильтр, оба состояния")

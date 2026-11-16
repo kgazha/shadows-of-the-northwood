@@ -206,6 +206,8 @@ func _group_achv() -> void:
 		and Ash.balance() == ash1
 		and toast_count("Три костра") == t0 + 1)
 	# витрина после анлока: журнал прячет счётчик за ✓ (не «4/3» и не «0/3»)
+	# g14: «Три костра» — рубрика «Исследования», переключаем подкладку (build внутри)
+	jr.select_asub(AchvCatalog.CAT_TITLES.keys().find("explore"))
 	jr._rebuild_achv()
 	var line := ""
 	var stack: Array = [jr]

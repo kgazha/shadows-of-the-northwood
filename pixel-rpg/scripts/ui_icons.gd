@@ -707,3 +707,66 @@ static func _vial(fill: String) -> Array:
 ## Иконка крепкого зелья для brewed_btn (c30): колба варианта 3 листа c28.
 static func brewed_icon() -> Texture2D:
 	return ImageTexture.create_from_image(_bake16(_flask("HP_RED", true)))
+
+# ---------------------------------------------------------------- g14: рубрики
+## Эмблемы рубрик достижений (просьба пользователя 16.11): код-ген 8×8, тот же
+## язык, что brewed_icon (рукописная маска-силуэт, СЗ-блик, тональный контур).
+## Состояния: закрытая — тусклый IRON, открытая — янтарь HUD_GOLD. Растровых
+## файлов ноль; палитра — только PixelPalette (пин QA _inv12).
+const _ACH_BODY := {
+	# меч (боевые): клинок, гарде, рукоять
+	"combat": ["4,0", "3,1", "4,1", "3,2", "4,2", "3,3", "4,3", "3,4", "4,4",
+			"1,5", "2,5", "3,5", "4,5", "5,5", "6,5", "3,6", "4,6", "3,7", "4,7"],
+	# два следа (исследования): левый и правый отпечатки со смещением
+	"explore": ["2,0", "3,0", "2,1", "3,1", "2,2", "3,2", "2,3", "3,3",
+			"4,4", "5,4", "4,5", "5,5", "4,6", "5,6", "4,7", "5,7"],
+	# кузнечный молот (ремесло): бойок + рукоять
+	"craft": ["2,0", "3,0", "4,0", "5,0", "6,0", "2,1", "3,1", "4,1", "5,1",
+			"6,1", "4,2", "4,3", "4,4", "4,5", "4,6", "5,7"],
+	# монета (сделка): диск + блик, кант тоном контура
+	"trade": ["3,1", "4,1", "2,2", "3,2", "4,2", "5,2", "1,3", "2,3", "3,3",
+			"4,3", "5,3", "6,3", "1,4", "2,4", "3,4", "4,4", "5,4", "6,4",
+			"2,5", "3,5", "4,5", "5,5", "3,6", "4,6"],
+	# спираль (петля): внешний виток + завиток к центру
+	"loop": ["3,0", "4,0", "5,0", "2,1", "6,1", "2,2", "3,2", "4,2", "6,2",
+			"1,3", "6,3", "1,4", "5,4", "1,5", "2,5", "3,5", "4,5", "6,5",
+			"6,6", "2,6"],
+}
+static var _ach_tex_cache := {}
+
+## Эмблема рубрики: cat — ключ из AchvCatalog.CAT_TITLES; unlocked — янтарь.
+static func achv_icon(cat: String, unlocked: bool) -> Texture2D:
+	var key := cat + ("|1" if unlocked else "|0")
+	if _ach_tex_cache.has(key):
+		return _ach_tex_cache[key]
+	var rn := "HUD_GOLD" if unlocked else "IRON"
+	var im := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	im.fill(Color(0, 0, 0, 0))
+	var body := {}
+	for c in _ACH_BODY.get(cat, []):
+		body[String(c)] = true
+	# тело MID, СЗ-ребро LIGHT (нет соседа слева и сверху) — свет как в каноне
+	for k in body:
+		var p: PackedStringArray = String(k).split(",")
+		var x := int(p[0])
+		var y := int(p[1])
+		var hi := (not body.has("%d,%d" % [x - 1, y])) \
+				and (not body.has("%d,%d" % [x, y - 1]))
+		im.set_pixel(x, y, PAL.c(rn, _L if hi else _M))
+	# контур OUTLINE: пустые соседние клетки вокруг силуэта (8-соседство)
+	for y in 8:
+		for x in 8:
+			if body.has("%d,%d" % [x, y]):
+				continue
+			var near := false
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					if dx == 0 and dy == 0:
+						continue
+					if body.has("%d,%d" % [x + dx, y + dy]):
+						near = true
+			if near:
+				im.set_pixel(x, y, PAL.c(rn, _O))
+	var tex := ImageTexture.create_from_image(im)
+	_ach_tex_cache[key] = tex
+	return tex

@@ -467,15 +467,17 @@ func sim_journal_honesty() -> void:
 	# состояние выше: campfires/treasure анлокнуты (ach.* вечны), live-счётчики обнулены NG+
 	var jr := Journal.new()
 	add_child(jr)  # _ready строит _ach_list синхронно
-	jr._rebuild_achv()
 	var texts: Array = []
-	var stack: Array = [jr]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is Label:
-			texts.append((n as Label).text)
-		for c in n.get_children():
-			stack.append(c)
+	# g14: список фильтруется по активной рубрике — обходим все, строки-то вечные
+	for ai in AchvCatalog.CAT_TITLES.size():
+		jr.select_asub(ai)  # пересобирает внутри себя
+		var stack: Array = [jr]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			if n is Label:
+				texts.append((n as Label).text)
+			for c in n.get_children():
+				stack.append(c)
 	var cf_line := ""
 	var tr_line := ""
 	for t in texts:

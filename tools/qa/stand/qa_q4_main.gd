@@ -206,11 +206,21 @@ func _sv_group() -> void:
 
 # ================================================================ Journal achv-tab
 
+# g14 (рубрики достижений): строка теперь HBox[эмблема + VBox-лейблы] и список
+# фильтруется по активной рубрике — поиск идё по поддереву, а тест сам включает
+# нужную рубрику (_cat + select_asub).
 func ach_txt(sub: String) -> bool:
-	for c in jr._ach_list.get_children():
-		if c is Label and String((c as Label).text).contains(sub):
+	var stack: Array = [jr._ach_list]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is Label and String((n as Label).text).contains(sub):
 			return true
+		for c in n.get_children():
+			stack.append(c)
 	return false
+
+func _cat(k: String) -> int:
+	return AchvCatalog.CAT_TITLES.keys().find(k)
 
 func _jc_group() -> void:
 	var g := "JC"
@@ -238,8 +248,11 @@ func _jc_group() -> void:
 	chk(g, "1 false-bool закрыта; true-bool/2.0-float открыты", (not ubo) and uhc and uw,
 		"ubo=%b uhc=%b uw=%b" % [ubo, uhc, uw])
 	jr._rebuild_achv()
-	chk(g, "1 render: [x] у hardcore/wealth, [ ] у hunter_25",
-		ach_txt("[x] На волоске") and ach_txt("[x] Богач") and ach_txt("[ ] Юный охотник"))
+	# g14: open() был до флагов -> автовход в рубрику 0 «Боевые»; «Богач» — в «Сделке».
+	chk(g, "1 render: [x] у hardcore, [ ] у hunter_25 (рубрика «Боевые»)",
+		ach_txt("[x] На волоске") and ach_txt("[ ] Юный охотник"))
+	jr.select_asub(_cat("trade"))
+	chk(g, "1 render: [x] Богач виден в рубрике «Сделка»", ach_txt("[x] Богач"))
 
 	# 2: size:-резолверы dict vs array + round-trip + фордж
 	var cur_cf: int = jr._ach_cur("size:campfires_used")
@@ -287,6 +300,7 @@ func _jc_group() -> void:
 		if c is Label and String((c as Label).text).contains("Записей пока нет"):
 			qempty = true
 	jr.select_tab(1)
+	jr.select_asub(_cat("combat"))  # g14: «Первая кровь» живёт в рубрике «Боевые»
 	chk(g, "4 пустой квест-журнал + Tab туда/обратно — живой", qempty and ach_txt("Первая кровь"), "qempty=%b" % qempty)
 
 	# 6: стресс J/Tab 50x — лейблы не размножаются
