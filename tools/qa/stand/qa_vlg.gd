@@ -581,13 +581,27 @@ func _inv9() -> void:
 		var t: Texture2D = (spr.texture as AtlasTexture).atlas
 		var pth := String(t.resource_path) if t != null else "null"
 		sig += "%s@%s " % [str((spr.texture as AtlasTexture).region.size), pth.get_file()]
-		if pth.contains("assets/village/") or pth.contains("assets/cave/"):
+		if pth.contains("assets/village/") or pth.contains("assets/cave/") \
+				or pth.contains("assets/forest/"):  # w3int: лес v1 (вердикт «берём»)
 			v4_n += 1
 	print("   реестр дима: %d [%s]" % [ysd.size(), sig])
 	chk(ysd.size() >= 3 and v4_n == ysd.size(),
-		"inv9: _ys_props_dim — только кодоген-пропы village/cave (%d/%d)" % [v4_n, ysd.size()])
+		"inv9: _ys_props_dim — только кодоген-пропы village/cave/forest (%d/%d)" % [v4_n, ysd.size()])
 	var yscan: Array = w.get("_ys_canopies") if w.get("_ys_canopies") != null else []
-	chk(yscan.is_empty(), "inv9: _ys_canopies пусты — кроны не интегрированы (%d)" % yscan.size())
+	# w3int (вердикт «берём» по листу): кроны ЛЕСА v1 интегрированы — реестр честный:
+	# только AtlasTexture кодоген-атласа assets/forest/ (qwen/легаси — закон 13.11).
+	var can_ok := not yscan.is_empty()
+	for cnode in yscan:
+		var cspr := cnode as Sprite2D
+		if cspr == null or not (cspr.texture is AtlasTexture):
+			can_ok = false
+			break
+		var catlas: Texture2D = (cspr.texture as AtlasTexture).atlas
+		var cpath := String(catlas.resource_path) if catlas != null else "null"
+		if not cpath.contains("assets/forest/"):
+			can_ok = false
+			break
+	chk(can_ok, "inv9: _ys_canopies — только кодоген-кроны forest v1 (%d)" % yscan.size())
 	pl.process_mode = Node.PROCESS_MODE_DISABLED
 	# указатель (13×45): t41 дим-контракт на реальном пропе v4
 	var sgn: Sprite2D = null

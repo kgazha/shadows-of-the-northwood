@@ -85,6 +85,7 @@ var near: Array = []
 var hint_label: Label
 var village_zone: Node2D
 var village_v4: Node2D  # t54: слой «Деревня v4» (VillageArt) — пропы кодоген-атласа
+var forest_v1: Node2D   # w3int: слой «Лес v1» (ForestArt) — кроны/подлесок/свай
 var cave_v1: Node2D     # c3: слой «Пещера v1» (CaveArt) — алтарь/сундук/сталагмиты
 # t52 снос: GroveCanopy/VillageProps/Env4Props/живая земля сняты (VISUAL_REBUILD
 # «план сноса»).
@@ -270,6 +271,17 @@ func _build_tiles() -> void:
 	for i in VillageArt.FLOOR_SIZE.x / TILE:
 		v4src.create_tile(Vector2i(i, 0))
 	ts.add_source(v4src, 1)
+	# w3int (вердикт «берём» по листу «Лес v1»): пол леса — source2 кодоген-атласа
+	# tools_art/sheet_forest_v1.gd (тот же модуль, что пропы). Нет атласа — клетки
+	# уходят в старый source0 (фолбэк-ветка жива; tiles.png удалён только w4).
+	var forest_ready := ForestArt.available()
+	if forest_ready:
+		var fsrc := TileSetAtlasSource.new()
+		fsrc.texture = load(ForestArt.FLOOR_PATH)
+		fsrc.texture_region_size = Vector2i(TILE, TILE)
+		for i in ForestArt.FLOOR_SIZE.x / TILE:
+			fsrc.create_tile(Vector2i(i, 0))
+		ts.add_source(fsrc, 2)
 	var layer := TileMapLayer.new()
 	layer.tile_set = ts
 	layer.z_index = -10
@@ -278,7 +290,11 @@ func _build_tiles() -> void:
 		var row := String(map_rows[y])
 		for x in map_w:
 			var ch := row[x]
-			if VillageArt.FLOOR_SLOTS.has(ch):
+			if forest_ready and ForestArt.FLOOR_CHARS.has(ch):
+				# t/T/r: СЕТКА и CHAR_TO_TILE бит-в-бит, меняется только источник
+				# картинки (легаси-счётчик c26 785 -> 0; физика — по-прежнему сетка)
+				layer.set_cell(Vector2i(x, y), 2, Vector2i(ForestArt.floor_slot(self, x, y), 0))
+			elif VillageArt.FLOOR_SLOTS.has(ch):
 				layer.set_cell(Vector2i(x, y), 1, Vector2i(int(VillageArt.FLOOR_SLOTS[ch]), 0))
 			elif CHAR_TO_TILE.has(ch):
 				var idx := int(CHAR_TO_TILE[ch])
@@ -463,6 +479,9 @@ func _build_village_v4() -> void:
 	village_v4 = VillageArt.build(self)
 	for cf in campfires:
 		VillageArt.restyle_campfire(cf)
+	# w3int (вердикт «берём» по листу): лесной слой ForestArt — props со стопой
+	# по сетке + overlay-свай (чистая функция времени); физика/сетка не затронуты.
+	forest_v1 = ForestArt.build(self)
 
 ## Ближайший живой (не использованный) костёр в зоне E — или null.
 func campfire_near() -> Node2D:

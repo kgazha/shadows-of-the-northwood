@@ -137,6 +137,7 @@ func _ready() -> void:
 	await _t37()
 	await _t41()
 	await _t42()
+	await _t44()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1408,6 +1409,7 @@ func _t15() -> void:
 	var ysd: Array = world.get("_ys_props_dim")
 	var v4n := 0
 	var cvn := 0
+	var fgn := 0
 	if ysd != null:
 		for p in ysd:
 			var spr := p as Sprite2D
@@ -1417,9 +1419,11 @@ func _t15() -> void:
 					v4n += 1
 				elif t != null and String(t.resource_path).contains("assets/cave/"):
 					cvn += 1
-	chk(ysd != null and v4n >= 3 and cvn >= 2 and v4n + cvn == ysd.size(),
-		"t15: реестр дима = только кодоген-пропы village/cave (%d+%d/%d)" \
-		% [v4n, cvn, ysd.size() if ysd != null else 0])
+				elif t != null and String(t.resource_path).contains("assets/forest/"):
+					fgn += 1  # w3int (вердикт «берём»): подлесок леса v1
+	chk(ysd != null and v4n >= 3 and cvn >= 2 and fgn >= 10 and v4n + cvn + fgn == ysd.size(),
+		"t15: реестр дима = только кодоген-пропы village/cave/forest (%d+%d+%d/%d)" \
+		% [v4n, cvn, fgn, ysd.size() if ysd != null else 0])
 	# в дереве мира нет ни одной ген-текстуры: art/, portraits/, env4_ и т.п.
 	var gen_seen: Array[String] = []
 	var stack: Array[Node] = [world]
@@ -4118,3 +4122,162 @@ func _t42() -> void:
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	print("qa_lp g13: экономика главы 1 запинена: реестр, витрины, факел-равенство, котёл, Геральд, эконометр")
+
+# ------------------------------------------------- t44: w3int «Лес v1» в игре (вердикт «берём»)
+# Bake-md5 лесных атласов — те самые байты, что смотрел вердикт пользователя по
+# листу (двойной bake в w3/w3int совпал побайтово).
+const T44_FLOOR_MD5 := "ded3921ad37c0dd2442d0960298b3095"
+const T44_PROPS_MD5 := "e44a824e9b4dd6ff6264f9e86df1400d"
+const T44_MAP_MD5 := "c9b59e4f21e5482bfcf3b10556e85e0f"
+
+func _t44() -> void:
+	# 1) сетка/литералы бит-в-бит (GOLDEN не пересчитывается — md5 сети пиним здесь)
+	chk(_t11_md5("res://data/map_village.json") == T44_MAP_MD5,
+		"t44: map_village.json — md5 бит-в-бит (GOLDEN не пересчитан)")
+	var wsrc := FileAccess.get_file_as_string("res://scripts/world.gd")
+	chk(wsrc.contains('"t": 5') and wsrc.contains('"r": 12') and wsrc.contains('"T": 15'),
+		"t44: CHAR_TO_TILE t/T/r = 5/12/15 бит-в-бит")
+	chk(wsrc.contains("5: [6, 6, 0, 5]") and wsrc.contains("12: [11, 10, 0, 1]"),
+		"t44: BLOCK_SHAPES дерево/валун бит-в-бит")
+	# 2) атласы: md5 запечённого листа вердикта + off/mask-скан (новых цветов палитры 0)
+	chk(_t11_md5("res://assets/forest/forest_floor_v1.png") == T44_FLOOR_MD5,
+		"t44: forest_floor_v1.png — bake md5 = байты листа вердикта")
+	chk(_t11_md5("res://assets/forest/forest_props_v1.png") == T44_PROPS_MD5,
+		"t44: forest_props_v1.png — bake md5 = байты листа вердикта")
+	var allowed := {}
+	for ramp in PAL.RAMPS.values():
+		for c in ramp:
+			allowed[c] = true
+	for c in PAL.FLATS.values():
+		allowed[c] = true
+	allowed[PAL.FIRE_HOT] = true
+	var off := 0
+	var mask := 0
+	for pair: Array in [["res://assets/forest/forest_floor_v1.png", true],
+			["res://assets/forest/forest_props_v1.png", false]]:
+		var img := Image.load_from_file(ProjectSettings.globalize_path(String(pair[0])))
+		chk(img != null, "t44: атлас прочитан %s" % String(pair[0]))
+		if img == null:
+			continue
+		for yy in img.get_height():
+			for xx in img.get_width():
+				var c := img.get_pixel(xx, yy)
+				if c.a == 0.0:
+					continue
+				if c.a < 1.0:
+					mask += 1
+				if not allowed.has(c):
+					off += 1
+	chk(off == 0 and mask == 0,
+		"t44: off-скан леса: off=%d mask=%d (новых цветов/полупрозрачных — 0, PixelPalette)" % [off, mask])
+	# 3) манифест-зеркало: data/forest_regions.json — единственный источник раскладки
+	var mf := JSON.new()
+	chk(mf.parse(FileAccess.get_file_as_string(ForestArt.MANIFEST_PATH)) == OK,
+		"t44: forest_regions.json читается")
+	var md: Dictionary = mf.data
+	var mirror_ok := true
+	for k in (md["props"] as Dictionary).keys():
+		var v: Dictionary = md["props"][k]
+		if not ForestArt.REGIONS.has(k) or ForestArt.REGIONS[k] != Rect2(v["x"], v["y"], v["w"], v["h"]):
+			mirror_ok = false
+	for k in ForestArt.REGIONS.keys():
+		if not (md["props"] as Dictionary).has(k):
+			mirror_ok = false
+	chk(mirror_ok, "t44: REGIONS == forest_regions.json (все %d регионов)" % ForestArt.REGIONS.size())
+	chk(int((md["floor_slots"] as Dictionary)["FFLR"]) == int(ForestArt.FLOOR_SLOTS["FFLR"]) \
+			and float((md["sway"] as Dictionary)["T_s"]) == ForestArt.SWAY_T,
+		"t44: floor_slots и sway T_s=0.5 — манифест и модуль согласны")
+	# 4) тайлмап: лесной пол на source2, счётчик c26 785→0, v4-пол бит-в-бит
+	var tl: TileMapLayer = null
+	for c in world.village_zone.get_children():
+		if c is TileMapLayer:
+			tl = c
+			break
+	chk(tl != null and tl.tile_set.has_source(0) and tl.tile_set.has_source(1) and tl.tile_set.has_source(2),
+		"t44: источники 0(легаси)/1(v4)/2(лес) на месте — фолбэк-ветки живы")
+	var forest_cells := 0
+	var src2 := 0
+	var src0 := 0
+	var layout_ok := true
+	for cell in tl.get_used_cells():
+		var s := tl.get_cell_source_id(cell)
+		var ch := _ch(world.map_rows, cell.x, cell.y)
+		if s == 0:
+			src0 += 1
+			continue
+		if s == 2:
+			src2 += 1
+			if not ForestArt.FLOOR_CHARS.has(ch):
+				layout_ok = false
+			elif tl.get_cell_atlas_coords(cell) != Vector2i(ForestArt.floor_slot(world, cell.x, cell.y), 0):
+				layout_ok = false
+			continue
+		if s == 1:
+			if ForestArt.FLOOR_CHARS.has(ch):
+				layout_ok = false
+			var want := 0 if "WRDs".find(ch) >= 0 else int(VillageArt.FLOOR_SLOTS.get(ch, -7))
+			if tl.get_cell_atlas_coords(cell).x != want:
+				layout_ok = false
+	for y in world.map_rows.size():
+		var row := String(world.map_rows[y])
+		for x in row.length():
+			if ForestArt.FLOOR_CHARS.has(row[x]):
+				forest_cells += 1
+	chk(forest_cells == 785 and src2 == 785 and layout_ok,
+		"t44: счётчик c26: лесных клеток %d, все на source2 (t+T+r=785), слоты совпадают" % forest_cells)
+	chk(src0 == 0,
+		"t44: видимых клеток легаси tiles.png (source0) = %d — план 785→0" % src0)
+	chk(FileAccess.file_exists("res://assets/tiles.png"),
+		"t44: tiles.png на месте (удаление — финалом w4)")
+	# 5) пропы: детерминированное количество по формуле build(); кроны в реестре; z V-01
+	var expect_trees := 0
+	var expect_under := 0
+	var r_n := 0
+	for y in world.map_rows.size():
+		var row := String(world.map_rows[y])
+		for x in row.length():
+			var ch2 := row[x]
+			if ch2 == "t":
+				expect_trees += 1
+			elif ch2 == "T":
+				if CaveArt.frac(x, y, 17) < 0.68:
+					expect_trees += 1
+				elif CaveArt.frac(x, y, 29) < 0.45:
+					expect_under += 1
+			elif ch2 == "r":
+				r_n += 1
+	chk(world._ys_canopies.size() == expect_trees,
+		"t44: крон в _ys_canopies = %d (формула: t + 68%% от T)" % world._ys_canopies.size())
+	var spr_n := 0
+	for c in world.forest_v1.get_children():
+		if c is Sprite2D:
+			spr_n += 1
+		if c is CollisionObject2D:
+			chk(false, "t44: физический узел появился в ForestV1")
+	chk(spr_n == expect_trees + expect_under + r_n,
+		"t44: спрайтов ForestV1 = %d (деревья %d + подлесок %d + валуны %d) — детерминизм" % [spr_n, expect_trees, expect_under, r_n])
+	var z_ok := true
+	for i in [0, 1, 2, 3, 4]:
+		if i >= world._ys_canopies.size():
+			break
+		var spr := world._ys_canopies[i] as Sprite2D
+		var foot_g := spr.to_global(Vector2(0.0, float(spr.texture.get_height()) * 0.5 + spr.offset.y))
+		if spr.z_index != int(round(fposmod(foot_g.y, world.YS_CYCLE))):
+			z_ok = false
+	chk(z_ok, "t44: z выборки крон == Y стопы mod 4800 (канон стоп V-01)")
+	# 6) свай: трёхфазный, чистая функция времени, ноль физ-узлов
+	var sway = world.forest_v1.get_node_or_null("ForestSway")
+	chk(sway != null and sway.items.size() > 0,
+		"t44: overlay-свай живёт: %d субъектов, T=%.1f с, кадр int(t/T+фаза)%%3" % [sway.items.size() if sway != null else 0, ForestArt.SWAY_T])
+	if sway != null and sway.items.size() > 0:
+		var it0: Dictionary = sway.items[0]
+		chk(it0["a"] != it0["b"] and it0["b"] != it0["c"] and it0["a"] != it0["c"],
+			"t44: у свай-субъекта три разных baked-кадра A/B/C (±1 px строк листа)")
+		var det_ok := true
+		for k in 6:
+			var t1 := int(float(k) / ForestArt.SWAY_T) % 3
+			var t2 := int(float(k) / ForestArt.SWAY_T) % 3
+			if t1 != t2:
+				det_ok = false
+		chk(det_ok, "t44: кадр — чистая функция времени (повтор броска идентичен)")
+	print("qa_lp t44: лес v1 запинен: c26 785->%d source0, источники 0/1/2, атласы = байты листа, манифест-зеркало, спрайтов %d, свай %d, tiles.png цел" % [src0, spr_n, sway.items.size() if sway != null else 0])
