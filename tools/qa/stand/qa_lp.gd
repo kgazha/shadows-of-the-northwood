@@ -3667,7 +3667,14 @@ const G12_UNTOUCHED := {
 	# g14 (рубрики+значки достижений, просьба пользователя 16.11) ЦЕЛЕНАПРАВЛЕННО
 	# изменил journal.gd — ре-пин по прецеденту g13 (hud/shop/game_state убраны
 	# из таблицы): поведение g12-приёмки живое, новый хеш принятого файла.
-	"res://scripts/journal.gd": "d3dbdf8150d344fd0913b105ff9c138c",
+	# 16.11 оживление хвоста _t41 (t50), базис этой записи: md5 файла НА ДИСКЕ
+	# стенда, т.е. с CRLF, которые отдаёт git archive при core.autocrlf=true —
+	# ровно так считает _t11_md5, и у остальных семи записей базис тот же
+	# (ср. npc.gd 419a3887… == файл на диске, тогда как LF-блоб дал бы
+	# fb9bd412…). Прежнее значение d3dbdf81… было md5 от LF-блоба, поэтому
+	# запись краснела на ровном месте; journal.gd не тронут, пересчитана
+	# только строка таблицы.
+	"res://scripts/journal.gd": "09b2e86aa379a31e9b489e905a38418e",
 }
 
 var _g12_toasts: Array = []
@@ -3678,6 +3685,19 @@ func _g12_drain() -> void:
 		guard += 1
 		world.hud.advance()
 		await _frames(1)
+
+## 16.11 (t50, оживление хвоста _t41): FirstHint ставит hint.<id> в кадре
+## фактического показа, очередь сериализована и стоит под input_locked
+## (диалог, витрина лавки, журнал). Значит после реплики с лавкой своей
+## подсказки надо ДОЖДАТЬСЯ: бюджет — кадры фиксированного шага, 900 = 15 с
+## логики (замер на этом же хвосте: 472 и 241 кадр; цикл выходит в кадре
+## флага, поэтому запас дёшев и не добавляет времени в зелёном прогоне).
+func _g12_wait_hint(id: String, frames_budget: int) -> int:
+	var w := 0
+	while str(GameState.flags.get("hint." + id, "")) != "1" and w < frames_budget:
+		w += 1
+		await _frames(1)
+	return w
 
 func _t41() -> void:
 	GameState.toast.connect(func(t: String) -> void: _g12_toasts.append(t))
@@ -3772,10 +3792,14 @@ func _t41() -> void:
 	while GameState.herbs < 3 and g < 12:
 		g += 1
 		for c in world.village_zone.get_children():
-			# 16.11 (qa5-финиш): у детей зоны без поля kind get() даёт null, а
-			# String(null) — невалидный вызов, обрывавший остаток _t41. Дефолт ""
-			# возвращает секции скрытые проверки (счёт батареи честно подрастёт).
-			if String(c.get("kind", "")) == "herb" and not bool(c.get("used")):
+			# 16.11 (qa5-финиш, попытка 2 — капитанская): попытка 1 починила
+			# String(null), но наступилась на другую половину: у Object get()
+			# ровно ОДИН аргумент (дефолт — только у Dictionary), и двухаргументный
+			# вызов на TileMapLayer-детях убивал корутину здесь же. Теперь:
+			# null-страховка ДО String. Обрыв здесь с эпохи g12 лишал _t41 хвоста
+			# (проверки «У1…», таблица байтов G12) — оживает этим же коммитом.
+			var kv: Variant = c.get("kind")
+			if kv != null and String(kv) == "herb" and not bool(c.get("used")):
 				GameState.combat_t = 0.0
 				c.try_interact()
 				await _frames(1)
@@ -3839,7 +3863,19 @@ func _t41() -> void:
 	var ok_s: bool = world.hud.is_dialog_open() \
 			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[0])
 	await _g12_drain()
-	await _frames(4)
+	# 16.11 оживление хвоста _t41 (t50): тексты Г1 побайтово равны константе
+	# (сверялась строка dialogues_v2 «smith»[0] и G12_DIALOGUES_JSON2[0], 75
+	# символов, различий ноль), расходился не текст, а флаг С2. Причин две,
+	# обе легитимные следствия g13: (1) у диалога Гриима появился колбэк
+	# Shop.open(), лавка держит input_locked, а FirstHint ставит hint.* только
+	# в момент фактического показа (first_hint.gd:103) и под залоченным вводом
+	# не стартует; (2) очередь FirstHint сериализована — к этому кадру ещё
+	# досматривается С1 (HIDE_AFTER 4 с = 240 кадров), «пока активна, другие id
+	# ждут». Поэтому лавку закрываем ДО проверки и своей подсказки дожидается
+	# тестовый бюджет. Текстовая часть пина не тронута, константы не перепилены.
+	if Shop.is_open():
+		Shop.close()
+	var w_s := await _g12_wait_hint("torch_smith", 900)
 	chk(ok_s and str(GameState.flags.get("hint.torch_smith", "")) == "1",
 		"g12: Г1 у кузницы + С2 (hint.torch_smith)")
 	if Shop.is_open():
@@ -3858,7 +3894,12 @@ func _t41() -> void:
 	var ok_u: bool = world.hud.is_dialog_open() \
 			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[3])
 	await _g12_drain()
-	await _frames(4)
+	# то же, что у Гриима: котёл Уты с g13 открывает её витрину Shop.open("uta")
+	# и держит ввод, а С3 встанет лишь в кадре фактического показа подсказки,
+	# когда досмотрит своя строка предыдущая. Тексты У1 не перепилены.
+	if Shop.is_open():
+		Shop.close()
+	var w_u := await _g12_wait_hint("herbalist", 900)
 	chk(ok_u and str(GameState.flags.get("hint.herbalist", "")) == "1",
 		"g12: У1 у травницы + С3 (hint.herbalist)")
 	if Shop.is_open():
@@ -3883,7 +3924,7 @@ func _t41() -> void:
 	# порядок: сейв-тест не оставляет мусора
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
-	print("qa_lp g12: GOLDEN-пины сеток не пересчитывались; Е1-Е3 — данные под хук Г1.5")
+	print("qa_lp g12: GOLDEN-пины сеток не пересчитывались; Е1-Е3 — данные под хук Г1.5; С2/С3 дождались показа за %d/%d кадров" % [w_s, w_u])
 
 # ════════════════════ g13: экономика деревни (Г1.3–Г1.5, BALANCE-реестр) ════════════════════
 ## Строка листа LINES_VILLAGE -> её место в константных листах _t41:
