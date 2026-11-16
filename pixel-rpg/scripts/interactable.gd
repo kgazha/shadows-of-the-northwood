@@ -69,7 +69,9 @@ func _atlas(tile_index: int) -> AtlasTexture:
 
 func get_hint() -> String:
 	if kind == "herb":
-		return "Взять траву" if not used else "Трава ещё не отросла"
+		# g12 (Г1.2 «Три коренья»): в речи мира это коренья Морги (GLOSSARY #21);
+		# машинное имя kind/счётчика — прежнее ("herb"/herbs), канон полей сейва.
+		return "Взять коренье" if not used else "Коренье ещё не отросло"
 	return "Открыть сундук" if not used else "Пустой сундук"
 
 func try_interact() -> void:
@@ -87,9 +89,9 @@ func try_interact() -> void:
 		GameAudio.sfx("step2", 1.0, randf_range(1.15, 1.35))  # шорох среза травы (аудио-аудит)
 		if in_combat:
 			# один тост: HUD показывает только последний, два подряд не годятся
-			GameState.toast.emit("На шуму боя не до трав! Собрано +%d (всего: %d)" % [picked, GameState.herbs])
+			GameState.toast.emit("На шуму боя не до корений! Собрано +%d (всего: %d)" % [picked, GameState.herbs])
 		else:
-			GameState.toast.emit("Трава собрана: +%d (всего: %d). Q — испить снадобья (+3 HP)" % [picked, GameState.herbs])
+			GameState.toast.emit("Коренье собрано: +%d (всего: %d). Q — испить снадобья (+3 HP)" % [picked, GameState.herbs])
 		GameState.quest_changed.emit()
 		if GameState.elder_quest == 1 and GameState.herbs >= 3:
 			GameState.toast.emit("Достаточно! Отнеси старейшине.")

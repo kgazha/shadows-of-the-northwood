@@ -385,6 +385,19 @@ func _spawn_entities() -> void:
 	village_zone.add_child(smith)
 	smith.add_to_group("ys_actor")
 	smith.setup(self, "smith", Vector2i(26, 13))
+	# g12: травница Ута (GLOSSARY #6; голос принят вердиктом g11) — у тропы к
+	# южной опушке (21,14). Спрайт временно «фермерский» с greenskin-модуляцией:
+	# npc.gd грузит текстуру по npc_id, поэтому setup вызван под чужим id, а
+	# npc_id сразу меняется на "uta" (talk/маркеры идут уже по нему). Отдельный
+	# лист npc_uta.png — за_art-волной (вне ин-скопа g12).
+	var uta = npc_script.new()
+	village_zone.add_child(uta)
+	uta.add_to_group("ys_actor")
+	uta.setup(self, "farmer", Vector2i(21, 14))
+	for c in uta.get_children():
+		if c is Sprite2D:
+			(c as Sprite2D).modulate = Color(0.74, 0.94, 0.66)
+	uta.npc_id = "uta"
 	var it_script := load("res://scripts/interactable.gd")
 	for e: Array in meta.get("herbs", []):
 		var herb = it_script.new()
@@ -1391,15 +1404,21 @@ func talk(id: String) -> void:
 		"elder":
 			match GameState.elder_quest:
 				0:
+					# g12 (Г1.2): реплики Морги М1+М2 (LINES_VILLAGE); подсказка С1
+					# канона FirstHint — один раз за сейв-жизнь (hint.roots),
+					# показ дождётся конца диалога (очередь FirstHint).
 					start_dialogue("elder_quest", func():
 						GameState.elder_quest = 1
-						GameState.quest_changed.emit())
+						GameState.quest_changed.emit()
+						if FirstHint.I != null:
+							FirstHint.I.show_hint("roots", "Коренья — у южной опушки, красный усик под кустами. Три — и к старейшине."))
 				1:
 					if GameState.herbs >= 3:
 						start_dialogue("elder_done", func():
 							GameState.elder_quest = 2
 							GameState.herbs -= 3  # сдаёт ровно три — излишек живёт в сумке (Q5-H1)
 							GameState.add_xp(25)
+							GameState.add_gold(QuestsData.GOLD_QUEST_TREES)  # BALANCE строка 1 (g12)
 							GameState.heal_full()
 							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
 					else:
@@ -1411,16 +1430,22 @@ func talk(id: String) -> void:
 					_dialog_once("elder_after", GameState.ng_wave(), func():
 						start_dialogue("elder_after"))
 		"merchant":
+			# g12: реплики Драна Д1–Д3 (LINES_VILLAGE) заменили старую озвучку
+			# «Трёх слаймов»; механика квеста не тронута. Квест молчит в речи
+			# Драна (герой глава 1 читает журнал), поэтому выдача сопровождается
+			# системным тостом — иначе «Трофеи со слаймов» непостижимы.
 			match GameState.slime_quest:
 				0:
 					start_dialogue("merchant", func():
 						GameState.slime_quest = 1
-						GameState.quest_changed.emit())
+						GameState.quest_changed.emit()
+						GameState.toast.emit("Задание: Трофеи со слаймов — цели в журнале (J)"))
 				1:
 					if GameState.slime_kills_circle >= 3:  # работа текущего круга (total — у ачивок)
 						start_dialogue("merchant_done", func():
 							GameState.slime_quest = 2
 							GameState.add_xp(30)  # урон теперь от класса/меча/амулета
+							GameState.add_gold(QuestsData.GOLD_QUEST_SLIMES)  # BALANCE строка 2 (g12)
 							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
 					else:
 						start_dialogue("merchant_progress")
@@ -1459,7 +1484,26 @@ func talk(id: String) -> void:
 				_:
 					start_dialogue("hermit_after")
 		"smith":
-			start_dialogue("smith", func(): Shop.open())
+			# g12: Г1 (крафт-ввод) при первой встрече круга, далее Г3 (повтор);
+			# Г2 («сдача факела») ждёт крафт-хук Г1.3 — лежит в dialogues_v2
+			# ("smith_torch"). Подсказка С2 — у кузницы, один раз за сейв-жизнь
+			# (hint.torch_smith). Флаг в q.* — разрешённое пространство имён
+			# (assert qa_q3) и честный смысл: «первая встреча» обновляет круг.
+			var first_smith := str(GameState.flags.get("q.smith_talked", "")) != "1"
+			GameState.set_flag("q.smith_talked", "1")
+			if first_smith and FirstHint.I != null:
+				FirstHint.I.show_hint("torch_smith", "Факел куёт Гриим: нужно его смола. Без огня в пещере не считаются шаги.")
+			start_dialogue("smith" if first_smith else "smith_repeat", func(): Shop.open())
+		"uta":
+			# g12: травница Ута (Г1.4 её варка — следующая проводка). Первая
+			# встреча круга — У1 + подсказка С3 (hint.herbalist, раз за сейв),
+			# далее У3. «Котёл греется у её дома» — У2 ждёт варочный хук Г1.4
+			# (dialogues_v2 "uta_brew").
+			var first_uta := str(GameState.flags.get("q.uta_talked", "")) != "1"
+			GameState.set_flag("q.uta_talked", "1")
+			if first_uta and FirstHint.I != null:
+				FirstHint.I.show_hint("herbalist", "Вари у Уты: сухоцвет да жим. Котёл греется у её дома, деньги не нужны.")
+			start_dialogue("uta" if first_uta else "uta_repeat")
 		_:
 			start_dialogue(id)
 

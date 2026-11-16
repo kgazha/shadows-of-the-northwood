@@ -135,6 +135,7 @@ func _ready() -> void:
 	_t35()
 	_t36()
 	await _t37()
+	await _t41()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -3123,7 +3124,8 @@ const C34_BASE_MD5_UNTOUCHED := {  # чужие сундуки (деревня t
 	# (проп-кадр CHEST_OPEN вместо только тайла); поведение запинено в _t36.
 	# c37 (P0 Esc-меню): world.gd УБРАН — do_quickload/фейлсейф легитимно изменили
 	# мир; поведение запинено в _t37. Кадры чужих сундуков по-прежнему бит-в-бит.
-	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
+	# g12 (голоса гл.1): interactable.gd УБРАН — лексема «коренье» в подсказке/тостах
+	# сбора (сейв-формат и сундучная ветка не тронуты); поведение запинено в _t41.
 	"res://assets/tiles.png": "cb3e05695831f27d6b183140441a2a80",
 }
 
@@ -3210,7 +3212,7 @@ func _t35() -> void:
 		if _t11_md5(String(p)) != String(C34_BASE_MD5_UNTOUCHED[p]):
 			okall = false
 			print("c34: ИЗМЕНЕНО сверх scope: ", p)
-	chk(okall, "c34: world/dungeon_zone/interactable/tiles.png бит-в-бит HEAD — деревня и пещера не тронуты")
+	chk(okall, "c34: tiles.png бит-в-бит HEAD — кадры чужих сундуков не тронуты (world/gs/interactable: правки c37/g12 запинены в _t37/_t41)")
 	# 6) пересборка мира с taken (спавн сразу открытым) — раннер qa_z1._phase_rebuild
 	print("qa_lp c34: taken=>spawn-open запинен поведением в qa_z1 (пересборка мира)")
 
@@ -3231,8 +3233,9 @@ const C36_TILES_MD5 := "d39709f47d2ee25cbfc9e7a1432431cd"
 # cave_art/dungeon_zone/cave_paint (world/game_state/interactable бит-в-бит)
 # c37 (P0 Esc-меню): game_state.gd и world.gd УБРАНЫ — start_fresh_game и
 # do_quickload/фейлсейф легитимно их изменили; поведение запинено в _t37.
+# g12 (голоса гл.1): interactable.gd УБРАН — лексема «коренье» (сбор); таблица
+# пуста, чужое закрыто md5-регрессом _t41 (G12_UNTOUCHED) и пинами _t41.
 const C36_UNTOUCHED := {
-	"res://scripts/interactable.gd": "db1298089e74896592f663514ac8c18e",
 }
 
 func _t36() -> void:
@@ -3357,7 +3360,7 @@ func _t36() -> void:
 		if _t11_md5(String(p)) != String(C36_UNTOUCHED[p]):
 			okall = false
 			print("c36: ИЗМЕНЕНО сверх scope: ", p)
-	chk(okall, "c36: interactable бит-в-бит — сейв open_chest/has_amulet не менялся (game_state/world: с37-правки запинены в _t37)")
+	chk(okall, "c36: чужие сундуки/сейв не тронуты (interactable: g12-лексема запинена в _t41; md5-регресс чужих — G12_UNTOUCHED)")
 	var gs := FileAccess.get_file_as_string("res://scripts/game_state.gd")
 	chk(gs.contains("\"has_amulet\"") and gs.contains("chest_mark_used"),
 		"c36: персист-ключи has_amulet/chest_mark_used на месте")
@@ -3589,3 +3592,262 @@ func _c37_click(c: Control) -> void:
 		get_tree().root.push_input(b)
 		await _frames(2)
 	await _frames(2)
+
+# ============================================================================
+# g12: голоса деревни (LINES_VILLAGE) + квест «Три коренья» (GOAL_TASKS Г1.2)
+# ============================================================================
+
+# Снятые строки старой озвучки («Травы для старейшины», «Три слайма», старый
+# Гриим, реплики героя). Автоскан приёмки: НИ ОДНА не встречается в данных.
+const G12_OLD_LINES := [
+	"Ах, путник... Силы тают", "Травы с алыми ягодами", "Я соберу их. Держитесь!",
+	"Как травы? Отвар нужен", "Три травы! Вот теперь", "Ты спасла меня",
+	"Здорово... Ступай, лес зовёт героя.", "стерегут старинный клад",
+	"Победи трёх слаймов", "Договорились. Три слайма", "трещат по швам",
+	"Три слайма?! Ну ты даёшь", "Счастливо, герой! Заглядывай.",
+	"Побеждено три слайма!", "Каждый борётся как может.",
+	"Пойду спрошу, чем могу помочь.", "Не всё... Пепел помнит.",
+	"Куй да плати — вот и вся песня", "Мечи, топоры, кожа, кольчуга",
+	"Слушаю, кузнец. Что есть доброго?",
+]
+# Принятые вердиктом строки листа (проверяются дословно):
+const G12_DIALOGUES_JSON1 := [  # dialogues.json: Морга М1-М5, Дран Д1-Д3
+	"Очнулся? Значит, лес выбрал тебя раньше, чем я успела отговорить.",
+	"Слушай коротко: хворь сидит во мне. Три коренья с южной опушки — и я встану.",
+	"Коренья сами не придут. Красный усик под кустами, южная опушка. Ищи да не ленись.",
+	"Живые, пахнут лесом. Отвар сварит Ута — я лишь скажу ей: этот стоит того.",
+	"Не благодари. Лесу факел нужнее, чем мне отвар. Ступай к Грииму, он растолкует.",
+	"Смола — пятнадцать, геройская цена. Грииму назло, тебе впрок. Торг кончен.",
+	"Готовый факел — двадцать пять. Чего тянуть? Тьма ведь не подождёт.",
+	"Товар не любит сквозняка, а Дран — пустых карманов. Но для тебя — заходи.",
+]
+const G12_DIALOGUES_JSON2 := [  # dialogues_v2.json: Гриим Г1-Г3, Ута У1-У3, Геральд Е1-Е3
+	"Факел — древко, тряпица, смола. Смолу бери у Драна. Сплету даром, печь моя.",
+	"Держи. В пещере огонь — второй ты. Уронишь — первого не сыщешь.",
+	"Молот занятой. Говори делом или ступай: искры не ждут.",
+	"Сухоцвет да жим, поровну. На три вдоха в котёл. Над паром не дыши — глупеют.",
+	"Котелок — твои руки. Вари сам: ровные руки и есть всё лекарское дело.",
+	"Котёл горячий — мне не о чем. Остынет — приходи.",
+	"Гниль травами не лечится. Она не хворь — голод. А голод не заговаривают.",
+	"Восточней опушки лес помнит огонь паче дождя. Тамошний пепел не тает. Не ходи туда.",
+	"Ступай. Стариком не оборачивайся: спину мне лес согнул недаром.",
+]
+const G12_HINTS := [  # С1-С3 живут в world.gd (FirstHint.show_hint вызовы)
+	"Коренья — у южной опушки, красный усик под кустами. Три — и к старейшине.",
+	"Факел куёт Гриим: нужно его смола. Без огня в пещере не считаются шаги.",
+	"Вари у Уты: сухоцвет да жим. Котёл греется у её дома, деньги не нужны.",
+]
+# g12 не трогает (регресс приёмки: Esc-меню, RunSummary/мета, HUD, FirstHint…):
+const G12_UNTOUCHED := {
+	"res://scripts/settings_menu.gd": "c7b90737cc53c457cf3963b69e5bd742",
+	"res://scripts/run_summary.gd": "6404ba292ef8ea899d6a0c0db43655f8",
+	"res://scripts/hud.gd": "2d09b52320c36555829bc5734233fa3f",
+	"res://scripts/npc.gd": "419a3887918731d4d2207f3bcf51fd23",
+	"res://scripts/first_hint.gd": "93520eda37ea1e453cd2bc4c737e04d4",
+	"res://scripts/alchemy.gd": "605eb9d4f55b048fa79914285eb3b635",
+	"res://scripts/journal.gd": "53f70da0b331e9801a07d3390237ac71",
+	"res://scripts/game_state.gd": "9bbd9c8ff62130d7e7732f64508c34e4",
+	"res://scripts/shop.gd": "d7187338ba2d92c990b4510837028dc4",
+}
+
+var _g12_toasts: Array = []
+
+func _g12_drain() -> void:
+	var guard := 0
+	while world.hud.is_dialog_open() and guard < 24:
+		guard += 1
+		world.hud.advance()
+		await _frames(1)
+
+func _t41() -> void:
+	GameState.toast.connect(func(t: String) -> void: _g12_toasts.append(t))
+	# 0) данные: автоскан старых строк и дословность принятых (LINES_VILLAGE)
+	var d1: String = FileAccess.get_file_as_string("res://data/dialogues.json")
+	var d2: String = FileAccess.get_file_as_string("res://data/dialogues_v2.json")
+	var wsrc: String = FileAccess.get_file_as_string("res://scripts/world.gd")
+	var ghosts: Array = []
+	for old in G12_OLD_LINES:
+		if d1.contains(String(old)) or d2.contains(String(old)):
+			ghosts.append(old)
+	chk(ghosts.is_empty() and not d1.contains("спасла"),
+		"g12: автоскан — ни одной старой строки «Трав»/«Трёх слаймов»/старого Гриима не осталось (%s)" % str(ghosts))
+	var miss1: Array = []
+	for s in G12_DIALOGUES_JSON1:
+		if not d1.contains(String(s)):
+			miss1.append(s)
+	chk(miss1.is_empty(), "g12: М1-М5/Д1-Д3 — дословно в dialogues.json (%s)" % str(miss1))
+	var miss2: Array = []
+	for s in G12_DIALOGUES_JSON2:
+		if not d2.contains(String(s)):
+			miss2.append(s)
+	chk(miss2.is_empty(), "g12: Г1-Г3/У1-У3/Е1-Е3 — дословно в dialogues_v2.json (%s)" % str(miss2))
+	var miss3: Array = []
+	for s in G12_HINTS:
+		if not wsrc.contains(String(s)):
+			miss3.append(s)
+	chk(miss3.is_empty(), "g12: С1-С3 — дословно в FirstHint-хуках world.gd (%s)" % str(miss3))
+	# глава 1 молчалива: в dialogues.json нет ни одной реплики героя
+	var hero_lines := 0
+	var parsed: Variant = JSON.parse_string(d1)
+	if typeof(parsed) == TYPE_DICTIONARY:
+		for k in parsed:
+			for ln in (parsed[k] as Array):
+				if String((ln as Dictionary).get("who", "")) == "hero":
+					hero_lines += 1
+	chk(hero_lines == 0, "g12: ни одной реплики героя в главу 1 не вернулось (герой молчалив), найдено %d" % hero_lines)
+	# 1) реестр и цифры BALANCE
+	chk(String(QuestsData.QUESTS["elder"]["title"]) == "Три коренья"
+			and str(QuestsData.QUESTS["elder"]["targets"][1]["label"]).contains("коренья")
+			and str(QuestsData.QUESTS["elder"]["targets"][2]["label"]).contains("коренья"),
+		"g12: журнал — «Три коренья» + лейблы цели «коренья» (GLOSSARY #21)")
+	chk(QuestsData.GOLD_QUEST_TREES == 20 and QuestsData.GOLD_QUEST_SLIMES == 30,
+		"g12: реестр цифр BALANCE: 20/30 зол. за сдачи")
+	# 2) живой полный цикл квеста
+	GameState.elder_quest = 0
+	GameState.slime_quest = 0
+	GameState.herbs = 0
+	GameState.slime_kills_circle = 0
+	GameState.set_flag("meta.q_elder_done", 0)
+	GameState.flags.erase("q.smith_talked")
+	GameState.flags.erase("q.uta_talked")
+	for hid in ["roots", "torch_smith", "herbalist"]:
+		GameState.flags.erase("hint." + hid)
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	GameState.input_locked = false
+	var uta_found := false
+	for c in world.village_zone.get_children():
+		var nid: Variant = c.get("npc_id")  # паттерн world._find_npc: сравнение Variant без
+		if nid != null:                     # String() — конструктор падает на чужих Variant
+			if typeof(nid) != TYPE_STRING:
+				print("qa_lp g12: нестроковый npc_id tipo=%d val=%s на %s (%s)" % [typeof(nid), str(nid), String(c.name), c.get_class()])
+			if str(nid) == "uta":
+				uta_found = true
+	chk(uta_found, "g12: травница Ута стоит у тропы к южной опушке (npc «uta» в деревне)")
+	# выдача: М1+М2,quest=1,С1 один раз за сейв
+	world.talk("elder")
+	await _frames(2)
+	var ok_take: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON1[0])
+	await _g12_drain()
+	await _frames(4)
+	chk(ok_take and int(GameState.elder_quest) == 1,
+		"g12: выдача Морга М1→М2, elder_quest=1 (кадр первой реплики: %s)" % str(ok_take))
+	chk(str(GameState.flags.get("hint.roots", "")) == "1",
+		"g12: С1 всплыла после выдачи (hint.roots)")
+	if FirstHint.I != null:
+		FirstHint.I.show_hint("roots", "дубль-заявка")  # дедуп: флаг уже стоит
+		chk((FirstHint.I.get("_queue") as Array).is_empty(),
+			"g12: С1 повторно не встанет в очередь (один раз за сейв)")
+	# повтор с нулём: М3
+	world.talk("elder")
+	await _frames(2)
+	var ok_prog: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON1[2])
+	await _g12_drain()
+	chk(ok_prog, "g12: повтор (квест взят) — М3")
+	# сбор у южной опушки живыми кустами
+	var picked_evt := _g12_toasts.size()
+	var g := 0
+	while GameState.herbs < 3 and g < 12:
+		g += 1
+		for c in world.village_zone.get_children():
+			if String(c.get("kind")) == "herb" and not bool(c.get("used")):
+				GameState.combat_t = 0.0
+				c.try_interact()
+				await _frames(1)
+				break
+	chk(GameState.herbs >= 3 and _g12_toasts.size() > picked_evt,
+		"g12: сбор 3 корений живыми кустами (herbs=%d, тост лексема «коренье»)" % int(GameState.herbs))
+	# сейв на середине и восстановление прогресса (пины GameState)
+	var gold_mid := int(GameState.gold)
+	GameState.save_game()
+	GameState.elder_quest = 0
+	GameState.herbs = 0
+	var loaded := GameState.load_game()
+	chk(loaded and int(GameState.elder_quest) == 1 and int(GameState.herbs) >= 3,
+		"g12: загрузка на середине восстанавливает прогресс (elder_quest=%d herbs=%d)" % [int(GameState.elder_quest), int(GameState.herbs)])
+	# сдача: М4 + BALANCE-золото + вечная метка
+	GameState.input_locked = false
+	var gold0 := int(GameState.gold)
+	world.talk("elder")
+	await _frames(2)
+	var ok_done: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON1[3])
+	await _g12_drain()
+	chk(ok_done and int(GameState.elder_quest) == 2 and int(GameState.gold) == gold0 + 20
+			and int(GameState.flags.get("meta.q_elder_done", 0)) == 1,
+		"g12: сдача М4: +20 зол. (%d→%d), quest=2, meta-метка" % [gold0, int(GameState.gold)])
+	# повтор после сдачи: М5
+	world.talk("elder")
+	await _frames(2)
+	var ok_after: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON1[4])
+	await _g12_drain()
+	chk(ok_after, "g12: повтор после сдачи — М5")
+	# Дран: выдача с тостом-проводником (квест молчит в репликах), сдача +30 зол.
+	world.talk("merchant")
+	await _frames(2)
+	var ok_m: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON1[5])
+	await _g12_drain()
+	var found_toast := false
+	for t in _g12_toasts:
+		if String(t).contains("Трофеи со слаймов"):
+			found_toast = true
+	chk(ok_m and int(GameState.slime_quest) == 1 and found_toast,
+		"g12: Д1 + выдача «Трофеи со слаймов» с проводником-тостом")
+	GameState.slime_kills_circle = 3
+	GameState.input_locked = false
+	var gold1 := int(GameState.gold)
+	world.talk("merchant")
+	await _g12_drain()
+	chk(int(GameState.slime_quest) == 2 and int(GameState.gold) == gold1 + 30,
+		"g12: сдача Драну +30 зол. (%d→%d), quest=2" % [gold1, int(GameState.gold)])
+	# Гриим: Г1 + С2 при первой встрече круга, Г3 в повтор; лавка открывается
+	world.talk("smith")
+	await _frames(2)
+	var ok_s: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[0])
+	await _g12_drain()
+	await _frames(4)
+	chk(ok_s and str(GameState.flags.get("hint.torch_smith", "")) == "1",
+		"g12: Г1 у кузницы + С2 (hint.torch_smith)")
+	if Shop.is_open():
+		Shop.close()
+	world.talk("smith")
+	await _frames(2)
+	var ok_s2: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[2])
+	await _g12_drain()
+	if Shop.is_open():
+		Shop.close()
+	chk(ok_s2, "g12: повтор у Гриима — Г3")
+	# Ута: У1 + С3 при первой встрече, У3 в повтор
+	world.talk("uta")
+	await _frames(2)
+	var ok_u: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[3])
+	await _g12_drain()
+	await _frames(4)
+	chk(ok_u and str(GameState.flags.get("hint.herbalist", "")) == "1",
+		"g12: У1 у травницы + С3 (hint.herbalist)")
+	world.talk("uta")
+	await _frames(2)
+	var ok_u2: bool = world.hud.is_dialog_open() \
+			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[5])
+	await _g12_drain()
+	chk(ok_u2, "g12: повтор у Уты — У3")
+	chk(str(GameState.flags.get("q.smith_talked", "")) == "1"
+			and str(GameState.flags.get("q.uta_talked", "")) == "1",
+		"g12: флаги встреч в разрешённом пространстве имён q.* (assert qa_q3)")
+	# 3) регресс: g12 не трогала чужие файлы (Esc-меню, RunSummary/мета, HUD…)
+	var touched: Array = []
+	for p in G12_UNTOUCHED:
+		if _t11_md5(String(p)) != String(G12_UNTOUCHED[p]):
+			touched.append(String(p))
+	chk(touched.is_empty(), "g12: Esc-меню/RunSummary/мета/HUD/FirstHint/лавка бит-в-бит (%s)" % str(touched))
+	# порядок: сейв-тест не оставляет мусора
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	print("qa_lp g12: GOLDEN-пины сеток не пересчитывались; Е1-Е3 — данные под хук Г1.5")
