@@ -1,4 +1,7 @@
 extends CharacterBody2D
+
+# 16.11: «усы» обхода стен (preload, не class_name — без import-кэша дома).
+const AVOID := preload("res://scripts/mob_avoid.gd")
 ## Мглокрыс: мелкий, быстрый, слабый. Спавнится СТАЕЙ 3–5 штук (world.gd задаёт
 ## каждому один и тот же swarm_id до setup). У стаи общий «испуг»: когда гибнет
 ## половина и больше — уцелевшие разбегаются в разные стороны и исчезают, не
@@ -178,7 +181,9 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 		return
 	if d < LEASH:
-		velocity = (player.global_position - global_position).normalized() * SPEED_CHASE
+		# 16.11 юзер-фикс: погоня через «усы» — мглокрыс обходит камень, а не
+		# упирается (mob_avoid.gd).
+		velocity = AVOID.steer(self, (player.global_position - global_position).normalized() * SPEED_CHASE)
 		if d < HIT_DIST:
 			player.take_damage(1, "swarmling")  # t20: kind убийцы для экрана смерти
 			bit_t = 0.25

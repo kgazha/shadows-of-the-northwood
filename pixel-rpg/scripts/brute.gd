@@ -1,4 +1,7 @@
 extends CharacterBody2D
+
+# 16.11: «усы» обхода стен (preload, не class_name — без import-кэша дома).
+const AVOID := preload("res://scripts/mob_avoid.gd")
 ## Босс «Осквернённый гром» (boss=true) и «отпрыски гнили» (boss=false) —
 ## моб пещеры трёх ярусов, которых world.gd расставляет по глубине (CAVE_MOB_BANDS).
 ## Лист assets/brute.png — 64x32, два кадра 32x32.
@@ -278,7 +281,10 @@ func _physics_process(delta: float) -> void:
 			if boss:
 				GameState.toast.emit("Гром бросается вперёд — отходи!")
 		else:
-			velocity = (player.global_position - global_position).normalized() * speed
+			# 16.11 юзер-фикс: обычная погоня через «усы» — игрок за стеной не
+			# приговаривает моба к дрожи у камня (mob_avoid.gd). Рывок (rush_dir
+			# выше) остаётся прямым: телеграфированный бросок — честный щит.
+			velocity = AVOID.steer(self, (player.global_position - global_position).normalized() * speed)
 	move_and_slide()
 	if fair:
 		_push_from_hero()

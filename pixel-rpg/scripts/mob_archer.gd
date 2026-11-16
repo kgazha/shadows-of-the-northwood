@@ -1,4 +1,7 @@
 extends CharacterBody2D
+
+# 16.11: «усы» обхода стен (preload, не class_name — без import-кэша дома).
+const AVOID := preload("res://scripts/mob_avoid.gd")
 ## Лесокров-лучник: стрелок дальнего боя. Держит дистанцию 4–6 тайлов (64–96 px),
 ## при приближении героя ОТХОДИТ назад, стреляет через собственный снаряд (Arrow).
 ## Перед выстрелом — телеграф подготовки 0.7 с: подсветка силуэта, кадр «натянутый
@@ -128,7 +131,9 @@ func _physics_process(delta: float) -> void:
 		return
 	_shot_cd(delta)
 	if d > HOLD_MAX:
-		velocity = to_p.normalized() * SPEED_ADVANCE
+		# 16.11 юзер-фикс: сближение через «усы» (mob_avoid.gd); отход — прямой,
+		# спина к цели не путается.
+		velocity = AVOID.steer(self, to_p.normalized() * SPEED_ADVANCE)
 	elif d < HOLD_MIN:
 		# герой сел в плотную — отходим, стрелок в упор бессилен
 		velocity = -to_p.normalized() * SPEED_RETREAT

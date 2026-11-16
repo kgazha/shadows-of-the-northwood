@@ -1,4 +1,7 @@
 extends CharacterBody2D
+
+# 16.11: «усы» обхода стен (preload, не class_name — без import-кэша дома).
+const AVOID := preload("res://scripts/mob_avoid.gd")
 ## Слайм: бродит, преследует героя, бьёт при контакте.
 
 const CHASE_DIST := 48.0
@@ -97,7 +100,10 @@ func _physics_process(delta: float) -> void:
 	var d := global_position.distance_to(world.player.global_position)
 	if d < CHASE_DIST:
 		dirv = (world.player.global_position - global_position).normalized()
-		velocity = dirv * SPEED_CHASE
+		# 16.11 юзер-фикс: преследование через «усы» — за стеной моб обходит
+		# камень, а не дрожит у него (mob_avoid.gd; призрак не подключён — его
+		# проход сквозь стены канон).
+		velocity = AVOID.steer(self, dirv * SPEED_CHASE)
 	else:
 		wander_t -= delta
 		if wander_t <= 0.0:
