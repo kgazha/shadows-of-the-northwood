@@ -183,10 +183,16 @@ func _process(delta: float) -> void:
 		var jt := _time()
 		for i in range(_prop_lights.size() - 1, -1, -1):
 			var pl: Dictionary = _prop_lights[i]
-			var lt: Light2D = pl["light"]
-			if lt == null or not is_instance_valid(lt):
+			# 16.11 микроволна (qa_lp: 387× «Trying to assign invalid previously
+			# freed instance» на этой строке): проверку делаем ДО типизированного
+			# присваивания — присвоить освобождённый объект «var lt: Light2D» и
+			# есть ошибка, до «lt == null» дело не доходит. Порядок как в
+			# c37-фейлсейфе: читаем Variant, проверяем, типизируем.
+			var raw: Variant = pl.get("light")
+			if raw == null or not is_instance_valid(raw) or not (raw is Light2D):
 				_prop_lights.remove_at(i)  # проп снят (сундук забран) — свет забыли
 				continue
+			var lt: Light2D = raw
 			lt.energy = float(pl["base"]) + float(pl["amp"]) * sin(jt * 2.4 + float(pl["phase"]))
 			lt.position = (pl["home"] as Vector2) + Vector2(0.0, sin(jt * 1.8 + float(pl["phase"]) * 1.7) * 1.5)
 	# босс: свет «за спиной» (brute.gd не задаёт facing — считаем лицом вниз)

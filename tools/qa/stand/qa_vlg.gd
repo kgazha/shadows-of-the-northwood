@@ -41,6 +41,10 @@ extends Node2D
 ##     строк 0..14 и в items качания (каждая сменила кадр, фазы независимы);
 ##     мультисеты фаз A/L/R строгие (фикс F2 ревью c8: сдвиг на поле 18×16
 ##     с обрезкой, кромка не теряется).
+## 12. 16.11 юзер-фикс «подвкладки в журнале» (76f389b): в разделе «Квесты» —
+##     «Активные»/«Завершённые» со счётчиками на кнопках, журнал всегда открывается
+##     на «Активных», ряд подвкладок только на квестах, пустые «Завершённые» —
+##     заглушка. Живой мир main.tscn (game_world), поведение без md5.
 
 const PATH_MAP := "res://data/map_village.json"
 
@@ -156,6 +160,7 @@ func _ready() -> void:
 	await _inv8()
 	await _inv9()
 	await _inv10()
+	await _inv11()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -799,3 +804,134 @@ func _ms(tex) -> Dictionary:
 			var k := PAL.key(c)
 			o[k] = int(o.get(k, 0)) + 1
 	return o
+
+# ---------------------------------------------------------------- инв. 11 (16.11)
+## 16.11 юзер-фикс «подвкладки в журнале» (76f389b): в разделе «Квесты» —
+## «Активные» / «Завершённые» со счётчиками на самих кнопках; журнал ВСЕГДА
+## открывается на «Активных»; пустые «Завершённые» показывают заглушку; ряд
+## подвкладок живёт только на квестах; переключение перерисовывает список по
+## status (строки «[x] » vs «[ ] »). Пин поведенческий, без md5 на живые файлы.
+
+## Заголовки строк квеста в списке журнала: «[x] » — завершён, «[ ] » — активен
+## (строки целей начинаются с отступа, их не считаем).
+func _inv11_heads(jr: Node) -> Dictionary:
+	var o := {"act": 0, "done": 0}
+	var lst: VBoxContainer = jr.get("_list")
+	for ch in lst.get_children():
+		if not (ch is Label):
+			continue
+		var t := String((ch as Label).text)
+		if t.begins_with("[x] "):
+			o["done"] = int(o["done"]) + 1
+		elif t.begins_with("[ ] "):
+			o["act"] = int(o["act"]) + 1
+	return o
+
+func _inv11() -> void:
+	var w: Node2D = game_world
+	if w == null:
+		chk(false, "inv11: мир не построен")
+		return
+	var jr: Node = null
+	for c in w.get_children():
+		if c is Journal:
+			jr = c
+	chk(jr != null, "inv11: Journal найден в дереве мира")
+	if jr == null:
+		return
+	# два побочных квеста: один сдан, другой взят — оба видны (visible_in_journal)
+	GameState.set_flag("q.q_suhotsvet", QuestsData.STATUS_DONE)
+	GameState.set_flag("q.q_campfires", QuestsData.STATUS_ACTIVE)
+	await _frames(2)  # тик QuestsData.refresh: DOWN-переходов у реестра нет
+	# зеркало данных (entries + сюжетный гейт рендера journal.gd::_rebuild)
+	var act := 0
+	var done := 0
+	for raw_e in QuestsData.entries(GameState):
+		var e: Dictionary = raw_e
+		var qid := String(e.get("id", ""))
+		if qid == "elder" and int(GameState.elder_quest) < 1:
+			continue
+		if qid == "cave" and int(GameState.cave_state) < 1:
+			continue
+		if int(e.get("status", 0)) == QuestsData.STATUS_DONE:
+			done += 1
+		else:
+			act += 1
+	chk(done > 0 and act > 0,
+		"inv11: в данных есть и активные (%d), и завершённые (%d) записи — пин на чём строить" % [act, done])
+	# ряд ПОДВКЛАДОК должен существовать как узел и поле: на HEAD до 76f389b их нет
+	# вовсе (ни _qsub, ни кнопок) -> пин краснеет честно, без «vacuous pass»
+	var qv: Variant = jr.get("_qsub")
+	var btnsv: Variant = jr.get("_qsub_btns")
+	var rowv: Variant = jr.get("_qsub_row")
+	var row_s := "нет"
+	if rowv != null:
+		row_s = "есть"
+	var nbtns := -1
+	if btnsv != null:
+		nbtns = (btnsv as Array).size()
+	chk(qv != null and btnsv != null and rowv != null,
+		"inv11: подвкладки на месте: _qsub=%s, кнопок=%d, ряд=%s (до 76f389b — null)" % [
+			str(qv), nbtns, row_s])
+	if qv == null or btnsv == null or rowv == null:
+		return
+	var btns: Array = btnsv
+	jr.call("close")
+	jr.call("open")
+	var q0 := int(jr.get("_qsub"))
+	chk(q0 == 0, "inv11: журнал открылся на «Активных» (_qsub=%d)" % q0)
+	var heads0 := _inv11_heads(jr)
+	chk(int(heads0["act"]) == act and int(heads0["done"]) == 0,
+		"inv11: на «Активных» %d строк и ноль [x] (данных активных %d)" % [int(heads0["act"]), act])
+	chk(btns.size() == 2, "inv11: ряд подвкладок — 2 кнопки («Активные»/«Завершённые») (%d)" % btns.size())
+	if btns.size() != 2:
+		return
+	var b0: Button = btns[0]
+	var b1: Button = btns[1]
+	chk(String(b0.text) == "Активные · %d" % act and String(b1.text) == "Завершённые · %d" % done,
+		"inv11: счётчики на подвкладках: «%s» / «%s»" % [String(b0.text), String(b1.text)])
+	chk(b0.get_theme_color("font_color") == Color(1, 0.85, 0.45) \
+			and b1.get_theme_color("font_color") == Color(1, 1, 1, 0.55),
+		"inv11: активная подвкладка амбер, вторая приглушена (канон flat-тегми вкладок)")
+	jr.call("select_qsub", 1)
+	await _frames(30)  # пересборка — в тик _process (TICK 0.35 с = 21 кадр на 60 fps)
+	var q1 := int(jr.get("_qsub"))
+	var heads1 := _inv11_heads(jr)
+	chk(q1 == 1, "inv11: подвкладка переключилась (_qsub=%d)" % q1)
+	chk(int(heads1["done"]) == done and int(heads1["act"]) == 0,
+		"inv11: на «Завершённых» %d строк [x] и ноль активных (данных завершённых %d)" % [int(heads1["done"]), done])
+	chk(b1.get_theme_color("font_color") == Color(1, 0.85, 0.45),
+		"inv11: после переключения амбер переехал на «Завершённые»")
+	# требование пользователя: повторное открытие — всегда с «Активных»
+	jr.call("close")
+	jr.call("open")
+	var q2 := int(jr.get("_qsub"))
+	chk(q2 == 0, "inv11: journal.open() всегда возвращает на «Активные» (_qsub=%d)" % q2)
+	# мышь живая после повторного открытия: close() прячет subtree в IGNORE
+	var mouse_ok := true
+	for arr_name in ["_tab_btns", "_qsub_btns"]:
+		var arr: Array = jr.get(arr_name)
+		for b in arr:
+			if (b as Button).mouse_filter != Control.MOUSE_FILTER_STOP:
+				mouse_ok = false
+	chk(mouse_ok, "inv11: после open() все вкладки и подвкладки ловят мышь")
+	# ряд подвкладок живёт только на квестах
+	var qrow: HBoxContainer = jr.get("_qsub_row")
+	jr.call("select_tab", int(Journal.TAB_ACHV))
+	await _frames(3)
+	chk(not qrow.visible, "inv11: на «Достижениях» ряд подвкладок скрыт")
+	jr.call("select_tab", int(Journal.TAB_QUESTS))
+	await _frames(3)
+	chk(qrow.visible, "inv11: на «Квестах» ряд подвкладок виден")
+	# пустые «Завершённые» — честная заглушка, а не пустой экран
+	GameState.set_flag("q.q_suhotsvet", QuestsData.STATUS_NONE)
+	jr.call("select_qsub", 1)
+	await _frames(30)
+	var empty_ok := false
+	var lst: VBoxContainer = jr.get("_list")
+	for ch2 in lst.get_children():
+		if ch2 is Label and String((ch2 as Label).text).begins_with("Завершённых пока нет"):
+			empty_ok = true
+	chk(empty_ok, "inv11: пустые «Завершённые» показывают заглушку, а не пустоту")
+	jr.call("close")
+	print("qa_vlg inv11: подвкладки журнала запинены: активные %d / завершённые %d, reset на открытии, амбер, мышь, ряд только на квестах, заглушка" % [act, done])

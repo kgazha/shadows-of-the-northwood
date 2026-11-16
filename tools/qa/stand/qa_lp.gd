@@ -61,6 +61,11 @@ extends Node2D
 ##  T16.11 c7 «микро-жизнь»: пылинки пещеры — залы (компоненты длинных
 ##      прогонов), 2..4 на зал, лимит, fmod-цикл без накопления, живое
 ##      движение при активной зоне, вне реестра дима.
+##  T46 микроволна 16.11: пины на юзер-фиксы дня — рывок вдоль выпуклой стены
+##      (упор не гасит, скольжение доводит до мили, удар после приземления),
+##      «усы» мобов (обход камня + тупик = встать), агро только по прямой
+##      видимости и память 1.6 с (уход к последнему видимому месту), возврат из
+##      пещеры/Пепелища к арке входа после резюма. Подвкладки журнала — qa_vlg.
 
 const Main := "res://scenes/main.tscn"
 const WS := preload("res://scripts/world.gd")
@@ -138,6 +143,7 @@ func _ready() -> void:
 	await _t41()
 	await _t42()
 	await _t44()
+	await _t46()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -4281,3 +4287,438 @@ func _t44() -> void:
 				det_ok = false
 		chk(det_ok, "t44: кадр — чистая функция времени (повтор броска идентичен)")
 	print("qa_lp t44: лес v1 запинен: c26 785->%d source0, источники 0/1/2, атласы = байты листа, манифест-зеркало, спрайтов %d, свай %d, tiles.png цел" % [src0, spr_n, sway.items.size() if sway != null else 0])
+
+# ------------------------------------------- t46: микроволна юзер-фиксов 16.11
+# Пины на сегодняшние фиксы: рывок вдоль стены (589212b), «усы» мобов (3ef13f6,
+# mob_avoid.gd), агро только по прямой видимости + память SEE_MEMORY (1a1c932),
+# возврат к арке входа после резюма (34edbf7). Подвкладки журнала (76f389b)
+# пинит qa_vlg::_inv11 — там живой мир деревни. Каждый пин устроен так, что на
+# ПРЕЖНЕЙ механике он краснеет (проверено пооткатно в этом же стенде).
+# Нового стенда не заведено: секция живёт в qa_lp; геометрия берётся из ЖИВОЙ
+# сетки пещеры сида 42 (пин не строит своих стен), пины поведенческие — без md5.
+
+const T46_THR := 18.0      # порог мили рывка == 13 + размер_цели*0.5 (player.gd::_boar_land)
+const T46_CHASE := 48.0    # slime.gd::CHASE_DIST
+const T46_WANDER := 16.0   # slime.gd::SPEED_WANDER
+const T46_SEE_FRAMES := 96 # slime.gd::SEE_MEMORY 1.6 с на 60 fps
+
+## Мировая координата центра клетки пещеры (пещера — этаж CAVE_OFFSET).
+func _t46_cw(c: Vector2i) -> Vector2:
+	return world.CAVE_OFFSET + world.tile_to_world(c)
+
+## Клетка, ближайшая к мировой точке пещеры (проверка «не прошёл ли сквозь стену»).
+func _t46_cell(w: Vector2) -> Vector2i:
+	var l: Vector2 = w - world.CAVE_OFFSET
+	return Vector2i(int(round((l.x - 8.0) / 16.0)), int(round((l.y - 10.0) / 16.0)))
+
+func _t46_fl(rows: Array, c: Vector2i) -> bool:
+	return _walk(_ch(rows, c.x, c.y), CAVE_WALK)
+
+## Луч по слою стен 2 между мировыми точками (пустой словар = чисто).
+func _t46_ray(a: Vector2, b: Vector2) -> Dictionary:
+	var space: PhysicsDirectSpaceState2D = world.player.get_world_2d().direct_space_state
+	return space.intersect_ray(PhysicsRayQueryParameters2D.create(a, b, 2, []))
+
+## Стендовый слайм в пещере: setup() считает координаты по деревенской сетке,
+## поэтому позицию и гнездо ставим вручную — ровно как генератор для своей зоны.
+## live=false — физика выключена (мишень ждёт удара, не бегает).
+func _t46_mob(c: Vector2i, live: bool) -> Node2D:
+	var sl: Node2D = load("res://scripts/slime.gd").new()
+	world.cave_zone.add_child(sl)
+	sl.setup(world, Vector2i(1, 1))
+	sl.global_position = _t46_cw(c)
+	sl.set("home", _t46_cw(c))
+	sl.set_physics_process(live)
+	return sl
+
+## Зеркало player.gd::_slide_endpoint (константы те же: 40 px предел, 4 px маржа):
+## нужно, чтобы ВЫБРАТЬ из всех углов пещеры тот, где скольжение реально доводит
+## до мили. Поведение по-прежнему проверяется живым _boar_dash, не зеркалом.
+func _t46_slide(from: Vector2, contact: Vector2, n: Vector2, t: Vector2) -> Vector2:
+	var base_tan := n.orthogonal()
+	if n.length_squared() <= 0.0001:
+		base_tan = Vector2.ZERO
+	var best := contact
+	var best_d: float = contact.distance_to(t)
+	var ex: Array = [world.player.get_rid()]
+	for sgn in [1.0, -1.0]:
+		var tan: Vector2 = base_tan * sgn
+		if tan.dot(t - contact) <= 0.0:
+			continue
+		var want: float = minf(40.0, contact.distance_to(t))
+		var hit2: Dictionary = world.player.get_world_2d().direct_space_state.intersect_ray(
+			PhysicsRayQueryParameters2D.create(contact, contact + tan * want, 2, ex))
+		var ep: Vector2 = contact + tan * want
+		if not hit2.is_empty():
+			ep = contact + tan * maxf(0.0, contact.distance_to(hit2["position"]) - 4.0)
+		if ep.distance_to(t) < best_d - 1.0:
+			best_d = ep.distance_to(t)
+			best = ep
+	return best
+
+## Выпуклый угол под «рывок из упора»: ряд стены 2..4 клетки, весь ряд над ним
+## проходим, за дальним торцом — пол. Герой над стеной, цель за торцом: прямая
+## цепляет ВЕРХ стены (нормаль вверх), скольжение по верхнемуусу доезжает до цели,
+## а прежний «упор» (contact) оставляет цель вне мили — на том и стоит пин.
+## Берётся лучший из всех углов (минимум дистанции после скольжения), причём
+## цель обязана влезать в радиус захвата рывка (BOAR_DASH_RANGE 72 px).
+func _t46_corner(rows: Array) -> Dictionary:
+	var ex: Array = [world.player.get_rid()]
+	var space: PhysicsDirectSpaceState2D = world.player.get_world_2d().direct_space_state
+	var best: Dictionary = {}
+	var best_d := 1e9
+	for y in range(2, rows.size() - 1):
+		var row := String(rows[y])
+		for x in range(2, row.length() - 3):
+			if _t46_fl(rows, Vector2i(x, y)):
+				continue
+			var run := 0
+			while x + run < row.length() and not _t46_fl(rows, Vector2i(x + run, y)):
+				run += 1
+			if run < 2 or run > 4:
+				continue
+			var hero := Vector2i(x - 1, y - 1)
+			var tg := Vector2i(x + run, y)
+			if not _t46_fl(rows, hero) or not _t46_fl(rows, tg):
+				continue
+			var above_ok := true
+			for i in range(x - 1, x + run + 1):
+				if not _t46_fl(rows, Vector2i(i, y - 1)):
+					above_ok = false
+			if not above_ok:
+				continue
+			var a := _t46_cw(hero)
+			var b := _t46_cw(tg)
+			if a.distance_to(b) > 64.0:
+				continue  # цель вне радиуса захвата рывка (72 px) — каст не догонит
+			var hit: Dictionary = space.intersect_ray(
+				PhysicsRayQueryParameters2D.create(a, b, 2, ex))
+			if hit.is_empty():
+				continue
+			var nrm: Vector2 = hit.get("normal", Vector2.ZERO)
+			if absf(nrm.y) < 0.5:
+				continue
+			var dd: float = a.distance_to(hit["position"])
+			var contact: Vector2 = a + (b - a).normalized() * maxf(0.0, dd - 5.0)
+			if contact.y >= b.y:
+				continue
+			var old_d: float = contact.distance_to(b)
+			if old_d <= T46_THR:
+				continue  # прежний «упор» и так бил бы: пин ничего не доказывает
+			var slide: Vector2 = _t46_slide(a, contact, nrm, b)
+			var slide_d: float = slide.distance_to(b)
+			if slide_d >= best_d:
+				continue
+			best_d = slide_d
+			best = {"hero": hero, "target": tg, "old": contact, "old_d": old_d,
+				"slide": slide, "slide_d": slide_d, "range": a.distance_to(b)}
+	return best
+
+## Тонкая стена (1 клетка) с обходом вбок: герой и моб на одной линии по разные
+## стороны, перпендикулярно стене. На старой механике моб с такой геометрией не
+## двигался вовсе (скорость перпендикулярна стене, move_and_slide гасит её).
+func _t46_thin(rows: Array) -> Dictionary:
+	for y in range(2, rows.size() - 2):
+		var row := String(rows[y])
+		for x in range(2, row.length() - 2):
+			var w := Vector2i(x, y)
+			if _t46_fl(rows, w):
+				continue
+			var h := Vector2i(x - 1, y)
+			var m := Vector2i(x + 1, y)
+			if not _t46_fl(rows, h) or not _t46_fl(rows, m):
+				continue
+			var bypass := false
+			for s in [-1, 1]:
+				if _t46_fl(rows, Vector2i(x, y + s)) and _t46_fl(rows, Vector2i(x - 1, y + s)):
+					bypass = true
+			if not bypass:
+				continue
+			if _t46_ray(_t46_cw(h), _t46_cw(m)).is_empty():
+				continue
+			return {"hero": h, "mob": m}
+	return {}
+
+## Карман для пина памяти: моб в проходимом столбце, над ним пол (герой виден),
+## западнее — две стены подряд; герой переносится на (x-2, y): дистанция та же,
+## прямой видимости нет, и обратно из кармана её тоже нет (обе клетки — скала).
+func _t46_mem(rows: Array) -> Dictionary:
+	for y in range(2, rows.size() - 2):
+		var row := String(rows[y])
+		for x in range(3, row.length() - 2):
+			var m := Vector2i(x, y)
+			if not _t46_fl(rows, m):
+				continue
+			var s := Vector2i(x, y - 1)
+			var h2 := Vector2i(x - 2, y)
+			if not _t46_fl(rows, s) or not _t46_fl(rows, h2):
+				continue
+			if _t46_fl(rows, Vector2i(x - 1, y)) or _t46_fl(rows, Vector2i(x - 1, y - 1)):
+				continue
+			if not _t46_ray(_t46_cw(m), _t46_cw(s)).is_empty():
+				continue
+			if _t46_ray(_t46_cw(m), _t46_cw(h2)).is_empty():
+				continue
+			return {"mob": m, "seen": s, "hero": h2}
+	return {}
+
+## Глухая скала: все 8 соседей — стены, значит любой из 7 «усов» упирается в
+## камень в пределах PROBE 26 px. Это и есть тупик контракта steer() -> ZERO.
+func _t46_pocket(rows: Array) -> Vector2i:
+	for y in range(1, rows.size() - 1):
+		var row := String(rows[y])
+		for x in range(1, row.length() - 1):
+			if _t46_fl(rows, Vector2i(x, y)):
+				continue
+			var sealed := true
+			for dy in [-1, 0, 1]:
+				for dx in [-1, 0, 1]:
+					if _t46_fl(rows, Vector2i(x + dx, y + dy)):
+						sealed = false
+			if sealed:
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+## (1) Рывок вепря у выпуклой стены: упор не гасит рывок, скольжение доводит до
+## мили, удар и оглушение засчитаны ПОСЛЕ приземления.
+func _t46_dash(rows: Array) -> void:
+	var p: Node2D = world.player
+	var corner := _t46_corner(rows)
+	if corner.is_empty():
+		chk(false, "t46: в пещере сида 42 не нашлось выпуклого угла под рывок — пин нечего строить")
+		return
+	var slide_d: float = float(corner["slide_d"])
+	if slide_d > 13.0:
+		chk(false, "t46: лучший угол пещеры доводит скольжение лишь до %.1f px от цели (нужно <= 13, чтобы приземление было в мили)" % slide_d)
+		return
+	var hcell: Vector2i = corner["hero"]
+	var tcell: Vector2i = corner["target"]
+	p.global_position = _t46_cw(hcell)
+	await _frames(2)
+	var mob := _t46_mob(tcell, false)
+	await _frames(1)
+	var tw: Vector2 = mob.global_position
+	var hp0 := int(mob.get("hp"))
+	var tgt: Node2D = p.call("_dash_target")
+	chk(tgt == mob, "t46: рывок берёт целью мишень за стеной (радиус 72 px, d=%.0f)" % p.global_position.distance_to(tw))
+	p.set_physics_process(false)
+	p.call("_boar_dash", mob)
+	var midv: Variant = p.get("boar_mid")
+	var destv: Variant = p.get("boar_dest")
+	var mid_ok: bool = midv is Vector2 and (midv as Vector2) != Vector2.ZERO
+	var dest_d: float = -1.0
+	if destv is Vector2:
+		dest_d = (destv as Vector2).distance_to(tw)
+	chk(mid_ok, "t46: упор в стену не гасит рывок — маршрут со скольжением (boar_mid задан)")
+	chk(dest_d >= 0.0 and dest_d <= T46_THR, "t46: скольжение доводит до мили: dest..цель = %.1f px (порог %.0f)" % [dest_d, T46_THR])
+	var old_d: float = float(corner["old_d"])
+	chk(old_d > T46_THR, "t46-до: прежний «упор» оставлял цель в %.1f px (> %.0f) — на старой механике пин краснеет" % [old_d, T46_THR])
+	p.set_physics_process(true)
+	await _frames(12)
+	var hp1 := int(mob.get("hp"))
+	var land_d: float = p.global_position.distance_to(tw)
+	chk(float(p.get("boar_t")) == 0.0, "t46: рывок завершён (boar_t=0) за 9 кадров полёта")
+	chk(land_d <= T46_THR, "t46: герой приземлился в мили от цели (%.1f px)" % land_d)
+	chk(hp1 < hp0, "t46: удар после приземления засчитан (hp %d -> %d)" % [hp0, hp1])
+	chk(float(mob.get("freeze_t")) > 0.0, "t46: цель оглушена рывком (freeze_t=%.2f)" % float(mob.get("freeze_t")))
+	mob.queue_free()
+	await _frames(2)
+
+## (2) «Усы»: за выпуклой стеной моб не дрожит, а обходит камень; в глухом
+## камне — встаёт (Vector2.ZERO), а не пиляет стену.
+func _t46_whiskers(rows: Array) -> void:
+	var AV = load("res://scripts/mob_avoid.gd")
+	chk(AV != null, "t46: mob_avoid.gd («усы») подключён")
+	if AV == null:
+		return
+	var p: Node2D = world.player
+	var pair := _t46_thin(rows)
+	if pair.is_empty():
+		chk(false, "t46: в пещере сида 42 не нашлось тонкой стены с обходом — пину негде жить")
+		return
+	var mcell: Vector2i = pair["mob"]
+	p.global_position = _t46_cw(pair["hero"])
+	await _frames(2)
+	var mob := _t46_mob(mcell, true)
+	await _frames(2)
+	var seen: Vector2 = p.global_position
+	# тестовые таймеры: память удлинена, чтобы весь прогон (1.83 с) был в ветке
+	# погони и распад SEE_MEMORY не портил геометрию обхода
+	mob.set("_seen_pos", seen)
+	mob.set("_seen_t", 5.0)
+	chk(not AV.los(mob, seen), "t46: геометрия — прямой видимости через камень нет (AVOID.los)")
+	var want: Vector2 = (seen - mob.global_position).normalized() * 40.0
+	var steered: Vector2 = AV.steer(mob, want)
+	var ang := rad_to_deg(acos(clampf(steered.normalized().dot(want.normalized()), -1.0, 1.0)))
+	chk(ang > 5.0 and absf(steered.length() - want.length()) < 0.5,
+		"t46: усь отклоняет вектор от камня на %.0f°, величина скорости та же (%.0f)" % [ang, steered.length()])
+	var path := 0.0
+	var prev: Vector2 = mob.global_position
+	var d0: float = mob.global_position.distance_to(seen)
+	for i in 110:
+		await _frames(1)
+		path += prev.distance_to(mob.global_position)
+		prev = mob.global_position
+	var d1: float = mob.global_position.distance_to(seen)
+	chk(path >= 25.0, "t46: моб за камнем обходит его, а не дрожит: путь %.0f px за 1.83 с (на старой механике 0)" % path)
+	chk(d1 <= d0 - 8.0, "t46: обход даёт сближение с последним видимым местом: %.1f -> %.1f px" % [d0, d1])
+	chk(_t46_fl(rows, _t46_cell(mob.global_position)),
+		"t46: моб не прошёл сквозь камень — остался в проходимой клетке %s" % str(_t46_cell(mob.global_position)))
+	mob.queue_free()
+	# тупик: все 7 усов в камень -> встать, а не дрожать
+	var pk := _t46_pocket(rows)
+	chk(pk.x >= 0, "t46: в сетке пещеры есть глухая скала (все 7 усов в камень) %s" % str(pk))
+	if pk.x < 0:
+		return
+	var near := _t46_fl_near(rows, pk)
+	if near.x < 0:
+		chk(false, "t46: у глухой скалы нет проходимой клетки рядом — тупик не проверить")
+		return
+	p.global_position = _t46_cw(near)
+	var trapped := _t46_mob(pk, true)
+	await _frames(2)
+	trapped.set("_seen_pos", p.global_position)
+	trapped.set("_seen_t", 5.0)
+	var at: Vector2 = trapped.global_position
+	await _frames(5)
+	var spd: float = float((trapped.get("velocity") as Vector2).length())
+	chk(spd < 0.5, "t46: в тупике моб встаёт: скорость %.2f (усь-контракт Vector2.ZERO)" % spd)
+	chk(trapped.global_position.distance_to(at) < 0.5, "t46: и не дрожит на месте (сместился на %.2f px)" % trapped.global_position.distance_to(at))
+	trapped.queue_free()
+	await _frames(2)
+
+## Проходимая клетка рядом с произвольной (для запуска тупика).
+func _t46_fl_near(rows: Array, c: Vector2i) -> Vector2i:
+	for dy in [-2, -1, 0, 1, 2]:
+		for dx in [-2, -1, 0, 1, 2]:
+			var n := Vector2i(c.x + dx, c.y + dy)
+			if _t46_fl(rows, n):
+				var d: float = _t46_cw(c).distance_to(_t46_cw(n))
+				if d < T46_CHASE:
+					return n
+	return Vector2i(-1, -1)
+
+## (3) Агро: без прямой видимости погоня не стартует; после 1.6 с без видимости
+## моб уходит к последнему видимому месту и перестаёт гнаться.
+func _t46_aggro(rows: Array) -> void:
+	var p: Node2D = world.player
+	# (а) нет LOS -> нет агро
+	var pair := _t46_thin(rows)
+	if pair.is_empty():
+		chk(false, "t46: (агро) не нашлось тонкой стены — пину LOS негде жить")
+	else:
+		p.global_position = _t46_cw(pair["hero"])
+		await _frames(2)
+		var mob := _t46_mob(pair["mob"], true)
+		var d: float = p.global_position.distance_to(mob.global_position)
+		await _frames(45)
+		var tv: Variant = mob.get("_seen_t")
+		var pv: Variant = mob.get("_seen_pos")
+		var setpos: bool = pv is Vector2 and (pv as Vector2) != Vector2.ZERO
+		var pv_s := "не задан"
+		if setpos:
+			pv_s = str(pv)
+		chk(tv != null and float(tv) == 0.0 and not setpos,
+			"t46: моб в %.0f px за стеной не агдится: память не заведена (_seen_t %s, last-seen %s)" % [d, str(tv), pv_s])
+		var spd: float = float((mob.get("velocity") as Vector2).length())
+		chk(spd <= T46_WANDER + 0.5, "t46: ...и не летит в стену: скорость %.1f ≤ %.0f (блуждание)" % [spd, T46_WANDER])
+		mob.queue_free()
+		await _frames(2)
+	# (б) потерял видимость -> догоняет последним видимым местом, потом останавливается
+	var mem := _t46_mem(rows)
+	if mem.is_empty():
+		chk(false, "t46: не найден карман для пина памяти SEE_MEMORY")
+		return
+	var mcell: Vector2i = mem["mob"]
+	var seen: Vector2 = _t46_cw(mem["seen"])
+	p.global_position = seen
+	await _frames(2)
+	var mob2 := _t46_mob(mcell, true)
+	await _frames(8)
+	var tv2v: Variant = mob2.get("_seen_t")
+	var svv: Variant = mob2.get("_seen_pos")
+	if tv2v == null or not (svv is Vector2):
+		chk(false, "t46: у слайма нет памяти (_seen_t/_seen_pos) — фикс агро не на месте")
+		mob2.queue_free()
+		return
+	var tv2: float = float(tv2v)
+	var sv: Vector2 = svv
+	chk(tv2 > 1.4 and sv.distance_to(seen) < 0.01,
+		"t46: при прямой видимости память заведена (_seen_t=%.2f, last-seen = герой)" % tv2)
+	p.global_position = _t46_cw(mem["hero"])
+	# направление мерим ДО прихода к метке (16 px = ~24 кадра): у самой метки
+	# направление к last-seen вырождается, там мерить «куда смотрит» бессмысленно
+	await _frames(6)
+	var v: Vector2 = mob2.get("velocity")
+	var d_to_seen: float = mob2.global_position.distance_to(sv)
+	if d_to_seen < 4.0:
+		chk(false, "t46: моб уже у метки через 6 кадров (%.1f px) — направление не померить" % d_to_seen)
+	else:
+		var to_seen: Vector2 = (sv - mob2.global_position).normalized()
+		var to_hero: Vector2 = (p.global_position - mob2.global_position).normalized()
+		chk(v.length() > 1.0 and v.normalized().dot(to_seen) > 0.9,
+			"t46: телепортированного за угол моб догоняет последним видимым местом (dot=%.2f, %.1f px до метки)" % [v.normalized().dot(to_seen), d_to_seen])
+		chk(v.normalized().dot(to_hero) < 0.8,
+			"t46: ...а не идёт сквозь стену на самого героя (dot=%.2f)" % v.normalized().dot(to_hero))
+	await _frames(T46_SEE_FRAMES + 40)
+	var tv3: float = float(mob2.get("_seen_t"))
+	var spd2: float = float((mob2.get("velocity") as Vector2).length())
+	var dseen: float = mob2.global_position.distance_to(sv)
+	chk(tv3 <= 0.0, "t46: за 1.6 с без видимости память погасла (_seen_t=%.2f)" % tv3)
+	chk(dseen <= 12.0, "t46: моб ушёл к последнему видимому месту (%.1f px)" % dseen)
+	chk(spd2 <= T46_WANDER + 1.0, "t46: дальше не гонится: скорость %.1f ≤ %.0f (перешёл к блужданию)" % [spd2, T46_WANDER])
+	mob2.queue_free()
+	await _frames(2)
+
+## (4) Возврат из пещеры после резюма: точка возврата — арка входа, а не старт.
+func _t46_return() -> void:
+	GameState.heal(999)  # пины выше могли поцарапать героя — резюм честный
+	# свежий резюм: world-кэш точек возврата пуст (так и есть при загрузке сейва)
+	world.village_return_pos = Vector2.INF
+	world.ashen_return_pos = Vector2.INF
+	var arch: Vector2 = world.tile_to_world(world.CAVE_ENTRANCE_TILE)
+	var start: Vector2 = world.tile_to_world(world.spawn_tile)
+	_c37_write_save(true, C37_STUCK.x, C37_STUCK.y)  # сейв «в пещере», позиция в скале
+	world.do_quickload()
+	await _frames(2)
+	chk(world.village_return_pos == arch,
+		"t46: резюм в пещере — точка возврата = арка входа %s, а не спавн %s" % [str(arch), str(start)])
+	world.apply_zone(false)  # штатный выход из пещеры (легаси-API world.gd)
+	chk(world.player.global_position == arch,
+		"t46: поднялся из пещеры — герой у арки входа (%s)" % str(world.player.global_position))
+	chk(world.player.global_position != start,
+		"t46-до: на старой механике кэш был INF и герой падал на старт %s" % str(start))
+	chk(bool(world.call("_village_walkable", world.CAVE_ENTRANCE_TILE)),
+		"t46: арочный тайл возврата проходим (герой не в стене)")
+	# то же для Пепелища: выходим к портальному камню «A»
+	world.village_return_pos = Vector2.INF
+	world.ashen_return_pos = Vector2.INF
+	_c37_write_save(false, 8.0, 9608.0)  # сейв «в Пепелище», позиция в скале
+	world.do_quickload()
+	await _frames(2)
+	var agate: Vector2 = world.tile_to_world(world.ASHEN_ENTRANCE_TILE)
+	chk(world.ashen_return_pos == agate,
+		"t46: резюм в Пепелище — точка возврата = портальный камень %s" % str(agate))
+	world.apply_zone(false)
+	chk(world.player.global_position == agate,
+		"t46: выход из Пепелища — герой у портального камня (%s)" % str(world.player.global_position))
+
+func _t46() -> void:
+	world.apply_area("cave", true)
+	await _frames(4)
+	_clear_enemies(world.cave_zone)
+	await _frames(3)
+	var rows: Array = world.dungeon_zone.map_rows
+	var p: Node2D = world.player
+	chk(p != null and world.dungeon_zone != null, "t46: пещера сида 42 активна для пинов физики")
+	# каждую секцию ждём до конца: внутри await-кадры, без await они бы повисли
+	# и процесс завершился бы раньше проверок (тот же порядок, что у _t12/_t37)
+	await _t46_dash(rows)
+	await _t46_whiskers(rows)
+	await _t46_aggro(rows)
+	await _t46_return()
+	var free_lights := 0
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(e) and world.cave_zone.is_ancestor_of(e as Node):
+			free_lights += 1
+	print("qa_lp t46: юзер-фиксы 16.11 запинены: рывок у стены, усы (обход + тупик), агро по LOS + память %.1f с, возврат к арке (пещера + Пепелище); стендовых мобов в пещере осталось %d" % [float(T46_SEE_FRAMES) / 60.0, free_lights])
