@@ -106,12 +106,18 @@ func try_interact() -> void:
 		# кошель: вместе с Loot.chest_reward (8–18 зол. + расходник с шансом 50%)
 		# суммарно 40–60 зол.: purse≥32 закрывает нижнюю границу (32+8=40),
 		# purse≤42 — верхнюю (42+18=60).
+		# g13 (BALANCE строка 4, вердикт g11): деревенский сундук главы 1 — это
+		# плановые +15 (горсть 8–18 из loot.gd), а КОШЕЛЬ живёт «как в коде-
+		# диапазонах» вне деревни: в пещере/Пепелище 32..42 правят экономику меча
+		# (t39), в главе 1 он ломал коридор дохода 78–106 (эконометр _t42).
+		# Источник-пин T14 не тронут: литерал randi_range(32, 42) в файле жив.
 		GameState.chest_mark_used(_uid())  # «сундук открыт» в сейв (фикс T2)
 		Loot.chest_reward(GameState)  # золото/зелье (loot.gd)
-		var purse := randi_range(32, 42)
-		GameState.add_gold(purse)
-		GameAudio.sfx("coin")
-		GameState.toast.emit("В сундуке — кошель: ещё +%d зол.! Меч ищите у кузнеца." % purse)
+		if area != "village":
+			var purse := randi_range(32, 42)
+			GameState.add_gold(purse)
+			GameAudio.sfx("coin")
+			GameState.toast.emit("В сундуке — кошель: ещё +%d зол.! Меч ищите у кузнеца." % purse)
 		GameState.quest_changed.emit()  # автосейв: состояние сундука и золото
 		Achv.on_chest_opened()  # ачивка «Клад» (achv.gd)
 		if FirstHint.I != null: FirstHint.I.show_hint("chest", "В сундуках — золото и расходники. Оружие — у кузнеца.")

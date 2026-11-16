@@ -136,6 +136,7 @@ func _ready() -> void:
 	_t36()
 	await _t37()
 	await _t41()
+	await _t42()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -3638,16 +3639,16 @@ const G12_HINTS := [  # С1-С3 живут в world.gd (FirstHint.show_hint вы
 	"Вари у Уты: сухоцвет да жим. Котёл греется у её дома, деньги не нужны.",
 ]
 # g12 не трогает (регресс приёмки: Esc-меню, RunSummary/мета, HUD, FirstHint…):
+# g13 (экономика гл.1): hud.gd, game_state.gd и shop.gd УБРАНЫ — У2-хук/смола
+# в hud, факелы+материал в game_state, вендорные витрины в shop легитимно их
+# изменили; поведение запинено в _t42. Остальные — по-прежнему бит-в-бит.
 const G12_UNTOUCHED := {
 	"res://scripts/settings_menu.gd": "c7b90737cc53c457cf3963b69e5bd742",
 	"res://scripts/run_summary.gd": "6404ba292ef8ea899d6a0c0db43655f8",
-	"res://scripts/hud.gd": "2d09b52320c36555829bc5734233fa3f",
 	"res://scripts/npc.gd": "419a3887918731d4d2207f3bcf51fd23",
 	"res://scripts/first_hint.gd": "93520eda37ea1e453cd2bc4c737e04d4",
 	"res://scripts/alchemy.gd": "605eb9d4f55b048fa79914285eb3b635",
 	"res://scripts/journal.gd": "53f70da0b331e9801a07d3390237ac71",
-	"res://scripts/game_state.gd": "9bbd9c8ff62130d7e7732f64508c34e4",
-	"res://scripts/shop.gd": "d7187338ba2d92c990b4510837028dc4",
 }
 
 var _g12_toasts: Array = []
@@ -3786,11 +3787,15 @@ func _t41() -> void:
 	await _g12_drain()
 	chk(ok_after, "g12: повтор после сдачи — М5")
 	# Дран: выдача с тостом-проводником (квест молчит в репликах), сдача +30 зол.
+	# g13: за репликами Драна открывается его лавка — в этом прогоне её закрываем,
+	# чтобы следующая реплика звучала в свободном мире (торговые пины — в _t42).
 	world.talk("merchant")
 	await _frames(2)
 	var ok_m: bool = world.hud.is_dialog_open() \
 			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON1[5])
 	await _g12_drain()
+	if Shop.is_open():
+		Shop.close()
 	var found_toast := false
 	for t in _g12_toasts:
 		if String(t).contains("Трофеи со слаймов"):
@@ -3802,6 +3807,8 @@ func _t41() -> void:
 	var gold1 := int(GameState.gold)
 	world.talk("merchant")
 	await _g12_drain()
+	if Shop.is_open():
+		Shop.close()
 	chk(int(GameState.slime_quest) == 2 and int(GameState.gold) == gold1 + 30,
 		"g12: сдача Драну +30 зол. (%d→%d), quest=2" % [gold1, int(GameState.gold)])
 	# Гриим: Г1 + С2 при первой встрече круга, Г3 в повтор; лавка открывается
@@ -3832,11 +3839,15 @@ func _t41() -> void:
 	await _frames(4)
 	chk(ok_u and str(GameState.flags.get("hint.herbalist", "")) == "1",
 		"g12: У1 у травницы + С3 (hint.herbalist)")
+	if Shop.is_open():
+		Shop.close()
 	world.talk("uta")
 	await _frames(2)
 	var ok_u2: bool = world.hud.is_dialog_open() \
 			and String(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[5])
 	await _g12_drain()
+	if Shop.is_open():
+		Shop.close()
 	chk(ok_u2, "g12: повтор у Уты — У3")
 	chk(str(GameState.flags.get("q.smith_talked", "")) == "1"
 			and str(GameState.flags.get("q.uta_talked", "")) == "1",
@@ -3846,8 +3857,264 @@ func _t41() -> void:
 	for p in G12_UNTOUCHED:
 		if _t11_md5(String(p)) != String(G12_UNTOUCHED[p]):
 			touched.append(String(p))
-	chk(touched.is_empty(), "g12: Esc-меню/RunSummary/мета/HUD/FirstHint/лавка бит-в-бит (%s)" % str(touched))
+	chk(touched.is_empty(), "g12: Esc-меню/RunSummary/мета/npc/FirstHint/alchemy/journal бит-в-бит (%s)" % str(touched))
 	# порядок: сейв-тест не оставляет мусора
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	print("qa_lp g12: GOLDEN-пины сеток не пересчитывались; Е1-Е3 — данные под хук Г1.5")
+
+# ════════════════════ g13: экономика деревни (Г1.3–Г1.5, BALANCE-реестр) ════════════════════
+## Строка листа LINES_VILLAGE -> её место в константных листах _t41:
+## Г1-Г3 = G12_DIALOGUES_JSON2[0..2], У1-У3 = [3..5], Е1-Е3 = [6..8].
+func _g13_src(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	return f.get_as_text() if f != null else ""
+
+func _t42() -> void:
+	# 0) реестр BALANCE: пять «новых» чисел — по одному литералу (BALANCE.md
+	# «Правила коридора»). Строки 1–2 живут в QuestsData, 6–8 — в GearData.
+	chk(QuestsData.GOLD_QUEST_TREES == 20 and QuestsData.GOLD_QUEST_SLIMES == 30,
+		"g13: реестр BALANCE строки 1–2: 20/30 зол. за сдачи")
+	chk(GearData.PRICE_RESIN == 15 and GearData.PRICE_TORCH == 25 and GearData.PRICE_POTION == 30,
+		"g13: реестр BALANCE строки 6–8: 15/25/30")
+	chk(GearData.price("resin") == GearData.PRICE_RESIN and GearData.price("torch") == GearData.PRICE_TORCH
+			and GearData.price("potion") == GearData.PRICE_POTION,
+		"g13: ценники товаров берутся из реестра, не дублируются")
+	chk(GearData.PRICE_TORCH - GearData.PRICE_RESIN == GearData.CRAFT_SAVING and GearData.CRAFT_SAVING == 10,
+		"g13: крафт (15) дешевле готового (25) ровно на 10 — разницу не менять")
+	# 1) витрины: чей прилавок — тот набор (л/р кнопок и секций)
+	GameState.input_locked = false
+	if Shop.is_open():
+		Shop.close()
+	GameState.gold = 200
+	Shop.open("merchant")
+	await _frames(3)
+	chk(String(Shop.I.head_lbl.text) == "Лавка Драна" \
+			and (Shop.I.buy_btns["resin"] as Button).visible \
+			and (Shop.I.buy_btns["torch"] as Button).visible \
+			and not (Shop.I.buy_btns["sword"] as Button).visible \
+			and not Shop.I.craft_btn.visible and not Shop.I.sell_head.visible \
+			and not Shop.I.altar_head.visible,
+		"g13: лавка Драна: смола+факел, кузнечных секций (крафт/скупка/алтарь) не видно")
+	Shop.close(); await _frames(2)
+	Shop.open("smith"); await _frames(3)
+	chk(String(Shop.I.head_lbl.text) == "Кузница Гриима" \
+			and (Shop.I.buy_btns["sword"] as Button).visible \
+			and Shop.I.craft_btn.visible and Shop.I.altar_head.visible \
+			and Shop.I.sell_head.visible \
+			and not (Shop.I.buy_btns["resin"] as Button).visible,
+		"g13: кузница не сломана: 5 снарядок + крафт + скупка + алтарь, товары Драна скрыты")
+	Shop.close(); await _frames(2)
+	# 2) сделка с Драном: смола 15 зол.; рюкзак полон — деньги целы
+	var gr0 := int(GameState.gold)
+	Shop.open("merchant"); await _frames(2)
+	Shop.I._on_buy("resin"); await _frames(2)
+	chk(GameState.mat_count("smola") == 1 and int(GameState.gold) == gr0 - 15,
+		"g13: смола у Драна −15 зол., рюкзак 1/%d" % GameState.MAT_CAP)
+	GameState.materials["smola"] = GameState.MAT_CAP
+	var gr1 := int(GameState.gold)
+	Shop.I._on_buy("resin"); await _frames(2)
+	chk(int(GameState.gold) == gr1 and GameState.mat_count("smola") == GameState.MAT_CAP,
+		"g13: рюкзак смолы полон — покупка отбита, золото не списано")
+	# готовый факел у Драна: 25 зол.
+	Shop.I._on_buy("torch"); await _frames(2)
+	chk(GameState.torches == 1 and int(GameState.gold) == gr1 - 25,
+		"g13: готовый факел −25 зол. (факелов: 1)")
+	Shop.close(); await _frames(2)
+	# 3) крафт у Гриима: даром, из одной смолы; ПИН равенства «тот же предмет»
+	GameState.materials["smola"] = 1
+	var gc0 := int(GameState.gold)
+	Shop.open("smith"); await _frames(2)
+	Shop.I._on_craft_torch(); await _frames(3)  # первый крафт: лавка закрылась, Г2
+	var g2ok: bool = world.hud.is_dialog_open() \
+			and str(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[1])
+	await _g12_drain()
+	chk(g2ok and GameState.torches == 2 and GameState.mat_count("smola") == 0 \
+			and int(GameState.gold) == gc0 and not Shop.is_open() \
+			and str(GameState.flags.get("q.smith_forge", "")) == "1",
+		"g13: крафт даром: золото %d цело, смола списана, факел 2, Г2 дословно" % gc0)
+	# «факел из крафта == факел из лавки одним объектом»: один id в реестре и
+	# одна точка GameState.add_torch() на оба пути (источник + поведение выше:
+	# покупка дала +1, крафт дал +1 в тот же счётчик torches).
+	var gss := _g13_src("res://scripts/game_state.gd")
+	var shs := _g13_src("res://scripts/shop.gd")
+	chk(gss.contains("func add_torch()") \
+			and shs.count("GameState.add_torch()") == 2 \
+			and GearData.ITEMS.has("torch") and GearData.ITEMS.size() == GearData.ITEMS.keys().size(),
+		"g13: лавка и крафт зовут один add_torch() для одного предмета «torch»")
+	# смолы нет — Гриим отказывает молча (ни факела, ни списания)
+	Shop.open("smith"); await _frames(2)
+	var gc1 := int(GameState.gold)
+	Shop.I._on_craft_torch(); await _frames(2)
+	chk(GameState.torches == 2 and int(GameState.gold) == gc1 and Shop.is_open(),
+		"g13: без смолы крафт отбит (лавка открыта, счётчики целы)")
+	Shop.close(); await _frames(2)
+	# 4) зельеварка: котёл (костёр у дома Уты), варка бесплатна, == c30-заряд
+	GameState.flags.erase("q.uta_brewed")
+	GameState.brewed_potions = 0
+	GameState.materials = {"suhotsvet": 1, "zhim": 1, "smola": 0}
+	GameState.hp = GameState.max_hp - 10
+	world.player.global_position = world.tile_to_world(Vector2i(18, 13))
+	await _frames(6)
+	# Прайм одноразовых выплат процесса (ачивка/ежедневная награда achv.gd
+	# сыпят золотом при первом on_brew — канон, не баг): иначе их разовый
+	# payout протёк бы в замер «варка бесплатна». Карман фиксируем после.
+	Achv.on_brew()
+	GameState.gold = 160
+	var gb0 := int(GameState.gold)
+	chk(world.campfire_near() != null, "g13: котёл у дома Уты живая точка варки (герой у огня)")
+	world.hud._on_brew_pressed("strong_potion"); await _frames(3)
+	var u2ok: bool = world.hud.is_dialog_open() \
+			and str(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[4])
+	await _g12_drain()
+	chk(u2ok and GameState.brewed_potions == 1 and int(GameState.gold) == gb0 \
+			and GameState.mat_count("suhotsvet") == 0 and GameState.mat_count("zhim") == 0 \
+			and str(GameState.flags.get("q.uta_brewed", "")) == "1",
+		"g13: варка у котла бесплатна (сухоцвет+жим списаны, %d зол. целы), У2 первое зелье" % gb0)
+	# результат == существующее зелье здоровья: пьётся кнопкой HUD, +6 (c30)
+	GameState.input_locked = false
+	var hp0 := int(GameState.hp)
+	world.hud._on_brewed_pressed(); await _frames(2)
+	chk(int(GameState.hp) == hp0 + GameState.STRONG_POTION_HEAL and GameState.brewed_potions == 0,
+		"g13: варёное == крепкое зелье здоровья: кнопка c30, +%d HP" % GameState.STRONG_POTION_HEAL)
+	# стек/расход: кап 2, третий вар не берёт («пояс полон» — тот же текст, что у варки)
+	GameState.materials = {"suhotsvet": 5, "zhim": 5, "smola": 0}
+	world.hud._on_brew_pressed("strong_potion"); await _frames(1)
+	world.hud._on_brew_pressed("strong_potion"); await _frames(1)
+	var gm0 := int(GameState.gold)
+	world.hud._on_brew_pressed("strong_potion"); await _frames(2)
+	var full_toast := false
+	for t in _g12_toasts:
+		if String(t).contains("Пояс полон"):
+			full_toast = true
+	chk(GameState.brewed_potions == GameState.BREWED_CAP and full_toast \
+			and GameState.mat_count("suhotsvet") == 3 and int(GameState.gold) == gm0,
+		"g13: кап стек крепких = %d, переполнение отбито без расхода/списания (двух варок хватило: 5->3)" % GameState.BREWED_CAP)
+	# покупка зелья у Уты: 30 зол., под капом отказ с тем же текстом «пояс полон»
+	Shop.open("uta"); await _frames(2)
+	var gu0 := int(GameState.gold)
+	Shop.I._on_buy("potion"); await _frames(2)
+	chk(int(GameState.gold) == gu0 and String(Shop.I.head_lbl.text) == "Прилавок Уты",
+		"g13: утыч заряд под капом не продаётся (золото цело), вывеска верна")
+	GameState.brewed_potions = 0
+	Shop.I._on_buy("potion"); await _frames(2)
+	chk(GameState.brewed_potions == 1 and int(GameState.gold) == gu0 - 30,
+		"g13: крепкое зелье у Уты −30 зол. (BALANCE строка 8)")
+	Shop.close(); await _frames(2)
+	# 5) отшельник Геральд за околицей (Г1.5): Е1–Е3 первая беседа, далее Е3
+	var hm_found := false
+	for c in world.village_zone.get_children():
+		var nid: Variant = c.get("npc_id")
+		if nid != null and str(nid) == "hermit_out":
+			hm_found = true
+	chk(hm_found and world.dialogues.has("hermit_outside") and world.dialogues.has("hermit_out_repeat"),
+		"g13: Геральд за околицей стоит (живой лист npc_hermit.png), реплики загружены")
+	GameState.flags.erase("q.hermit_met")
+	world.talk("hermit_out"); await _frames(2)
+	var e1ok: bool = world.hud.is_dialog_open() \
+			and str(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[6])
+	var who_ok := true
+	for ln in (world.dialogues["hermit_outside"] as Array):
+		if String((ln as Dictionary).get("who", "")) != "hermit":
+			who_ok = false  # hud NAMES: «hermit» => «Отшельник Геральд»
+	await _g12_drain()
+	chk(e1ok and who_ok and str(GameState.flags.get("q.hermit_met", "")) == "1",
+		"g13: первая встреча — Е1 (лор) дословно, кто=«hermit» (имя в NAMES), флаг круга")
+	world.talk("hermit_out"); await _frames(2)
+	var e3ok: bool = world.hud.is_dialog_open() \
+			and str(world.hud.dtext.text) == String(G12_DIALOGUES_JSON2[8])
+	await _g12_drain()
+	chk(e3ok, "g13: повтор за околицей — Е3 (прощание)")
+	# 6) факелы/смола переживают сейв-загрузку (P1)
+	GameState.torches = 2
+	GameState.materials["smola"] = 3
+	GameState.save_game(); await _frames(2)
+	GameState.torches = 0
+	GameState.materials["smola"] = 0
+	var ldr := GameState.load_game()
+	chk(ldr and GameState.torches == 2 and GameState.mat_count("smola") == 3,
+		"g13: сейв/загрузка: факелы=2 и смола=3 восстановлены")
+	var wss := _g13_src("res://scripts/game_state.gd")
+	chk(wss.contains("torches = 0") and wss.contains("\"torches\": torches"),
+		"g13: torches в сейве и в круговом вайпе (нажитое круга сгорает)")
+	# 7) деревенский сундук = плановые +15 (кошель не его); кошель живёт вне деревни
+	var ichs := _g13_src("res://scripts/interactable.gd")
+	chk(ichs.contains("if area != \"village\":") and ichs.contains("randi_range(32, 42)"),
+		"g13: кошель 32–42 gated зоной; литерал жив (пин T14 не обманут)")
+	var village_chest = null  # слабый тип: prop-доступ к interactable.gd без стат-ошибки
+	for c in world.village_zone.get_children():
+		if c.get("kind") != null and str(c.get("kind")) == "chest":
+			village_chest = c
+	var gcx := int(GameState.gold)
+	seed(777)
+	GameState.chests_used.clear()
+	village_chest.used = false
+	var n_toasts0 := _g12_toasts.size()
+	village_chest.try_interact(); await _frames(3)
+	var chest_delta := int(GameState.gold) - gcx
+	var purse_leak := false
+	for i in range(n_toasts0, _g12_toasts.size()):
+		if String(_g12_toasts[i]).contains("кошель"):
+			purse_leak = true
+	chk(chest_delta >= 8 and chest_delta <= 18 and not purse_leak,
+		"g13: деревенский сундук дал %d зол. (горсть 8–18), кошель не потёк (BALANCE строка 4)" % chest_delta)
+	# 8) эконометр главы (приёмка С1 коридора 78–106 + остаток ≈47): детерминизм
+	# по seed перед каждым броском — рулетинг воспроизводим бит-в-бит в батарее.
+	const ECON_SEED := 20261116
+	GameState.gold = 0
+	GameState.brewed_potions = 0
+	GameState.elder_quest = 1
+	GameState.herbs = 3
+	GameState.input_locked = false
+	world.talk("elder"); await _g12_drain(); await _frames(2)   # сдача Морги +20
+	GameState.slime_quest = 1
+	GameState.slime_kills_circle = 3
+	world.talk("merchant"); await _g12_drain(); await _frames(2)  # сдача Драну +30
+	if Shop.is_open():
+		Shop.close()
+	var mob_delta := 0
+	var mob_i := 0
+	for c in world.village_zone.get_children():
+		var sp: String = String(c.get_script().resource_path) if c.get_script() != null else ""
+		if not (sp.ends_with("slime.gd") or sp.ends_with("mob_swarmling.gd")):
+			continue
+		mob_i += 1
+		seed(ECON_SEED + mob_i * 7919)
+		var g_before := int(GameState.gold)
+		if sp.ends_with("slime.gd"):
+			c._die()  # slime.gd: смерть отдельным методом
+		else:
+			c.hurt(999, c.global_position + Vector2(1, 0))  # рой умирает через hurt()
+		await _frames(1)
+		mob_delta += int(GameState.gold) - g_before
+	chk(mob_i == 8, "g13: обязательная зачистка главы = 8 тварей (6 слаймов + 2 мглокрыса), есть %d" % mob_i)
+	seed(ECON_SEED + 91)
+	GameState.chests_used.clear()
+	village_chest.used = false
+	var gch := int(GameState.gold)
+	village_chest.try_interact(); await _frames(3)
+	var econ_chest := int(GameState.gold) - gch
+	var income := int(GameState.gold)  # старт был 0 — всё нажитое и есть доход
+	chk(income >= 78 and income <= 106,
+		"g13: доход главы = %d зол. в коридоре 78–106 (50 квесты + %d твари + %d сундук), seed=%d" % [income, mob_delta, econ_chest, ECON_SEED])
+	# обязательная корзина 45: смола 15 + зелье 30 (факел из смолы — даром)
+	Shop.open("merchant"); await _frames(2)
+	Shop.I._on_buy("resin"); await _frames(1)
+	Shop.I._on_buy("potion"); await _frames(1)
+	Shop.close(); await _frames(1)
+	Shop.open("smith"); await _frames(2)
+	GameState.flags["q.smith_forge"] = "1"  # не переспамливаем Г2 в этом прогоне
+	Shop.I._on_craft_torch(); await _frames(2)
+	Shop.close(); await _frames(1)
+	var leftover := int(GameState.gold)
+	chk(leftover == income - 45 and leftover >= 33 and leftover <= 61,
+		"g13: остаток на вход в главу 2 = %d зол. (доход %d − корзина 45; коридор 33–61 ≈ план 47)" % [leftover, income])
+	print("qa_lp g13: эконометр: доход=%d (квесты 50, твари=%d, сундук=%d), корзина 45, остаток=%d, seed=%d" % [income, mob_delta, econ_chest, leftover, ECON_SEED])
+	# 9) регресс реестра-пинов чужих файлов идёт в _t41 (G12_UNTOUCHED без hud/
+	# game_state/shop — их правки запинены здесь); сейв-мусор убираем.
+	GameState.input_locked = false
+	if Shop.is_open():
+		Shop.close()
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	print("qa_lp g13: экономика главы 1 запинена: реестр, витрины, факел-равенство, котёл, Геральд, эконометр")

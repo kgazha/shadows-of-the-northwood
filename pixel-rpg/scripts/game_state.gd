@@ -24,7 +24,8 @@ const MANA_REGEN_STEP := 2
 const MAT_CAP := 5              # лимит переноса на каждый материал
 const BREWED_CAP := 2           # запас варёных зелий (крепких)
 const STRONG_POTION_HEAL := 6   # HP за крепкое зелье (обычное травяное — 3)
-const MAT_NAMES := {"suhotsvet": "Сухоцвет", "zhim": "Жим"}
+const MAT_NAMES := {"suhotsvet": "Сухоцвет", "zhim": "Жим",
+	"smola": "Смола"}  # g13 (Г1.3): «Смола» — материал факела, покупается у Драна
 
 var max_hp := 10
 var hp := 10
@@ -54,8 +55,12 @@ var slime_kills := 0
 ## slime_kills остаётся lifetime-счётчиком ачивок (Охотник 25/100).
 var slime_kills_circle := 0
 ## Алхимия: материалы с врагов (id -> кол-во, см. MAT_NAMES) и заряды варёных зелий.
-var materials := {"suhotsvet": 0, "zhim": 0}
+var materials := {"suhotsvet": 0, "zhim": 0, "smola": 0}
 var brewed_potions := 0
+## Факелы (g13/Г1.3). Счётчик-расходник: факел из лавки Драна и факел, сплетённый
+## Гриимом, — один предмет ("torch" в GearData.ITEMS), один add_torch() на оба
+## пути; «горение в пещере» — глава 2 (G2.1), здесь носка/сейв. Круг обнуляет.
+var torches := 0
 ## Костры-привалы: id -> true, если уже использован (одноразовые).
 var campfires_used := {}
 ## Открытые сундуки (ачивка «Клад» = size): uid вида "chest@<area>:x,y", area —
@@ -190,6 +195,12 @@ func try_spend_materials(cost: Dictionary) -> bool:
 	for mid in cost:
 		materials[String(mid)] = mat_count(String(mid)) - int(cost[mid])
 	return true
+
+## Положить факел в руки (g13/Г1.3). Единая точка и для покупки у Драна, и для
+## крафта у Гриима: «факел из крафта == факел из лавки» — один предмет ("torch")
+## и этот один метод на оба пути (пин _t42).
+func add_torch() -> void:
+	torches += 1
 
 # --- сундуки (персист «сундук открыт») ---
 
@@ -388,6 +399,7 @@ func to_dict() -> Dictionary:
 		"in_cave": in_cave, "seen_cave_intro": seen_cave_intro,
 		"seen_boss_intro": seen_boss_intro, "boss_defeated": boss_defeated,
 		"materials": materials.duplicate(), "brewed": brewed_potions,
+		"torches": torches,
 		"campfires_used": campfires_used.duplicate(),
 		"chests_used": chests_used.duplicate(),
 		"v": 3, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
@@ -421,12 +433,13 @@ func from_dict(d: Dictionary) -> void:
 	if _flag(d.get("boss_defeated", false), false):
 		cave_state = maxi(cave_state, 2)
 	# привалы и алхимия: СТАРЫЕ сейвы без этих полей => пустой рюкзак, костры целы
-	materials = {"suhotsvet": 0, "zhim": 0}
+	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0}
 	var md: Variant = d.get("materials", {})
 	if typeof(md) == TYPE_DICTIONARY:
 		for mid in materials:
 			materials[mid] = clampi(_num(md.get(mid, 0), 0), 0, MAT_CAP)
 	brewed_potions = clampi(_num(d.get("brewed", 0), 0), 0, BREWED_CAP)
+	torches = maxi(0, _num(d.get("torches", 0), 0))  # старый сейв без поля — ноль факелов
 	var cu: Variant = d.get("campfires_used", {})
 	# M4 (QA): каппим как сундуки (64) с varning — раньше кап был только у
 	# chests_used и молча резал данные, а campfires_used не валидировался вовсе.
@@ -656,8 +669,9 @@ func _wipe_circle() -> void:
 	door_opened = false
 	chests_used = []
 	campfires_used = {}
-	materials = {"suhotsvet": 0, "zhim": 0}  # структура сохраняем: add_material сверяет has()
+	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0}  # структура сохраняем: add_material сверяет has()
 	brewed_potions = 0
+	torches = 0  # g13: факелы — нажитое круга, сгорает вместе с кругом (как травы)
 	# травы — подвальный инвентарь деревенского круга («Сухоцвет впрок»
 	# перепроходит каждый круг, carry-over тривиализировал бы квест);
 	# счётчик убийств круга — парный ему для «Зачистки леса».

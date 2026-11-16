@@ -391,12 +391,12 @@ func refresh() -> void:
 	info.text = "Ур. %d  Опыт %d/%d  Атака %d" % [GameState.level, GameState.xp, GameState.xp_next, GameState.damage]
 	var q: Array[String] = []
 	if GameState.elder_quest == 0:
-		q.append("• Поговори со старейшиной")
+		q.append("• Поговори со старейшиной Моргой")
 	elif GameState.elder_quest == 1:
 		if GameState.herbs >= 3:
-			q.append("• Травы собраны — отнеси старейшине!")
+			q.append("• Коренья собраны — отнеси Морге!")
 		else:
-			q.append("• Травы старейшине: %d/3" % GameState.herbs)
+			q.append("• Коренья Морге: %d/3" % GameState.herbs)
 	if GameState.slime_quest == 1:
 		if GameState.slime_kills_circle >= 3:  # работа текущего круга (не total)
 			q.append("• Награда ждёт у торговца!")
@@ -429,8 +429,8 @@ func refresh() -> void:
 		potion_btn.text = "x%d" % GameState.herbs
 	if mat_lbl != null:
 		mat_lbl.visible = GameState.class_id != "" and _hotbar_allowed()
-		mat_lbl.text = "Сухоцвет %d/%d · Жим %d/%d" % [GameState.mat_count("suhotsvet"), GameState.MAT_CAP, GameState.mat_count("zhim"), GameState.MAT_CAP]
-		mat_lbl.tooltip_text = "Материалы слаймов. Вари у костра (появится кнопка варки)."
+		mat_lbl.text = "Сухоцвет %d/%d · Жим %d/%d · Смола %d/%d" % [GameState.mat_count("suhotsvet"), GameState.MAT_CAP, GameState.mat_count("zhim"), GameState.MAT_CAP, GameState.mat_count("smola"), GameState.MAT_CAP]
+		mat_lbl.tooltip_text = "Материалы: слаймы капают сухоцвет да жим, смола — из лавки Драна. Вари у котла Уты (или у костра)."
 	if brewed_btn != null:
 		brewed_btn.visible = GameState.class_id != "" and _hotbar_allowed()
 		brewed_btn.text = "x%d" % GameState.brewed_potions
@@ -704,7 +704,7 @@ func _build_alch_ui(th: Theme) -> void:
 	brewed_btn.offset_top = -40
 	brewed_btn.offset_bottom = -4
 	brewed_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	brewed_btn.tooltip_text = "Крепкое зелье: +%d HP (клик). Варится у костра." % GameState.STRONG_POTION_HEAL
+	brewed_btn.tooltip_text = "Крепкое зелье: +%d HP (клик). Ута варит у своего котла — бесплатно." % GameState.STRONG_POTION_HEAL
 	# c30 (вердикт w2 «третий вариант с колбой»): иконка — рисовалка UiIcons,
 	# дословно из генератора листа c28 (прецедент c25); легаси-PNG удалена из репо.
 	brewed_btn.icon = UiIcons.brewed_icon()
@@ -799,6 +799,16 @@ func _on_brew_pressed(rid: String) -> void:
 	GameAudio.sfx("ui_click")
 	if Alch.brew(rid):
 		GameAudio.sfx("ui_confirm")
+		# g13 (Г1.4): первая удачная варка крепкого — У2 («варка (первое
+		# зелье)», LINES_VILLAGE) через world-загрузчик диалогов. Хук в hud,
+		# а не в alchemy.gd: alchemy — чистые операции над GameState (шапка
+		# файла) и md5-пин G12_UNTOUCHED. Флаг q.* — раз на круг, диалог не
+		# наслаиваем на открытую модалку.
+		if rid == "strong_potion" and str(GameState.flags.get("q.uta_brewed", "")) != "1" \
+				and not is_dialog_open() and not is_modal_open() \
+				and world != null and world.has_method("start_dialogue"):
+			GameState.set_flag("q.uta_brewed", "1")
+			world.start_dialogue("uta_brew")
 
 ## Кадровая часть: панель варки у костра, доступность рецептов, полоса отдыха.
 func _update_camp_ui() -> void:

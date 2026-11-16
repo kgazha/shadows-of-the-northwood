@@ -103,6 +103,16 @@ var close_btn: Button          # t34 V-06: вне скролла => «Закры
 var altar_head: Label          # заголовок секции алтаря с балансом Пепла (§4.2)
 var altar_btns := {}           # meta id -> Button алтаря
 
+# --- g13: торговые головы главы 1 (витрины Драна/Уты в той же панели) ---
+# Витрина одна, но набор кнопок принадлежит торговцу: GearData.VENDOR_STOCK.
+# Скупка/Алтарь/крафт — только кузница (канон текстов: «Гриим скупил»,
+# «сплету даром, печь моя», алтарь стоит у Гриима).
+var _vendor := "smith"         # smith | merchant | uta (задаётся открытием)
+var head_lbl: Label            # шапка панели: заголовок прилавка
+var sell_head: Label           # заголовок секции скупки (кузница)
+var craft_head: Label          # заголовок секции крафта (кузница, g13)
+var craft_btn: Button          # «Сплести факел — даром» (кузница, нужна смола)
+
 var root: Control              # полноэкранный корень панели; visible = «лавка открыта»
 var dim: ColorRect             # затемнение мира; клик мимо окна закрывает лавку
 var panel: PanelContainer
@@ -138,12 +148,13 @@ func _ready() -> void:
 
 # --- статические обёртки: хукам не нужна проверка I в каждом вызове ---
 
-static func open() -> void:
+static func open(vendor: String = "smith") -> void:
 	if I == null or I.root == null:
 		return
 	if I._busy():  # чужой диалог/модалка/журнал/lock — не открываемся (как SettingsMenu)
 		GameAudio.sfx("ui_deny")
 		return
+	I._vendor = vendor if GearData.VENDOR_STOCK.has(vendor) else "smith"
 	I._set_open(true)
 	Sfx.play("panel_open")  # t31: мягкий взмах ткани на открытии витрины
 
@@ -187,12 +198,12 @@ func _build() -> void:
 	vb.name = "Col"
 	vb.add_theme_constant_override("separation", COL_SEPARATION)
 	panel.add_child(vb)
-	var head := Label.new()
-	head.text = "Кузница Гриима"
-	head.add_theme_font_size_override("font_size", 10)
-	head.add_theme_color_override("font_color", Color(1, 0.84, 0.45))
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(head)
+	head_lbl = Label.new()
+	head_lbl.text = String(GearData.VENDOR_HEAD.get("smith", "Кузница Гриима"))
+	head_lbl.add_theme_font_size_override("font_size", 10)
+	head_lbl.add_theme_color_override("font_color", Color(1, 0.84, 0.45))
+	head_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(head_lbl)
 	gold_lbl = Label.new()
 	gold_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gold_lbl.add_theme_color_override("font_color", Color(1, 0.95, 0.6))
@@ -211,13 +222,24 @@ func _build() -> void:
 	list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # паттерн journal.gd
 	scroll.add_child(list_vb)
 	list_vb.add_child(_section_label("Витрина:"))
-	for id in GearData.SHOP_STOCK:
-		var btn := Button.new()
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.pressed.connect(_on_buy.bind(String(id)))
-		list_vb.add_child(btn)
-		buy_btns[String(id)] = btn
-	list_vb.add_child(_section_label("Скупка (сдам надетое вдвое дешевле):"))
+	for vstock in GearData.VENDOR_STOCK.values():
+		for id in (vstock as Array):
+			var btn := Button.new()
+			btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			btn.pressed.connect(_on_buy.bind(String(id)))
+			list_vb.add_child(btn)
+			buy_btns[String(id)] = btn
+	# g13 (Г1.3): крафт-секция Гриима. Работа даром (Г1 «сплету даром, печь
+	# моя»), материал — смола Драна за PRICE_RESIN: факел-крафт обходится в
+	# 15 зол., готовый у Драна — 25, экономия ровно CRAFT_SAVING=10 (BALANCE).
+	craft_head = _section_label("Кузнечное дело:")
+	list_vb.add_child(craft_head)
+	craft_btn = Button.new()
+	craft_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	craft_btn.pressed.connect(_on_craft_torch)
+	list_vb.add_child(craft_btn)
+	sell_head = _section_label("Скупка (сдам надетое вдвое дешевле):")
+	list_vb.add_child(sell_head)
 	for slot in ["weapon", "armor"]:
 		var sbtn := Button.new()
 		sbtn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -334,6 +356,7 @@ func _set_open(v: bool) -> void:
 		_mouse_pass = false
 		if v:
 			_set_mouse_pass(false)  # t29 B-02: при открытии мышь снова вся наша
+			_apply_vendor()         # g13: чей прилавок — те ряды и показываем
 			_fit_panel()            # t34 V-06: актуальное поле на момент открытия
 			if scroll != null:
 				scroll.scroll_vertical = 0  # лавка всегда открывается с начала витрины
@@ -344,6 +367,27 @@ func _set_open(v: bool) -> void:
 			_release_lock()
 	if v:
 		refresh()
+
+## g13: витрина принадлежит торговцу. У кузницы — всё (экипировка, крафт,
+## скупка, Алтарь Пепла); у Драна и Уты — только их товары: чужие ряды, скупка,
+## крафт и алтарь скрываются (hidden-ряды не дают высоты — _fit_panel меряет
+## только видимых, панель Драна ниже и гарантированно в поле 360).
+func _apply_vendor() -> void:
+	head_lbl.text = String(GearData.VENDOR_HEAD.get(_vendor, "Кузница Гриима"))
+	for id in buy_btns:
+		var it := GearData.item(String(id))
+		(buy_btns[id] as Button).visible = String(it.get("vendor", "smith")) == _vendor
+	var forge := _vendor == "smith"
+	craft_head.visible = forge
+	craft_btn.visible = forge
+	sell_head.visible = forge
+	for slot in sell_btns:
+		(sell_btns[slot] as Button).visible = forge
+	altar_head.visible = forge
+	for x in ALTAR:
+		var abtn: Button = altar_btns.get(String((x as Dictionary).get("id", "")), null)
+		if abtn != null:
+			abtn.visible = forge
 
 ## t29 B-02 (реестр t28): под ЧУЖИМ окном (диалог/смерть) лавка по контракту
 ## «окно работает» не должна перехватывать мышь, но раньше полноэкранный dim
@@ -453,6 +497,9 @@ func _on_buy(id: String) -> void:
 		return  # покупка разрешена только под СОБСТВЕННЫМ lock лавки
 	var it := GearData.item(id)
 	var slot := String(it.get("slot", ""))
+	if slot in ["mat", "charge", "tool"]:
+		_buy_consumable(id, it, slot)  # g13: расходники глав 1 (смола/зелье/факел)
+		return
 	if not GameState.gear.has(slot):
 		push_warning("Shop: неизвестный слот предмета: %s" % id)
 		return
@@ -473,6 +520,84 @@ func _on_buy(id: String) -> void:
 	Sfx.play("coin")  # t31: тёплый монетный «дзынь» вместо ui_confirm
 	GameState.toast.emit("Куплено: %s. Надето!" % String(it.get("name", id)))
 	Achv.on_buy()  # ачивка «Покупатель: 5 вещей» (achv.gd)
+	refresh()
+
+## g13: покупка расходника главы 1. Порядок честный: сначала проверяем приём
+## (рюкзак/пояс), только потом списываем золото. Атомарность «деньги ушли —
+## товар в руках» даёт ранний отказ при переполнении. Трата переживает выход
+## (железное правило P1 — как покупка алтаря): save_game().
+func _buy_consumable(id: String, it: Dictionary, slot: String) -> void:
+	var price := GearData.price(id)
+	var nm := String(it.get("name", id))
+	match slot:
+		"mat":
+			var mid := String(it.get("mat", id))
+			if GameState.mat_count(mid) >= GameState.MAT_CAP:
+				GameAudio.sfx("ui_deny")
+				GameState.toast.emit("%s: рюкзак полон (максимум %d)." % [GameState.mat_name(mid), GameState.MAT_CAP])
+				return
+			if not GameState.spend_gold(price):
+				GameAudio.sfx("ui_deny")
+				refresh()
+				return
+			GameState.add_material(mid)
+			Sfx.play("coin")
+			GameState.toast.emit("Куплено: %s (рюкзак: %d/%d)." % [GameState.mat_name(mid), GameState.mat_count(mid), GameState.MAT_CAP])
+		"charge":
+			if GameState.brewed_potions >= GameState.BREWED_CAP:
+				GameAudio.sfx("ui_deny")
+				# тот же текст, что у варки (alchemy.gd): «полно» — значит полно,
+				# куплено оно или сварено (пин равенства _t42).
+				GameState.toast.emit("Пояс полон: максимум %d крепких зелий." % GameState.BREWED_CAP)
+				return
+			if not GameState.spend_gold(price):
+				GameAudio.sfx("ui_deny")
+				refresh()
+				return
+			GameState.brewed_potions += 1
+			Sfx.play("coin")
+			GameState.toast.emit("Куплено: %s (заряд %d/%d)." % [nm, GameState.brewed_potions, GameState.BREWED_CAP])
+		"tool":
+			if not GameState.spend_gold(price):
+				GameAudio.sfx("ui_deny")
+				refresh()
+				return
+			# «факел из лавки» и «факел из крафта» — один предмет: тот же вызов
+			# add_torch(), что и у кузнечного ряда (пин равенства _t42).
+			GameState.add_torch()
+			Sfx.play("coin")
+			GameState.toast.emit("Куплено: %s (у тебя: %d)." % [nm, GameState.torches])
+		_:
+			push_warning("Shop: неизвестный расходник: %s" % id)
+			return
+	GameState.save_game()
+	refresh()
+
+## g13 (Г1.3): «сплету даром, печь моя» — работа Гриима бесплатна, берём одну
+## смолу Драна (15 зол., купленную ранее): факел-крафт дешевле готового ровно
+## на 10 (BALANCE). Первый сплетённый факел Гриим выдаёт репликой Г2
+## ("smith_torch", LINES_VILLAGE), дальше — молча. Флаг в q.* (гасится кругом,
+#  assert qa_q3 разрешает пространство имён q.).
+func _on_craft_torch() -> void:
+	if _external_lock():
+		return  # только под СОБСТВЕННЫМ lock лавки
+	if GameState.mat_count("smola") < 1:
+		GameAudio.sfx("ui_deny")
+		GameState.toast.emit("Гриим покачал головой: нужна смола. Дран торгует.")
+		return
+	GameState.try_spend_materials({"smola": 1})
+	GameState.add_torch()
+	GameState.save_game()  # трата смолы обязана пережить выход (P1)
+	Sfx.play("coin")
+	var first := str(GameState.flags.get("q.smith_forge", "")) != "1"
+	if first:
+		GameState.set_flag("q.smith_forge", "1")
+		close()  # лавка модальна: реплику Гриима читаем в освободившемся мире
+		var p := get_parent()
+		if p != null and p.has_method("start_dialogue"):
+			p.start_dialogue("smith_torch")
+	else:
+		GameState.toast.emit("Гриим молча сунул готовый факел (у тебя: %d)." % GameState.torches)
 	refresh()
 
 func _on_sell(slot: String) -> void:
@@ -558,11 +683,24 @@ func refresh() -> void:
 		var btn: Button = buy_btns[id]
 		var it := GearData.item(String(id))
 		var price := GearData.price(String(id))
-		var equipped := GearData.equipped_id(GameState, String(it.get("slot", ""))) == String(id)
+		var slot := String(it.get("slot", ""))
+		var consumable := slot in ["mat", "charge", "tool"]
+		var equipped: bool = not consumable \
+				and GearData.equipped_id(GameState, slot) == String(id)
 		btn.disabled = equipped
-		btn.text = "%s — %d зол.%s" % [String(it.get("name", id)), price, "  [надето]" if equipped else ""]
+		var tail := "  [надето]" if equipped else ""
+		if slot == "tool" and GameState.torches > 0:
+			tail = "  [у тебя: %d]" % GameState.torches
+		btn.text = "%s — %d зол.%s" % [String(it.get("name", id)), price, tail]
 		btn.tooltip_text = String(it.get("desc", ""))
 		btn.modulate = Color.WHITE if equipped or GameState.can_afford(price) else Color(0.6, 0.6, 0.66)
+	# g13: крафт-ряд кузницы (для чужих витрин скрыт _apply_vendor'ом).
+	if craft_btn != null and craft_head.visible:
+		var have := GameState.mat_count("smola")
+		craft_btn.disabled = have < 1
+		craft_btn.text = "Сплести факел — даром (смола: %d/нужно 1)" % have
+		craft_btn.tooltip_text = "Древко, тряпица, смола (Г1). Работа Гриима бесплатна: факел-крафт дешевле готового ровно на 10 зол."
+		craft_btn.modulate = Color.WHITE if have >= 1 else Color(0.6, 0.6, 0.66)
 	for slot in sell_btns:
 		var sbtn: Button = sell_btns[slot]
 		var gid := GearData.equipped_id(GameState, String(slot))

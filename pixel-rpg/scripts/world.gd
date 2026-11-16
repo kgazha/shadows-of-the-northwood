@@ -398,6 +398,18 @@ func _spawn_entities() -> void:
 		if c is Sprite2D:
 			(c as Sprite2D).modulate = Color(0.74, 0.94, 0.66)
 	uta.npc_id = "uta"
+	# g13 (Г1.5): отшельник Геральд за околицей — восточная дорога к выжженной
+	# арке (45,20), тайл (43,20) 'd' проходим, герой подходит с запада. Спрайт —
+	# живой утверждённый лист отшельника (assets/npc_hermit.png): setup под id
+	# "hermit" грузит его, затем npc_id меняется на "hermit_out" (пещерный
+	# Геральд живёт своим id и своей маршрутировкой talk("hermit") — пересечений
+	# нет: _find_npc ищет по деревне, пещерный узел в dungeon_zone). Новой
+	# графики не рисовалось (арт-закон соблюдён).
+	var hermit_out = npc_script.new()
+	village_zone.add_child(hermit_out)
+	hermit_out.add_to_group("ys_actor")
+	hermit_out.setup(self, "hermit", Vector2i(43, 20))
+	hermit_out.npc_id = "hermit_out"
 	var it_script := load("res://scripts/interactable.gd")
 	for e: Array in meta.get("herbs", []):
 		var herb = it_script.new()
@@ -1434,21 +1446,28 @@ func talk(id: String) -> void:
 			# «Трёх слаймов»; механика квеста не тронута. Квест молчит в речи
 			# Драна (герой глава 1 читает журнал), поэтому выдача сопровождается
 			# системным тостом — иначе «Трофеи со слаймов» непостижимы.
+			# g13 (Г1.5 «сделка»): за репликой открывается лавка Драна — смола
+			# за 15 и готовый факел за 25 (BALANCE строки 6–7). Д2 («цена,
+			# готовый факел») звучит, пока факела нет; с факелом — Д3 (повтор).
 			match GameState.slime_quest:
 				0:
 					start_dialogue("merchant", func():
 						GameState.slime_quest = 1
 						GameState.quest_changed.emit()
-						GameState.toast.emit("Задание: Трофеи со слаймов — цели в журнале (J)"))
+						GameState.toast.emit("Задание: Трофеи со слаймов — цели в журнале (J)")
+						Shop.open("merchant"))
 				1:
 					if GameState.slime_kills_circle >= 3:  # работа текущего круга (total — у ачивок)
 						start_dialogue("merchant_done", func():
 							GameState.slime_quest = 2
 							GameState.add_xp(30)  # урон теперь от класса/меча/амулета
 							GameState.add_gold(QuestsData.GOLD_QUEST_SLIMES)  # BALANCE строка 2 (g12)
-							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
+							GameState.quest_changed.emit()  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
+							Shop.open("merchant"))
+					elif GameState.torches == 0:
+						start_dialogue("merchant_progress", func(): Shop.open("merchant"))
 					else:
-						start_dialogue("merchant_progress")
+						start_dialogue("merchant_after", func(): Shop.open("merchant"))
 				_:
 					# Дран — имя и реакция на смерть босса (TEXT-AUDIT Б): один раз за
 					# круг после закрытия квеста и победы над Громом (key q.merchant_boss
@@ -1457,9 +1476,10 @@ func talk(id: String) -> void:
 					if GameState.boss_defeated and GameState.cave_state >= 2 \
 							and str(GameState.flags.get("q.merchant_boss", "")) != "1":
 						GameState.set_flag("q.merchant_boss", "1")
-						start_dialogue("merchant_boss", func(): start_dialogue("merchant_after"))
+						start_dialogue("merchant_boss", func():
+							start_dialogue("merchant_after", func(): Shop.open("merchant")))
 					else:
-						start_dialogue("merchant_after")
+						start_dialogue("merchant_after", func(): Shop.open("merchant"))
 		"hermit":
 			match GameState.cave_state:
 				0:
@@ -1495,15 +1515,27 @@ func talk(id: String) -> void:
 				FirstHint.I.show_hint("torch_smith", "Факел куёт Гриим: нужно его смола. Без огня в пещере не считаются шаги.")
 			start_dialogue("smith" if first_smith else "smith_repeat", func(): Shop.open())
 		"uta":
-			# g12: травница Ута (Г1.4 её варка — следующая проводка). Первая
-			# встреча круга — У1 + подсказка С3 (hint.herbalist, раз за сейв),
-			# далее У3. «Котёл греется у её дома» — У2 ждёт варочный хук Г1.4
-			# (dialogues_v2 "uta_brew").
+			# g12: травница Ута. Первая встреча круга — У1 + подсказка С3
+			# (hint.herbalist, раз за сейв), далее У3. g13 (Г1.4): после реплики
+			# открывается её прилавок — крепкое зелье за 30 (BALANCE строка 8;
+			# своя варка у котла бесплатна). У2 («первое зелье») вешает hud на
+			# первую успешную варку (hud._on_brew_pressed -> "uta_brew").
 			var first_uta := str(GameState.flags.get("q.uta_talked", "")) != "1"
 			GameState.set_flag("q.uta_talked", "1")
 			if first_uta and FirstHint.I != null:
 				FirstHint.I.show_hint("herbalist", "Вари у Уты: сухоцвет да жим. Котёл греется у её дома, деньги не нужны.")
-			start_dialogue("uta" if first_uta else "uta_repeat")
+			start_dialogue("uta" if first_uta else "uta_repeat", func(): Shop.open("uta"))
+		"hermit_out":
+			# g13 (Г1.5): отшельник Геральд ЗА ОКОЛИЦЕЙ — тот же Геральд, что
+			# позже встретит героя в пещере (лист LINES_VILLAGE, заметка 1,
+			# вариант «а»: встреча до беды). Первая встреча — Е1 (лор) + Е2
+			# (намёк на Пепелище) + Е3 (прощание) одной беседой; далее — Е3.
+			# Флаг q.* — круг перепроходит встречу (assert qa_q3 чист).
+			if str(GameState.flags.get("q.hermit_met", "")) != "1":
+				GameState.set_flag("q.hermit_met", "1")
+				start_dialogue("hermit_outside")
+			else:
+				start_dialogue("hermit_out_repeat")
 		_:
 			start_dialogue(id)
 
