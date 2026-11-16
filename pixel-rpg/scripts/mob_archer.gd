@@ -2,6 +2,10 @@ extends CharacterBody2D
 
 # 16.11: «усы» обхода стен (preload, не class_name — без import-кэша дома).
 const AVOID := preload("res://scripts/mob_avoid.gd")
+## 16.11 (агро через стены): память лучника о последнем видимом месте героя, с.
+const SEE_MEMORY := 2.0
+var _seen_t := 0.0
+var _seen_pos := Vector2.ZERO
 ## Лесокров-лучник: стрелок дальнего боя. Держит дистанцию 4–6 тайлов (64–96 px),
 ## при приближении героя ОТХОДИТ назад, стреляет через собственный снаряд (Arrow).
 ## Перед выстрелом — телеграф подготовки 0.7 с: подсветка силуэта, кадр «натянутый
@@ -130,10 +134,24 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 	_shot_cd(delta)
+	# 16.11 юзер-фикс (агро через стены): сближаемся только с актуальной прямой
+	# видимостью или памятью о последнем видимом месте; выстрел и так защищён
+	# _has_los — стрелок никогда не стрелял сквозь стены. Без видимости и без
+	# памяти — сторожит свой участок стоя.
+	var sees := AVOID.los(self, player.global_position)
+	if sees:
+		_seen_pos = player.global_position
+		_seen_t = SEE_MEMORY
+	elif _seen_t > 0.0:
+		_seen_t -= delta
 	if d > HOLD_MAX:
-		# 16.11 юзер-фикс: сближение через «усы» (mob_avoid.gd); отход — прямой,
-		# спина к цели не путается.
-		velocity = AVOID.steer(self, to_p.normalized() * SPEED_ADVANCE)
+		if sees or _seen_t > 0.0:
+			var goal := player.global_position if sees else _seen_pos
+			# 16.11 юзер-фикс: сближение через «усы» (mob_avoid.gd); отход — прямой,
+			# спина к цели не путается.
+			velocity = AVOID.steer(self, (goal - global_position).normalized() * SPEED_ADVANCE)
+		else:
+			velocity = Vector2.ZERO
 	elif d < HOLD_MIN:
 		# герой сел в плотную — отходим, стрелок в упор бессилен
 		velocity = -to_p.normalized() * SPEED_RETREAT

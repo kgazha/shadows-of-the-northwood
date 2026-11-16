@@ -2,6 +2,11 @@ extends CharacterBody2D
 
 # 16.11: «усы» обхода стен (preload, не class_name — без import-кэша дома).
 const AVOID := preload("res://scripts/mob_avoid.gd")
+## 16.11 (агро через стены): память Грома о последнем видимом месте героя, с.
+const SEE_MEMORY := 2.5
+## 16.11: последнее видимое место героя + таймер памяти (наследуются mob_boss2).
+var _seen_t := 0.0
+var _seen_pos := Vector2.ZERO
 ## Босс «Осквернённый гром» (boss=true) и «отпрыски гнили» (boss=false) —
 ## моб пещеры трёх ярусов, которых world.gd расставляет по глубине (CAVE_MOB_BANDS).
 ## Лист assets/brute.png — 64x32, два кадра 32x32.
@@ -273,18 +278,31 @@ func _physics_process(delta: float) -> void:
 			modulate = Color(1.15, 0.7, 0.55)
 		velocity = rush_dir * CHARGE_SPEED
 	else:
+		# 16.11 юзер-фикс (агро через стены): видим — помним место; не видим —
+		# бежим к последнему видимому ещё SEE_MEMORY с (Гром-memory умнее
+		# крысы), потом встаём и ждём. Бросок (rush) — только по актуально
+		# видимой цели: телеграф в стену не запускаем.
+		var sees := AVOID.los(self, player.global_position)
+		if sees:
+			_seen_pos = player.global_position
+			_seen_t = SEE_MEMORY
+		elif _seen_t > 0.0:
+			_seen_t -= delta
 		charge_t -= delta
-		if charge_cd > 0.0 and charge_t <= 0.0 and d > CHARGE_MIN_DIST:
+		if charge_cd > 0.0 and charge_t <= 0.0 and d > CHARGE_MIN_DIST and sees:
 			charge_t = charge_cd
 			rush_t = CHARGE_TIME
 			rush_dir = (player.global_position - global_position).normalized()
 			if boss:
 				GameState.toast.emit("Гром бросается вперёд — отходи!")
-		else:
+		elif sees or _seen_t > 0.0:
 			# 16.11 юзер-фикс: обычная погоня через «усы» — игрок за стеной не
 			# приговаривает моба к дрожи у камня (mob_avoid.gd). Рывок (rush_dir
 			# выше) остаётся прямым: телеграфированный бросок — честный щит.
-			velocity = AVOID.steer(self, (player.global_position - global_position).normalized() * speed)
+			var goal := player.global_position if sees else _seen_pos
+			velocity = AVOID.steer(self, (goal - global_position).normalized() * speed)
+		else:
+			velocity = velocity.move_toward(Vector2.ZERO, 140.0 * delta)  # потерял — стоит и ждёт
 	move_and_slide()
 	if fair:
 		_push_from_hero()

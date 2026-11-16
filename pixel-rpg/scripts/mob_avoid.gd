@@ -45,3 +45,11 @@ static func steer(body: Node2D, desired: Vector2) -> Vector2:
 static func _clear(body: Node2D, space: PhysicsDirectSpaceState2D, excl: Array[RID], dir: Vector2) -> bool:
 	var q := PhysicsRayQueryParameters2D.create(body.global_position, body.global_position + dir * PROBE, 2, excl)
 	return space.intersect_ray(q).is_empty()
+
+## 16.11 (второй юзер-фикс): прямая видимость. Агриться можно только на то, что
+## физически видно: луч от тела к цели по слою стен 2 пуст. Стена закрывает и
+## дистанцию, и лучнику (у того свой _has_los для выстрела был и раньше — теперь
+## и у сближения).
+static func los(from_body: Node2D, to: Vector2) -> bool:
+	var q := PhysicsRayQueryParameters2D.create(from_body.global_position, to, 2, [from_body.get_rid()])
+	return from_body.get_world_2d().direct_space_state.intersect_ray(q).is_empty()

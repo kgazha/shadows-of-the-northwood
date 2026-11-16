@@ -8,6 +8,9 @@ const CHASE_DIST := 48.0
 const HIT_DIST := 11.0
 const SPEED_CHASE := 40.0
 const SPEED_WANDER := 16.0
+## 16.11: сколько секунд слайм помнит последнее видимое место героя (агрома через
+## стену закрыта: без прямой видимости не агрится, с памятью — добегает до места).
+const SEE_MEMORY := 1.6
 ## Возобновляемый ресурс прокачки: слайм отрастает у дома через ~50 с.
 const RESPAWN := 50.0
 ## Дроп алхимических материалов: умеренный шанс (дефицит — ~4 слайма на материал).
@@ -35,6 +38,9 @@ var dying := false
 var respawn_t := 0.0
 var home := Vector2.ZERO
 var _shape: CollisionShape2D
+# 16.11 (агро через стены): последнее видимое место героя + таймер памяти.
+var _seen_t := 0.0
+var _seen_pos := Vector2.ZERO
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
 	world = p_world
@@ -98,8 +104,18 @@ func _physics_process(delta: float) -> void:
 		_push_from_hero()  # мёрзлый слайм тоже уступает место герою, не лежит под ним
 		return
 	var d := global_position.distance_to(world.player.global_position)
-	if d < CHASE_DIST:
-		dirv = (world.player.global_position - global_position).normalized()
+	# 16.11 юзер-фикс (агро через стены): агрим только на ВИДОЕ — прямой луч по
+	# стенам пуст (AVOID.los). Стену потерял — бежим к последнему видимому месту
+	# ещё SEE_MEMORY секунд, потом обычное блуждание. Призрака это не касается:
+	# он сквозь стены проходит и «видеть» стену ему незачем (канон шапки).
+	var sees := d < CHASE_DIST and AVOID.los(self, world.player.global_position)
+	if sees:
+		_seen_pos = world.player.global_position
+		_seen_t = SEE_MEMORY
+	elif _seen_t > 0.0:
+		_seen_t -= delta
+	if d < CHASE_DIST and _seen_t > 0.0:
+		dirv = ((world.player.global_position if sees else _seen_pos) - global_position).normalized()
 		# 16.11 юзер-фикс: преследование через «усы» — за стеной моб обходит
 		# камень, а не дрожит у него (mob_avoid.gd; призрак не подключён — его
 		# проход сквозь стены канон).

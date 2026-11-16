@@ -10,6 +10,8 @@ const AVOID := preload("res://scripts/mob_avoid.gd")
 ## на 4 ряда (вниз / влево / вправо / вверх).
 
 const LEASH := 56.0           # реакция только на героя рядом
+## 16.11 (агро через стены): память крысы о последнем видимом месте героя, с.
+const SEE_MEMORY := 1.0
 const HIT_DIST := 8.0
 const SPEED_CHASE := 54.0     # быстрее слайма: мелкий и юркий
 const SPEED_FLEE := 66.0      # испуганная крыса почти не догоняема
@@ -46,6 +48,9 @@ var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не кусает, синий тинт.
 var freeze_t := 0.0
 var wander_t := 0.0
+# 16.11 (агро через стены): последнее видимое место + таймер памяти.
+var _seen_t := 0.0
+var _seen_pos := Vector2.ZERO
 var wander_dir := Vector2.ZERO
 var flee_dir := Vector2.ZERO
 var home := Vector2.ZERO
@@ -181,10 +186,21 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 		return
 	if d < LEASH:
-		# 16.11 юзер-фикс: погоня через «усы» — мглокрыс обходит камень, а не
-		# упирается (mob_avoid.gd).
-		velocity = AVOID.steer(self, (player.global_position - global_position).normalized() * SPEED_CHASE)
-		if d < HIT_DIST:
+		# 16.11 юзер-фикс (агро через стены): без прямой видимости крыса не
+		# агрится; видела недавно — помнит место короткой памятью. Усы — из первой
+		# волны фикса (mob_avoid.gd).
+		var sees := AVOID.los(self, player.global_position)
+		if sees:
+			_seen_pos = player.global_position
+			_seen_t = SEE_MEMORY
+		elif _seen_t > 0.0:
+			_seen_t -= delta
+		if sees or _seen_t > 0.0:
+			var goal := player.global_position if sees else _seen_pos
+			velocity = AVOID.steer(self, (goal - global_position).normalized() * SPEED_CHASE)
+		else:
+			velocity = Vector2.ZERO  # потеряла из виду — стая сбивается, не летит сквозь камень
+		if d < HIT_DIST and sees:
 			player.take_damage(1, "swarmling")  # t20: kind убийцы для экрана смерти
 			bit_t = 0.25
 	else:
