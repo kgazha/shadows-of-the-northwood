@@ -3763,7 +3763,10 @@ func _t41() -> void:
 	while GameState.herbs < 3 and g < 12:
 		g += 1
 		for c in world.village_zone.get_children():
-			if String(c.get("kind")) == "herb" and not bool(c.get("used")):
+			# 16.11 (qa5-финиш): у детей зоны без поля kind get() даёт null, а
+			# String(null) — невалидный вызов, обрывавший остаток _t41. Дефолт ""
+			# возвращает секции скрытые проверки (счёт батареи честно подрастёт).
+			if String(c.get("kind", "")) == "herb" and not bool(c.get("used")):
 				GameState.combat_t = 0.0
 				c.try_interact()
 				await _frames(1)
