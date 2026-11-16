@@ -51,6 +51,18 @@ const YS_CYCLE := 4800.0         # шаг «этажей» зон == CAVE_OFFSET
 const YS_ACTOR_BIAS := 8         # t51 (16px-мир): стопа актёра ≈ +8 ниже центра ноды (узел в центре 16px-кадра)
 const YS_CANOPY_DIM_AT := 0.5    # крона «растворяется», когда закрывает >= 50% бокса героя (крона над героем)
 const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нависании (паттерн Glimpse/T3)
+# 16.11 (просьба пользователя «в лесу плохо видно врагов»): ореол прозрачности
+# вокруг героя. Крона, чей прямоугольник попадает в диск радиуса
+# YS_CANOPY_HALO_R от центра героя, плавно светлеет до YS_CANOPY_HALO_ALPHA
+# (внутри YS_CANOPY_HALO_IN — максимум). Это НАДСТРОЙКА над контрактом
+# нависания: случай «крона лежит на боксе героя >= YS_CANOPY_DIM_AT» считает
+# цель прежним способом (пины V-01/V-07 не тронуты), ореол добавляет цель
+# только там, где контракт молчал (крона рядом, но героя не касается — и
+# держит врага за собой как ширмой). Зоны без крон (пещера/Пепелище) — реестр
+# пуст, изменений ноль; масштаб zoom = 1 => пиксельные радиусы канонны.
+const YS_CANOPY_HALO_R := 88.0    # px от центра героя: внешняя граница ореола
+const YS_CANOPY_HALO_IN := 40.0   # px: внутри — полное растворение до HALO_ALPHA
+const YS_CANOPY_HALO_ALPHA := 0.45
 const YS_PROP_DIM_AT := 0.4      # t41: мелкий проп деревни димится, когда накрывает >= 40% бокса героя
                                  # (порог ниже крон: пропы мелкие, цель — hero visibility на тяжёлых тайлах)
 const YS_HUD_Z := 4000           # цифры урона поверх любой глубины: локальная y зон ≤ 480 << 4000 ≤ 4096
@@ -932,11 +944,24 @@ func _ys_update(delta: float) -> void:
 		if spr == null or spr.texture == null:
 			continue
 		var target := 1.0
+		var sz := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height())) * spr.get_global_transform().get_scale().abs()
+		var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
 		if spr.z_index > hz:  # крона над героем (южнее — герой сам поверх, дим не нужен)
-			var sz := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height())) * spr.get_global_transform().get_scale().abs()
-			var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
 			if cr.intersects(hr) and cr.intersection(hr).get_area() / maxf(hr.get_area(), 1.0) >= YS_CANOPY_DIM_AT:
 				target = YS_CANOPY_DIM_ALPHA
+		if target >= 1.0:
+			# ореол 16.11: крона не лежит на герое, но стоит в диске вокруг —
+			# растворяем пропорционально близости, чтобы видеть врагов за ней.
+			# Гейт z_index>hz НЕ ставим: крона может быть ниже героя по глубине
+			# и всё ещё держать врага-северянина за собой ширмой (её z выше z
+			# врага — рисуются в правильном порядке, но врага не видно).
+			# Диск считаем по ближайшей точке прямоугольника к центру героя.
+			var np := Vector2(clampf(player.global_position.x, cr.position.x, cr.end.x),
+					clampf(player.global_position.y, cr.position.y, cr.end.y))
+			var d := player.global_position.distance_to(np)
+			if d < YS_CANOPY_HALO_R:
+				var k := clampf((d - YS_CANOPY_HALO_IN) / maxf(YS_CANOPY_HALO_R - YS_CANOPY_HALO_IN, 1.0), 0.0, 1.0)
+				target = lerpf(YS_CANOPY_HALO_ALPHA, 1.0, k * k)
 		var a := spr.modulate.a
 		# плавное растворение; в покое (вдали) — ровно 1.0, без «хвоста» лерпа
 		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
