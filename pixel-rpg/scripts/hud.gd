@@ -23,6 +23,13 @@ const PORTRAITS2_INDEX := {"hermit": 0}
 const PORTRAIT_SLOT := 48  # фикс. ширина слота портрета в окне диалога, px
 
 const SLOT := 28.0  # размер слота иконки скилла
+# g17 (TALENT_PROCS, утверждено 16.11): импульс прока по кнопке скилла —
+# 0.6 с = две вспышки янтарного контура (+2 px вокруг иконки) каждые 0.3 с.
+# Только функция времени (_process); сам прок не аллоцирует узлов.
+const PROC_PULSE := 0.6   # общая длительность импульса
+const PROC_HALF := 0.3    # период вспышки (две за импульс)
+const PROC_FLASH := 0.08  # окно вспышки внутри периода (~2 кадра на 60 fps)
+const PROC_AMBER := Color(1.0, 0.72, 0.3, 0.95)  # янтарь проков (t18-дисциплина)
 
 var world: Node2D
 var hp_bg: ColorRect            # полоска здоровья (вместо сердец)
@@ -66,7 +73,9 @@ var dlg_slot: Control           # фикс. отступ текста: слот 
 # --- спринт 2 ---
 var skill_atlas_tex: Texture2D   # t52: код-атлас UiIcons (12 слотов 16 px)
 var skill_panel: PanelContainer
-var skill_slots: Array = []     # словари {root, icon, cd, lvl_lbl}
+var skill_slots: Array = []     # словари {root, icon, cd, lvl_lbl, ring}
+# g17: таймеры импульса прока на слот (тикают в _process, не узлы).
+var _proc_t: Array = [0.0, 0.0, 0.0, 0.0]
 var potion_btn: Button          # зелье из трав (Q)
 var marker: Polygon2D           # стрелка к цели квеста
 var marker_t := 0.0
@@ -320,6 +329,16 @@ func _process(delta: float) -> void:
 	_refresh_hotbar_gate()
 	_update_skill_states()
 	_update_camp_ui()
+	# g17: импульс контура прока — функция времени: elapsed = PROC_PULSE - t,
+	# две вспышки по PROC_FLASH за импульс (окна по elapsed, край 0 — кадр casts).
+	# Hitstop (до ~0.1 с) слегка растягивает вспышку — синхронно с ударом, осознанно.
+	for i in _proc_t.size():
+		if _proc_t[i] > 0.0:
+			_proc_t[i] = maxf(0.0, _proc_t[i] - delta)
+			if i < skill_slots.size():
+				var ring: ColorRect = skill_slots[i]["ring"]
+				var el: float = PROC_PULSE - float(_proc_t[i])
+				ring.visible = _proc_t[i] > 0.0 and fmod(el, PROC_HALF) < PROC_FLASH
 	#_update_marker(delta)  # t19 (P0-2Б): стрелка цели переехала в мировой слой quest_marker.gd
 	# (указание капитана: на время t23 hud.gd не трогать). Больше сюда не возвращать.
 	# t18: импульс красной виньетки урона — в РЕАЛЬНОМ времени (Time.get_ticks_msec):
@@ -605,6 +624,17 @@ func _build_skill_panel(th: Theme) -> void:
 	for i in 4:
 		var sc := Control.new()
 		sc.custom_minimum_size = Vector2(SLOT, SLOT)
+		# g17: янтарный «контур» прока — подложка на +2 px к иконке со всех
+		# сторон, лежит ПОД иконкой (её прозрачные поля выпускают янтарь
+		# рамкой). Одна статичная ColorRect на слот — создана на билде, а не
+		# на прок; показывает/гасит её только _process (функция времени).
+		var ring := ColorRect.new()
+		ring.color = PROC_AMBER
+		ring.position = Vector2.ZERO
+		ring.size = Vector2(SLOT, SLOT)
+		ring.visible = false
+		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sc.add_child(ring)
 		# Иконка и шторка КД делят ОДИН прямоугольник (2,2,24,24): scale-трюк для
 		# TextureRect съезжал относительно ColorRect — кулдаун «жил рядом» с иконкой.
 		var icon := TextureRect.new()
@@ -651,7 +681,7 @@ func _build_skill_panel(th: Theme) -> void:
 		hot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		sc.add_child(hot)
 		hb.add_child(sc)
-		skill_slots.append({"root": sc, "icon": icon, "cd": cdc, "cdn": cdnum, "lvl": lvl, "hot": hot})
+		skill_slots.append({"root": sc, "icon": icon, "cd": cdc, "cdn": cdnum, "lvl": lvl, "hot": hot, "ring": ring})
 	skill_panel.theme = th
 	if ui_frame_tex != null:
 		skill_panel.add_theme_stylebox_override("panel", _ui_frame_style(4.0))
@@ -913,6 +943,36 @@ func _on_skill_slot_input(event: InputEvent, i: int) -> void:
 		GameAudio.sfx("ui_click")
 		if world != null and world.player != null:
 			world.player.cast_skill(i, world.get_global_mouse_position())
+
+## g17 (TALENT_PROCS, утверждено 16.11): сработал прок скилла слота i — янтарный
+## сигнал: две вспышки контура вокруг кнопки (0.6 с, окна считает _process —
+## функция времени, узлы на прок не плодятся) + три живучих искорки «+» над
+## иконкой (прецедент _spark в player.gd: твин гасит и освобождает сам).
+## modulate иконки не трогаем — импульс не конфликтует с подсветками
+## готовности/запрета, которые висят именно на modulate.
+func proc_fx(i: int) -> void:
+	if i < 0 or i >= skill_slots.size():
+		return
+	_proc_t[i] = PROC_PULSE
+	var slot: Dictionary = skill_slots[i]
+	(slot["ring"] as ColorRect).visible = true  # кадр 0 — начало первой вспышки
+	var root: Control = slot["root"]
+	for k in 3:
+		var s := Label.new()
+		s.name = "ProcSpark%d" % k  # уникальные имена: Godot переименовывает дубли-соседей в «@Label@N»
+		s.text = "+"
+		s.add_theme_font_size_override("font_size", 8)
+		s.add_theme_color_override("font_color", PROC_AMBER)
+		s.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		s.add_theme_constant_override("outline_size", 2)
+		s.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		s.position = Vector2(SLOT * 0.5 - 2.0 + float(k - 1) * 8.0, -2.0)
+		root.add_child(s)
+		var t := s.create_tween()
+		t.set_parallel(true)
+		t.tween_property(s, "position:y", s.position.y - 9.0, 0.5)
+		t.tween_property(s, "modulate:a", 0.0, 0.5)
+		t.chain().tween_callback(s.queue_free)
 
 func _on_leveled_up(lv: int) -> void:
 	Sfx.play("levelup")  # t31: тёплое G-C-G вместо чиптюн-фанфары

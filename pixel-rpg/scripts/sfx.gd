@@ -70,8 +70,10 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	_streams = SfxCatalog.build_all()
 	_gen_ms = Time.get_ticks_msec() - t0
-	# Пул = один плеер + один голосовой слот на ключ каталога (15): все аллокации
-	# здесь, в кадре не рождается ничего (см. также удалённую const POOL выше).
+	# Пул = один плеер + один голосовой слот на ключ каталога (счёт по KEYS —
+	# добавление ключа не требует правки здесь; g17: 16-й ключ proc_chime):
+	# все аллокации здесь, в кадре не рождается ничего (см. также удалённую
+	# const POOL выше).
 	for i in SfxCatalog.KEYS.size():
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"

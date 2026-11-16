@@ -217,3 +217,37 @@ func _hud_checks() -> void:
 	await _frames(2)
 	_chk("h4_modal_hides_hotbar", hidden_modal and hud.skill_panel.visible,
 		"модалка: скрыт=%s, после закрытия виден=%s" % [hidden_modal, hud.skill_panel.visible])
+
+	# --- g17 (TALENT_PROCS): сигнал прока скилла — янтарный контур +2 px,
+	#     две вспышки за 0.6 с (функция времени), три искорки «+», modulate не тронут ---
+	var slot0: Dictionary = hud.skill_slots[0]
+	var ring: ColorRect = slot0["ring"]
+	var icon0: Control = slot0["icon"]
+	var sparks0 := 0
+	for c0 in (slot0["root"] as Control).get_children():
+		if String(c0.name).begins_with("ProcSpark"):
+			sparks0 += 1
+	_chk("g1_ring_prebuilt", ring.size == Vector2(28, 28) and ring.position == Vector2.ZERO \
+			and icon0.position == Vector2(2, 2) and not ring.visible,
+		"кольцо создано на билде: (0,0)+28 = иконка(2,2)+24 +2 px с каждой стороны, скрыто")
+	hud.proc_fx(0)
+	var sparks1 := 0
+	for c1 in (slot0["root"] as Control).get_children():
+		if String(c1.name).begins_with("ProcSpark"):
+			sparks1 += 1
+	var first_visible := ring.visible  # кадр 0 — вспышка сразу, без лага
+	# форма импульса: прокручиваем время вручную шагами 0.025 с — детерминированно
+	var vis_seq: Array = []
+	for _step in 24:
+		vis_seq.append(ring.visible)
+		hud._process(0.025)
+	var rising := 0
+	for k in vis_seq.size():
+		if vis_seq[k] and (k == 0 or not vis_seq[k - 1]):
+			rising += 1
+	_chk("g2_pulse_lifetime", first_visible and hud._proc_t[0] <= 0.0 and not ring.visible,
+		"proc_fx: кадр0 видно, после 0.6 с таймер %.3f и кольцо скрыто" % float(hud._proc_t[0]))
+	_chk("g3_two_flashes", rising == 2, "за импульс ровно %d вспышки контура (ждём 2, окно по 0.08 с)" % rising)
+	_chk("g4_three_sparks", sparks1 - sparks0 == 3, "искорок «+» над иконкой завелось: %d" % (sparks1 - sparks0))
+	_chk("g5_ready_no_conflict", icon0.modulate == Color.WHITE,
+		"modulate иконки белый — импульс не воюет с подсветками готовности/замка")

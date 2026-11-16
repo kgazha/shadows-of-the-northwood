@@ -16,6 +16,7 @@ func _ready() -> void:
 	r4_ash_retention_band()
 	r5_volkhv_blessing()
 	r8_master_x15()
+	r9_procs()
 	r7_infra_pins()
 	await get_tree().process_frame
 	await r6_death_screen()
@@ -218,7 +219,7 @@ func r6_death_screen() -> void:
 	for c in rs.board.rows_box.get_children():
 		if not c.is_queued_for_deletion():  # пересборка рядов делает queue_free старых
 			brows.append(c)
-	check("t27: рядов доски ровно 4 (факт=%d)" % brows.size(), brows.size() == MetaBoard.TALENTS.size())
+	check("t27: рядов доски ровно по таблице (%d) (факт=%d)" % [MetaBoard.TALENTS.size(), brows.size()], brows.size() == MetaBoard.TALENTS.size())
 	for i in mini(brows.size(), MetaBoard.TALENTS.size()):
 		var t: Dictionary = MetaBoard.TALENTS[i]
 		var trow := brows[i] as PanelContainer
@@ -392,10 +393,54 @@ func r7_infra_pins() -> void:
 				if ash_img.get_pixel(xx, yy).a > 0.0:
 					ash_ink += 1
 	check("R7: код-иконка пепла непустая (непрозрачных пикселей %d > 0)" % ash_ink, ash_ink > 0)
-	check("R7: доска — 4 таланта", MetaBoard.TALENTS.size() == 4)
+	check("R7: доска — 6 талантов (4 вечных и 2 таланта-прока, g17)", MetaBoard.TALENTS.size() == 6)
 	var ok := true
 	for t in MetaBoard.TALENTS:
 		var vals: Array = t["vals"]
 		if String(t["id"]) == "" or vals.size() != 3:
 			ok = false
 	check("R7: каждый талант — id + ровно 3 значения рангов", ok)
+
+# --- R9: g17 «таланты-проки» — семейство доски, цены 2/3/5, покупка, NG+-смерть ----
+
+func r9_procs() -> void:
+	mk({"flags": flags_with({"meta.ash": 20})})
+	var bf := "boar_fang"
+	var ta := "twisted_arrow"
+	check("R9: доска — 6 талантов: 4 вечных + 2 прока",
+		MetaBoard.TALENTS.size() == 6 and MetaBoard.proc_ids() == [bf, ta])
+	check("R9: цены проков 2/3/5 (вечные сохраняют [2,5,9] и прежнюю сигнатуру next_cost(rank))",
+		MetaBoard.next_cost(0, bf) == 2 and MetaBoard.next_cost(1, bf) == 3
+			and MetaBoard.next_cost(2, bf) == 5 and MetaBoard.next_cost(3, bf) == -1
+			and MetaBoard.next_cost(1) == 5 and MetaBoard.next_cost(2, "coal_heart") == 9)
+	check("R9: таблица шансов проков 20/30/40 (ранг 0 -> 0)",
+		MetaBoard.value_at_rank(1, bf) == 20 and MetaBoard.value_at_rank(2, ta) == 30
+			and MetaBoard.value_at_rank(3, bf) == 40 and MetaBoard.value_at_rank(0, ta) == 0)
+	# «семейство в советнице по купленному пеплу»: каждый ранг списывает свою цену
+	check("R9: «Клык вепря» ранг 1 списывает 2 (баланс 18)", MetaBoard.buy(bf) and Ash.balance() == 18)
+	check("R9: «Клык вепря» ранг 2 списывает 3 (баланс 15)", MetaBoard.buy(bf) and Ash.balance() == 15)
+	check("R9: «Клык вепря» ранг 3 списывает 5 (баланс 10)", MetaBoard.buy(bf) and Ash.balance() == 10)
+	check("R9: за капом отказ, деньги целы", not MetaBoard.buy(bf) and Ash.balance() == 10)
+	check("R9: «Скрученная стрела» ранг 1 за 2 (баланс 8)", MetaBoard.buy(ta) and Ash.balance() == 8)
+	check("R9: ранг живёт в meta.mb.<id> (вечный слой: покупка на экране смерти обязана дожить до забега)",
+		int(GameState.flags.get("meta.mb." + bf, -1)) == 3 and int(GameState.flags.get("meta.mb." + ta, -1)) == 1)
+	# t46-паттерн «до/после»: смерть прок НЕ ест (иначе продажа доски бессмысленна),
+	# NG+ стирает проки вместе с ветвями — без исключений.
+	GameState.flags["meta.mb.coal_heart"] = 2
+	GameState.start_new_run()
+	check("R9: смерть круга — проки уцелели (канон продажи доски)",
+		MetaBoard.rank_of(bf) == 3 and MetaBoard.rank_of(ta) == 1)
+	GameState.start_ng_plus()
+	check("R9: NG+ — проки стёрты без исключений",
+		MetaBoard.rank_of(bf) == 0 and MetaBoard.rank_of(ta) == 0
+			and not GameState.flags.has("meta.mb." + bf) and not GameState.flags.has("meta.mb." + ta))
+	check("R9: NG+ — вечная четвёрка цела (чистка точечная, не вся доска)",
+		MetaBoard.rank_of("coal_heart") == 2)
+	# пин «аудиозапись в реестре»: прок-клавесин зарегистрирован и собирается
+	check("R9: «прок-клавесин» записан в кодоген-реестре (KEYS+GAIN)",
+		SfxCatalog.KEYS.has("proc_chime") and SfxCatalog.GAIN.has("proc_chime"))
+	var pw := SfxCatalog.build("proc_chime")
+	check("R9: «прок-клавесин» собирается в настоящий буфер (dur=%.2f c, байт=%d)" % [
+			pw.get_length(), pw.data.size()],
+		pw != null and pw.format == AudioStreamWAV.FORMAT_16_BITS and not pw.stereo
+			and pw.mix_rate == 22050 and pw.get_length() >= 0.3)

@@ -4,7 +4,8 @@ extends CanvasLayer
 ## смерть: сохраняется 60–70% заработанного, см. game_state.gd::start_new_run).
 ## Вход — ТОЛЬКО с экрана смерти (кнопка «Доска пепла» в RunSummary): покупка
 ## между забегами, эффекты применяются к новому забегу (хуки: _wipe_circle/recalc
-## _max_hp/player speed/loot gold). 4 таланта × 3 ранга, цены [2,5,9] пепла.
+## _max_hp/player speed/loot gold). 4 вечных таланта × 3 ранга цены [2,5,9];
+## g17 — ещё 2 прока (proc:true, цены [2,3,5]), их стирает NG+.
 ##
 ## Ввод: доска НЕ владеет input_locked — лок держит RunSummary (доска стоит
 ## поверх неё, layer=7). Esc маршрутизирует RunSummary: сначала закрыть доску,
@@ -19,13 +20,24 @@ static var I: MetaBoard          # синглтон; назначает сам �
 const KEY_PREFIX := "meta.mb."
 ## Цены рангов 1/2/3 в Пепле (порог входа низкий: 1 смерть круга ≈ 2 угля).
 const COSTS := [2, 5, 9]
+## g17 (TALENT_PROCS, утверждено 16.11): цены проков — дешевле вечных, потому
+## что NG+ стирает проки вместе с ветвями живых талантов (покупать заново).
+const PROC_COSTS := [2, 3, 5]
 ## Таблица талантов: vals — числовой эффект ранга 1/2/3 (единственный источник
-## чисел и для хуков (GameState.mb_value), и для UI).
+## чисел и для хуков (GameState.mb_value), и для UI). proc:true — талант-прок:
+## NG+ обнуляет его (game_state.gd::start_ng_plus чистит proc_ids(), исключений
+## нет), смерть круга — нет: прок куплен на ЭКРАНЕ СМЕРТИ и обязан служить
+## купившему его забегу (канон продажи доски; вайп tal.* при «Вспыхнуть заново»
+## сжёг бы покупку в тот же кадр).
 const TALENTS := [
 	{"id": "first_coal",   "name": "Первые угли",     "vals": [15, 30, 50], "fmt": "+%d зол. в начале забега"},
 	{"id": "coal_heart",   "name": "Углевое сердце",  "vals": [4, 8, 12],   "fmt": "+%d к макс. HP"},
 	{"id": "ash_step",     "name": "Пепельная поступь", "vals": [4, 8, 12],  "fmt": "+%d%% к скорости хода"},
 	{"id": "deep_pockets", "name": "Глубокие карманы", "vals": [8, 16, 24],  "fmt": "+%d%% золота с мобов"},
+	{"id": "boar_fang",    "name": "Клык вепря",      "vals": [20, 30, 40], "costs": PROC_COSTS, "proc": true,
+		"fmt": "%d%% — второй слэш на посадке рывка и стан +0.5 c (Р3 — и второго врага)"},
+	{"id": "twisted_arrow", "name": "Скрученная стрела", "vals": [20, 30, 40], "costs": PROC_COSTS, "proc": true,
+		"fmt": "%d%% — «Дождь стрел» роняет двойную стрелу (Р3 — всегда двойной)"},
 ]
 
 var root: Control                # полноэкранный корень; visible = «открыта»
@@ -87,11 +99,29 @@ static func value_at_rank(rank: int, id: String) -> int:
 			return int(vals[rank - 1])
 	return 0
 
-## Цена следующего ранга (ранг 0->2, 1->5, 2->9); после капа — -1.
-static func next_cost(rank: int) -> int:
-	if rank < 0 or rank >= COSTS.size():
+## Цены конкретного таланта: у вечной четвёрки — глобальные COSTS [2,5,9],
+## у проков — свои costs (g17: [2,3,5]). Источник — таблица, не ветвление по id.
+static func costs_of(id: String) -> Array:
+	for t in TALENTS:
+		if String(t["id"]) == id:
+			return t.get("costs", COSTS)
+	return COSTS
+
+## Идентификаторы проков (proc:true) — для точечной очистки в NG+ без хардкода.
+static func proc_ids() -> Array:
+	var out: Array = []
+	for t in TALENTS:
+		if bool(t.get("proc", false)):
+			out.append(String(t["id"]))
+	return out
+
+## Цена следующего ранга (ранг 0->первая, 1->вторая, 2->третья); после капа — -1.
+## Без id — классические [2,5,9] (прежняя сигнатура жива для хуков и QA-пинов).
+static func next_cost(rank: int, id := "") -> int:
+	var costs: Array = costs_of(id)  # пустой id не найден в таблице -> COSTS
+	if rank < 0 or rank >= costs.size():
 		return -1
-	return int(COSTS[rank])
+	return int(costs[rank])
 
 ## Купить следующий ранг: известность id -> кап ранга -> Ash.spend -> флаг -> сейв.
 ## Возвращает true, если покупка состоялась. Неизвестный id — отказ (деньги не тратятся).
@@ -103,9 +133,9 @@ static func buy(id: String) -> bool:
 	if not known:
 		return false
 	var r := rank_of(id)
-	if r >= COSTS.size():
+	if r >= costs_of(id).size():
 		return false
-	var cost := next_cost(r)
+	var cost := next_cost(r, id)
 	if cost <= 0 or not Ash.spend(cost):  # spend сам проверяет баланс и сохраняет
 		return false
 	GameState.flags[KEY_PREFIX + id] = r + 1
@@ -231,6 +261,7 @@ func _invalidate_row(c: Node) -> void:
 func _add_row(t: Dictionary) -> void:
 	var id := String(t["id"])
 	var r := rank_of(id)
+	var costs: Array = costs_of(id)  # g17: вечные [2,5,9], проки [2,3,5]
 	var row := PanelContainer.new()
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 6)
@@ -242,7 +273,7 @@ func _add_row(t: Dictionary) -> void:
 	var name_lbl := Label.new()
 	# точки ранга: ● куплен, ○ свободен (3 гнезда)
 	var dots := ""
-	for i in COSTS.size():
+	for i in costs.size():
 		dots += "●" if i < r else "○"
 	name_lbl.text = "%s  %s" % [String(t["name"]), dots]
 	name_lbl.add_theme_color_override("font_color", Color(0.92, 0.87, 0.75))
@@ -250,17 +281,17 @@ func _add_row(t: Dictionary) -> void:
 	var eff := Label.new()
 	eff.add_theme_font_size_override("font_size", 8)  # t27 P1-1: мин. ступень 7 -> 8
 	eff.add_theme_color_override("font_color", Color(0.7, 0.66, 0.58))
-	if r < COSTS.size():
+	if r < costs.size():
 		eff.text = String(t["fmt"]) % int((t["vals"] as Array)[r])
 	else:
 		eff.text = "Максимум"
 	col.add_child(eff)
 	var btn := Button.new()
-	if r >= COSTS.size():
+	if r >= costs.size():
 		btn.text = "Макс."
 		btn.disabled = true
 	else:
-		var cost := next_cost(r)
+		var cost := next_cost(r, id)
 		btn.text = "Ранг %d — %d пепла" % [r + 1, cost]
 		btn.disabled = Ash.balance() < cost
 		# t32: кнопка носит ранг, под которым её нарисовали, — обработчик сверяет
