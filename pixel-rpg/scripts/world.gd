@@ -1095,7 +1095,7 @@ func drink_potion() -> void:
 		GameState.toast.emit("Трав нет. Собери их у кустов (E).")
 		return
 	if GameState.hp >= GameState.max_hp:
-		GameState.toast.emit("Ты и так здрав.")
+		GameState.toast.emit("Ты и так здоров.")
 		return
 	GameState.herbs -= 1
 	Achv.on_herb_drunk()  # ачивка «Травник» (achv.gd §2 #11)

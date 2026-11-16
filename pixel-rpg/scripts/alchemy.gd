@@ -77,7 +77,7 @@ static func drink_brewed() -> bool:
 		GameState.toast.emit("Крепких зелий нет. Вари у костра.")
 		return false
 	if GameState.hp >= GameState.max_hp:
-		GameState.toast.emit("Ты и так здрав.")
+		GameState.toast.emit("Ты и так здоров.")
 		return false
 	GameState.brewed_potions -= 1
 	var _hp0 := GameState.hp  # heal-число = реально восстановленные HP (не «+6» при долечивании до потолка)
