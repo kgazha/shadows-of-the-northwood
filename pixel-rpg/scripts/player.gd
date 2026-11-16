@@ -58,6 +58,7 @@ var boar_from := Vector2.ZERO
 var boar_dest := Vector2.ZERO
 var boar_target: Node2D = null      # цель на старте; валидность проверяем на приземлении
 var boar_dust := 0                  # сколько промежуточных пылей шлейфа выпущено
+var boar_mid := Vector2.ZERO        # w3fix: точка у стены для «скольжения»; ZERO — один сегмент
 # --- скиллы ---
 var skill_cd := [0.0, 0.0, 0.0, 0.0]  # НЕ сериализуются
 var pending_mult := 1.0               # «Мощный удар»: множитель следующего мили-удара
@@ -675,9 +676,21 @@ func _boar_dash(t: Node2D) -> void:
 	var dest := t.global_position - dir * BOAR_DASH_STOP
 	var q := PhysicsRayQueryParameters2D.create(from, dest, 2, [get_rid()])
 	var hit := get_world_2d().direct_space_state.intersect_ray(q)
+	boar_mid = Vector2.ZERO
 	if not hit.is_empty():
 		# встать до стены с маржой 5 px (у ray-результата нет distance — мерим до point)
-		dest = from + dir * maxf(0.0, from.distance_to(hit["position"]) - 5.0)
+		var contact := from + dir * maxf(0.0, from.distance_to(hit["position"]) - 5.0)
+		# w3fix: упор в стену не гасит рывок — пробуем скольжение вдоль стены к цели
+		var slide := _slide_endpoint(from, contact, hit.get("normal", Vector2.ZERO), dir, t)
+		var thr := 13.0 + _enemy_size(t) * 0.5  # порог мили ровно как в _boar_land
+		if slide.distance_to(t.global_position) <= thr:
+			boar_mid = contact
+			dest = slide               # скольжение доводит до мили — бьём
+		elif slide != contact:
+			boar_mid = contact
+			dest = slide               # ближе, но не в мили: приземление + тост
+		else:
+			dest = contact             # скольжение не помогает: прежнее короткое приземление
 	boar_from = from
 	boar_dest = dest
 	boar_target = t
@@ -689,13 +702,14 @@ func _boar_dash(t: Node2D) -> void:
 	_ghost_t = 0.0
 	Fx.dust(from, world)
 
-## Кадры полёта: позиция по заранее посчитанному ray-маршруту (ease-out),
-## шлейф из 2 промежуточных пылей; по окончании — финиш-хэндлер.
+## Кадры полёта: позиция по заранее посчитанному маршруту (ease-out) — один
+## сегмент or «у стены -> вдоль стены» (boar_mid), шлейф из 2 промежуточных
+## пылей; по окончании — финиш-хэндлер.
 func _boar_step(delta: float) -> void:
 	boar_t = maxf(0.0, boar_t - delta)
 	var p := clampf(1.0 - boar_t / BOAR_DASH_TIME, 0.0, 1.0)
 	var e := 1.0 - (1.0 - p) * (1.0 - p)  # квадратичный ease-out: резкий старт, посадка
-	global_position = boar_from.lerp(boar_dest, e)
+	global_position = _boar_path_point(e)
 	velocity = Vector2.ZERO
 	_ghost_tick(delta)  # t18: шлейф «маха лапой» в полёте
 	if boar_dust < 2 and p >= 0.34 * float(boar_dust + 1):
@@ -704,6 +718,51 @@ func _boar_step(delta: float) -> void:
 	if boar_t <= 0.0:
 		global_position = boar_dest
 		_boar_land()
+
+## Точка маршрута r∈[0..1] по ДЛИНЕ пути: from->mid->dest (боулинговый «съём
+## со стены»), либо from->dest при boar_mid == ZERO. Пропорция — по длине
+## сегментов, скорость вдоль пути равномерная (ease уже в r).
+func _boar_path_point(r: float) -> Vector2:
+	if boar_mid == Vector2.ZERO:
+		return boar_from.lerp(boar_dest, r)
+	var l1 := boar_from.distance_to(boar_mid)
+	var l2 := boar_mid.distance_to(boar_dest)
+	var total := l1 + l2
+	if total <= 0.001:
+		return boar_dest
+	var s := total * r
+	if s <= l1:
+		return boar_from.lerp(boar_mid, s / l1 if l1 > 0.001 else 1.0)
+	return boar_mid.lerp(boar_dest, minf(1.0, (s - l1) / maxf(l2, 0.001)))
+
+## t18/w3fix: при упоре в стену рывок НЕ гаснет в ноль — считаем «скольжение»
+## вдоль стены к цели. Касательные: ±перпендикуляр нормали луча (нормаль
+## тайлмапа бывают вырожденными — тогда перпендикуляр направления). Для каждой
+## — ray от точки у стены; кандидат берём только если он реально ближе к цели,
+## чем прямое упорное приземление. Стена со всех сторон по-прежнему стена:
+## сквозь не проходим, срабатывает прежний «Стена помешала рывку».
+const BOAR_SLIDE_MAX := 40.0   # предел скольжения вдоль стены, px (коридоры пещеры 16-32)
+const BOAR_SLIDE_MARGIN := 4.0 # маржа от стены на втором сегменте, px (первый — 5)
+
+func _slide_endpoint(from: Vector2, contact: Vector2, n: Vector2, dir: Vector2, t: Node2D) -> Vector2:
+	var base_tan := n.orthogonal() if n.length_squared() > 0.0001 else dir.orthogonal()
+	var best := contact
+	var best_d := contact.distance_to(t.global_position)
+	for sgn in [1.0, -1.0]:
+		var tan: Vector2 = base_tan * sgn
+		if tan.dot(t.global_position - contact) <= 0.0:
+			continue  # скользим только в сторону цели
+		var want := minf(BOAR_SLIDE_MAX, contact.distance_to(t.global_position))
+		var q := PhysicsRayQueryParameters2D.create(contact, contact + tan * want, 2, [get_rid()])
+		var hit2 := get_world_2d().direct_space_state.intersect_ray(q)
+		var ep: Vector2 = contact + tan * want
+		if not hit2.is_empty():
+			ep = contact + tan * maxf(0.0, contact.distance_to(hit2["position"]) - BOAR_SLIDE_MARGIN)
+		var d2 := ep.distance_to(t.global_position)
+		if d2 < best_d - 1.0:  # лучше минимум на пиксель, иначе не усложняем путь
+			best_d = d2
+			best = ep
+	return best
 
 ## Приземление: только здесь стан/удар/тосты — семантика прежняя, но «не бьём
 ## в полёте». Кулдаун потрачен на старте каста (канон) и в полёте не возвращается.
