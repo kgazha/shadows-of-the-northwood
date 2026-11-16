@@ -363,12 +363,49 @@ func _build_walls() -> void:
 				continue
 			if idx in BLOCKING:
 				var spec: Array = BLOCK_SHAPES.get(idx, [TILE, TILE, 0, 0])
+				# t58 (диагноз t56, P0 «персонаж застрял в лесу»). Силуэтный коллайдер
+				# ствола «t» — 6×6, валуна «r» — 11×10. У ДВУХ соседних блокирующих
+				# клеток просвет между силуэтами = 10 px ровно при ширине бокса героя
+				# 10 px (запас ноль), у валунов — 5 px: герой втискивался в такую щель,
+				# цеплял углы стволов (до 21 кадра нулевого смещения на диагонали) и
+				# «застревал»; сохранение в этой точке давало «оказался на входе»,
+				# потому что клетка считается стеновой (_pos_walkable=false).
+				# Принятая планировка леса (d07c86a: 25 кластеров с проходами >=2
+				# тайла) и золотой md5 карты не трогаются: массу (клетку, у которой
+				# есть блокирующий сосед по СТОРОНЕ; диагональ не в счёт — через неё
+				# герой проходит, а не застревает) закрываем коллайдером на
+				# всю клетку, т.е. кластер/кадровый пояс леса становится глухим телом
+				# вместо гребёнки из стволов. Проходы МЕЖДУ кластерами (>=2 клетки =
+				# 32 px) и одиночные пропы остаются силуэтными — «физика точно по
+				# арту, без невидимых стен» сохраняется там, где она не создаёт щель.
+				if _block_mass(x, y):
+					spec = [TILE, TILE, 0, 0]
 				var cs := CollisionShape2D.new()
 				var sh := RectangleShape2D.new()
 				sh.size = Vector2(float(spec[0]), float(spec[1]))
 				cs.shape = sh
 				cs.position = Vector2(x * TILE + 8 + float(spec[2]), y * TILE + 8 + float(spec[3]))
 				body.add_child(cs)
+
+## t58: принадлежит ли блокирующая клетка массе — есть ли блокирующий сосед по
+## СТОРОНЕ (N/S/E/W). Диагональные пары в счёт не идут (правило t58 от капитана):
+## через диагональ герой проходит, а не застревает, силуэт там и нужен «по арту».
+## Край карты тоже масса. Клетки избы (W/R/D) сюда не попадают: у них физика у
+## спрайта, см. _build_walls выше.
+func _block_mass(x: int, y: int) -> bool:
+	for d in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
+		var n: Vector2i = Vector2i(x, y) + d
+		if n.x < 0 or n.y < 0 or n.x >= map_w or n.y >= map_h:
+			return true
+		var chn := String(map_rows[n.y][n.x])
+		if not CHAR_TO_TILE.has(chn):
+			continue
+		var idx := int(CHAR_TO_TILE[chn])
+		if idx in [6, 7, 8]:
+			continue
+		if idx in BLOCKING:
+			return true
+	return false
 
 func _spawn_player() -> void:
 	player = load("res://scripts/player.gd").new()

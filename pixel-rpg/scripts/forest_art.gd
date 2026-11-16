@@ -161,6 +161,9 @@ static func build(world) -> Node2D:
 						var spr := _spr(layer, atlas, dk, foot)
 						world._ys_prop(spr)
 						world._ys_props_dim.append(spr)
+						# g18 (вердикт 16.11 «траву в лесу не видно»): подлесок димится
+						# не до 0.5, а до 0.8 — трава обязана читаться и под героем
+						spr.set_meta("ys_dim_alpha", 0.8)
 						if SWAY_KEYS.has(dk):
 							sway_layer.items.append({
 								"spr": spr, "a": _region(atlas, dk),
