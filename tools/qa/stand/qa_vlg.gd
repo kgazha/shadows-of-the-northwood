@@ -162,6 +162,7 @@ func _ready() -> void:
 	await _inv10()
 	await _inv11()
 	await _inv12()
+	await _inv_seal()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1159,3 +1160,121 @@ func _inv12() -> void:
 	GameState.flags.erase("ach.campfires")
 	jr.call("close")
 	print("qa_vlg inv12: рубрики достижений запинены: покрытие, id-порядок, иконки-палитра, автовход, счётчик, фильтр, оба состояния")
+
+# ------------------------------------------------- t59: герметичность пояса (П0)
+## t59 (вердикт пользователя 16.11 22:39 «в начальной локации можно уйти за
+## территорию лагеря»): на сборке до t58 скан конфигурационного пространства
+## (все коллайдеры слоя 2 живой сцены, раздутые на половину бокса героя 10×8 —
+## Minkowski; метод t56/_stuckscan) доставал из спавна 103 168 px ЗА краем
+## карты и 7 936 px ВНУТРИ внешнего ряда «t»: между стволами-силуэтами 6×6
+## оставался просвет 10 px при ширине героя ровно 10 px. Правило массы t58
+## (_block_mass: блокирующая клетка с блокирующим соседом по стороне или у
+## края карты — коллайдер на всю клетку) пояс загерметизировало: 0/0. Это
+## регрессионный пин починки — по РЕАЛЬНЫМ коллайдерам (сетки мало: дыра была
+## ровно в рассогласовании физики и сетки):
+##  (1) ни один достижимый из спавна свободный центр не касается пиксельной
+##      границы карты и не попадает ни в одну блокирующую клетку внешнего
+##      ряда (x==0/y==0/x==W-1/y==H-1);
+##  (2) регресс проходимости: все walkable-клетки сетки достижимы из спавна
+##      (карманы после починки пояса невозможны).
+func _inv_seal() -> void:
+	var w = game_world
+	if w == null or w.player == null:
+		chk(false, "seal: живой мир не построен")
+		return
+	# 1) коллайдеры слоя 2 -> сетка запрещённых центров героя 10×8
+	var rects: Array = []
+	var seen := {}
+	for root: Node in [w.village_zone, w]:
+		var stack: Array = [root]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			for c in n.get_children():
+				stack.append(c)
+			if not (n is StaticBody2D) or int(n.collision_layer) & 2 == 0:
+				continue
+			for cs in n.get_children():
+				if not (cs is CollisionShape2D) or not (cs.shape is RectangleShape2D):
+					continue
+				var sz: Vector2 = (cs.shape as RectangleShape2D).size
+				var r := Rect2(cs.global_position - sz * 0.5, sz)
+				var key := "%.1f|%.1f|%.1f|%.1f" % [r.position.x, r.position.y, r.size.x, r.size.y]
+				if seen.has(key):
+					continue
+				seen[key] = true
+				rects.append(r)
+	var PW := W * 16
+	var PH := H * 16
+	var blocked := []
+	for y in PH:
+		blocked.append(PackedByteArray())
+		blocked[y].resize(PW)
+	for r: Rect2 in rects:
+		var x0 := int(floor(r.position.x - 5.0))
+		var x1 := int(ceil(r.end.x + 5.0)) - 1
+		var y0 := int(floor(r.position.y - 4.0))
+		var y1 := int(ceil(r.end.y + 4.0)) - 1
+		for y in range(maxi(0, y0), mini(PH, y1 + 1)):
+			var rowb: PackedByteArray = blocked[y]
+			for x in range(maxi(0, x0), mini(PW, x1 + 1)):
+				rowb[x] = 1
+	# 2) BFS 4-связности от центра спавна (осевое движение со скольжением)
+	var spx := int(spawn[0]) * 16 + 8
+	var spy := int(spawn[1]) * 16 + 8
+	chk(blocked[spy][spx] == 0, "seal: центр спавна свободен (%d,%d)" % [spx, spy])
+	var reach := 0
+	var touch_edge := 0
+	var in_ring := 0
+	var ring_first := ""
+	var q: Array = [Vector2i(spx, spy)]
+	blocked[spy][spx] = 2  # 2 = посещён
+	var head := 0
+	while head < q.size():
+		var p: Vector2i = q[head]
+		head += 1
+		reach += 1
+		if p.x == 0 or p.y == 0 or p.x == PW - 1 or p.y == PH - 1:
+			touch_edge += 1
+		var cx := int(p.x / 16)
+		var cy := int(p.y / 16)
+		if (cx == 0 or cy == 0 or cx == W - 1 or cy == H - 1) and _blocked(cx, cy):
+			in_ring += 1
+			if ring_first == "":
+				ring_first = "%d,%d '%s'" % [cx, cy, _ch(cx, cy)]
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nx: int = p.x + d.x
+			var ny: int = p.y + d.y
+			if nx < 0 or ny < 0 or nx >= PW or ny >= PH:
+				continue
+			if blocked[ny][nx] != 0:
+				continue
+			blocked[ny][nx] = 2
+			q.append(Vector2i(nx, ny))
+	chk(rects.size() >= 1500, "seal: коллайдеров слоя 2 собрано %d (живая сцена)" % rects.size())
+	chk(touch_edge == 0 and in_ring == 0,
+		"seal/t59: достижимо центров %d ; кромки карты касаний %d ; пикселей в блокирующем внешнем ряду %d (первый %s) — пояс глухой массой t58" % [
+			reach, touch_edge, in_ring, ring_first if ring_first != "" else "—"])
+	# 3) зеркало по сетке: ни одна walkable-клетка не отрезана починкой пояса
+	var seen_c := {}
+	var cq: Array = [Vector2i(int(spawn[0]), int(spawn[1]))]
+	seen_c["%d,%d" % [spawn[0], spawn[1]]] = true
+	var h2 := 0
+	while h2 < cq.size():
+		var c: Vector2i = cq[h2]
+		h2 += 1
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n2: Vector2i = c + d
+			var k2 := "%d,%d" % [n2.x, n2.y]
+			if seen_c.has(k2) or _blocked(n2.x, n2.y):
+				continue
+			seen_c[k2] = true
+			cq.append(n2)
+	var walk_total := 0
+	var missed := 0
+	for y in H:
+		for x in W:
+			if not _blocked(x, y):
+				walk_total += 1
+				if not seen_c.has("%d,%d" % [x, y]):
+					missed += 1
+	chk(missed == 0, "seal/t59: сетка — все %d walkable-клеток достижимы из спавна (отрезанных %d)" % [walk_total, missed])
