@@ -1,7 +1,0 @@
-Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
-
-SCRIPT ERROR: Invalid assignment of property or key 'texture_margin_left' with value of type 'float' on a base object of type 'NinePatchRect'.
-   at: Journal._ready (res://scripts/journal.gd:78)
-   GDScript backtrace (most recent call first):
-       [0] _ready (res://scripts/journal.gd:78)
-       [1] _ready (res://scripts/world.gd:166)
