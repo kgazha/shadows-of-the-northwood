@@ -17,3 +17,26 @@ build/
 # Мастерские агентов и сырые генерации (в игру попадает только утверждённое)
 scratch_cm/
 art_gen/
+
+# капитан: временные кэши/стенды/логи QA-инструментов не трекаются никогда
+tools/*_appdata/
+tools/*_appdata_local/
+tools/*_stage/
+tools/qa_gate_stage/
+tools/qa_ib_acc/
+tools/*.log
+tools/*.diff
+tools/sand_q1_raw.diff
+tools/alchemy_norm.gd
+tools/alchemy_old.gd
+tools/alchemy_raw.diff
+tools/dzone_norm.gd
+tools/dzone_old.gd
+tools/dzone_raw.diff
+tools/qa_q1_fixed_dz.gd
+tools/qa_q1_pristine_dz.gd
+tools/ins_*.js
+tools/hexline.js
+tools/kenn_build_list.js
+tools/serve_web.js
+tools/gen_smith_e.ps1
