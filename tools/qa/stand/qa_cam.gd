@@ -216,7 +216,7 @@ func _phase_metric() -> void:
 		if not r.encloses(vr):
 			inside = false
 		union = vr if union.size == Vector2.ZERO else union.merge(vr)
-	chk(inside, "C12 деревня: все 8 крайних видов целиком ВНУТРИ карты 768×480 => ноль пустых пикселей по кромке")
+	chk(inside, "C12 деревня: все 8 крайних видов целиком ВНУТРИ карты 944×592 (g21b, было 768×480) => ноль пустых пикселей по кромке")
 	chk(union.position.distance_to(r.position) < 0.501 and union.end.distance_to(r.end) < 0.501,
 		"C13 объединение крайних видов = карта целиком (%s vs %s) => скролл показывает 100 %% карты"
 			% [str(union), str(r)])

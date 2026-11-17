@@ -282,10 +282,13 @@ class SwayLayer:
 		var tt := float(Time.get_ticks_msec()) / 1000.0
 		for it in items:
 			var ti := int(tt / VillageArt.SWAY_T) + int(it["phase"])
-			if ti % 2 == 0:
-				it["spr"].texture = it["ta"]
-			else:
-				it["spr"].texture = it["tl"] if int(it["dir"]) < 0 else it["tr"]
+			# g21b (t65): та же картинка, но запись только при смене фазы (см.
+			# ForestSwayLayer — дискретный кадр меняется раз в SWAY_T).
+			var want: Texture2D = it["ta"] if ti % 2 == 0 \
+					else (it["tl"] if int(it["dir"]) < 0 else it["tr"])
+			var spr := it["spr"] as Sprite2D
+			if spr != null and spr.texture != want:
+				spr.texture = want
 
 
 # ------------------------------------------------------------- c7 светлячки

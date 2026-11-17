@@ -2215,6 +2215,20 @@ func _t17() -> void:
 	else:
 		chk(false, "t17: save_game() не смог записаться")
 	# мглокрыс: свой экземпляр рядом с героем (погоня — детерминированный ход)
+	# g21b (t65, 17.11): расширение карты изменило счёт объектов, тратящих
+	# глобальные случайные числа (herbs 7->9), и в потоке от run_seed первое
+	# wander-решение крысы стало паузой 0.8–2.0 с: в 90-кадровом окне не
+	# попало ни одного шага (кадры [], ходовых 0). Пин мерит контракт
+	# «путь -> 2-фазный цикл» при ДВИЖЕНИИ и пороги не меняет — детерминим
+	# поток явным seed перед созданием экземпляра (тот же класс-1 приём,
+	# что перекат сида qa_bt на g20b).
+	seed(20261117)
+	# g21b (t65): герой после предыдущих секций стоит где придётся; на новой
+	# карте (75,504) = клетка (4,31) у стены загона, крыса в (6,31) рождалась
+	# внутри частокола и не двигалась. Пин про фазу от пути, а не про географию
+	# — ставим героя и крысу на открылую поляну спавна (8,10), пороги те же.
+	p.global_position = Vector2(136.0, 170.0)
+	await get_tree().physics_frame
 	var r = SR.new()
 	world.village_zone.add_child(r)
 	var hp_t := Vector2i(
@@ -2226,11 +2240,15 @@ func _t17() -> void:
 	var seen_f := {}
 	var bad_rf := 0
 	var moving_n := 0
+	var last_rat_pos := Vector2.ZERO
+	var last_rat_vel := Vector2.ZERO
 	for i in 90:
 		await get_tree().physics_frame
 		var ra: AnimatedSprite2D = r.get("anim")
 		if ra == null:
 			continue
+		last_rat_pos = r.global_position
+		last_rat_vel = r.velocity
 		var an := String(ra.animation)
 		if an.begins_with("walk"):
 			moving_n += 1
@@ -2241,8 +2259,8 @@ func _t17() -> void:
 		elif an.begins_with("idle") and r.velocity.length_squared() > 1.0:
 			bad_rf += 1  # едет, а стоит в idle — несогласовано
 	chk(moving_n > 20 and bad_rf == 0 and seen_f.size() == 2,
-		"t17: мглокрыс — 2-фазный цикл от пути при движении (кадры %s, ходовых %d, сбоев %d)" \
-				% [str(seen_f.keys()), moving_n, bad_rf])
+		"t17: мглокрыс — 2-фазный цикл от пути при движении (кадры %s, ходовых %d, сбоев %d; hero %s rat %s vel %s)" % [
+			str(seen_f.keys()), moving_n, bad_rf, str(p.global_position), str(last_rat_pos), str(last_rat_vel)])
 	r.queue_free()
 
 ## c20 «Пепелище v1 в игре» (вердикт «берём», лист sheet_ashen_v1 утверждён).
@@ -4241,7 +4259,17 @@ const T44_PROPS_MD5 := "e44a824e9b4dd6ff6264f9e86df1400d"
 # вела героя в невидимую стену, сейв в клетке = риск класса t58. Правка ровно ОДНОГО
 # символа (diff строки 11: позиция 16, «g»->«R»); R рисует тот же слот травы, коллайдера
 # в Walls не даёт, соседей в глухую массу t58 не превращает, колодец не двинут.
-const T44_MAP_MD5 := "fea7f6e764791d6d57af69443a918229"
+# g21b (t65, 17.11): масштаб фазы 1 по вердикту пользователя (OPEN_WORLD.md) —
+# карта расширена 48×30 -> 59×37 (≈×1,516 площади) детерминированным генератором
+# tools_art/scale_village_v1.gd (сид структуры — фиксированная ручная маска,
+# декор — FNV salt 61; повторный запуск на расширенном файле отказывается —
+# защита от двойного применения). Старое ядро байт-в-байт (6 швов пояса пинит
+# qa_vlg::PIN_SEAMS), старые лесные ряды inv3/inv5 не тронуты; золотая сетка
+# целиком — qa_vlg::PIN_MAP_ROWS, новые земли — qa_vlg::_inv_scale. Счётчик
+# лесных клеток 785 -> 1231 — перепин класса 1 (факт изменился решением
+# вердикта, не регрессией). md5 ниже переснят ЧЕСТНО: посчитан от распакованного
+# git-архива закоммиченного файла, changelog — этот комментарий.
+const T44_MAP_MD5 := "d7a25f92f296c02e1bbca2684a6a3826"
 
 func _t44() -> void:
 	# 1) сетка/литералы бит-в-бит (GOLDEN не пересчитывается — md5 сети пиним здесь)
@@ -4336,8 +4364,8 @@ func _t44() -> void:
 		for x in row.length():
 			if ForestArt.FLOOR_CHARS.has(row[x]):
 				forest_cells += 1
-	chk(forest_cells == 785 and src2 == 785 and layout_ok,
-		"t44: счётчик c26: лесных клеток %d, все на source2 (t+T+r=785), слоты совпадают" % forest_cells)
+	chk(forest_cells == 1231 and src2 == 1231 and layout_ok,
+		"t44: счётчик c26: лесных клеток %d, все на source2 (t+T+r=1231), слоты совпадают" % forest_cells)
 	chk(src0 == 0,
 		"t44: видимых клеток легаси tiles.png (source0) = %d — план 785→0" % src0)
 	chk(FileAccess.file_exists("res://assets/tiles.png"),

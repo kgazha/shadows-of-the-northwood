@@ -120,7 +120,7 @@ func _phase_village() -> void:
 	await _repoll()
 	chk(mm._zone == "village", "зона village")
 	chk(mm._sig == "v|" + str(world.map_rows), "подпись v|+rows (формат прежний)")
-	chk(int(mm._grid_w) == int(world.map_w) and int(mm._grid_h) == int(world.map_h), "сетка 48x30")
+	chk(int(mm._grid_w) == int(world.map_w) and int(mm._grid_h) == int(world.map_h), "сетка 59x37 (g21b, было 48x30)")
 	chk(bool(mm._zone_seen), "сетка собрана")
 	var ports := _poi_of(Minimap.C_PORTAL)
 	var has_cave := false

@@ -205,10 +205,11 @@ class ForestSwayLayer:
 			if spr == null or not is_instance_valid(spr):
 				continue  # c37: реестры живут между пересборками — guard до присваивания
 			var ti := int(tt / ForestArt.SWAY_T) + int(it["phase"])
-			match ti % 3:
-				0:
-					spr.texture = it["a"]
-				1:
-					spr.texture = it["b"]
-				_:
-					spr.texture = it["c"]
+			# g21b (t65, масштаб ×1,5): цель — ровно та же картинка, но присваивание
+			# только при смене фазы. Дискретный кадр меняется раз в SWAY_T; в
+			# остальные ~29 кадров повторная запись той же AtlasTexture — чистая
+			# работа setter'а на ~1300 спрайтах. Поведение (пин inv c7: «каждая
+			# куртина сменила кадр») не меняется.
+			var want: Texture2D = it["a"] if ti % 3 == 0 else (it["b"] if ti % 3 == 1 else it["c"])
+			if spr.texture != want:
+				spr.texture = want

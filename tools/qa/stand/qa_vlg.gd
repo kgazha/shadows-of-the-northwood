@@ -50,7 +50,12 @@ const PATH_MAP := "res://data/map_village.json"
 
 const PIN_SPAWN := [8, 10]
 const PIN_NPCS := [["elder", 10, 8], ["merchant", 22, 13], ["farmer", 29, 13]]
-const PIN_HERBS := [[14, 19], [26, 20], [17, 24], [30, 24], [24, 17], [12, 17], [45, 12]]
+## g21b (t65, 17.11, масштаб фазы 1): +2 травы в НОВой территории — (11,33)
+## «Загон-роща», (44,32) южная поляна interest. Ресурс под будущие квесты,
+## маркеров квеста нет. Старые 7 трав на прежних клетках (перепин класса 1:
+## факт «трав 7» изменился решением вердикта, не регрессией).
+const PIN_HERBS := [[14, 19], [26, 20], [17, 24], [30, 24], [24, 17], [12, 17], [45, 12],
+	[11, 33], [44, 32]]
 const PIN_CHESTS := [[37, 21]]
 const PIN_SLIMES := [[16, 21], [24, 22], [30, 19], [20, 25], [33, 22], [27, 24]]
 ## c9 (вердикт «добавь»): травяные куртины «G» — пин-клетки (опушка луга:
@@ -59,26 +64,60 @@ const PIN_SLIMES := [[16, 21], [24, 22], [30, 19], [20, 25], [33, 22], [27, 24]]
 ## вне r1 herbs/spawn, не в лесных рядах.
 const PIN_TUFTS := [[6, 2], [26, 2], [40, 2], [12, 3], [33, 3], [5, 13], [20, 13], [43, 13]]
 const PAL := preload("res://scripts/pixel_palette.gd")
-const PIN_ROWS_0_14 := [
-	"tttttttttttttttttttttttttttttttttttttttttttttttt",
-	"tttttttttttttttttttttttttttttttttttttttttttttttt",
-  "ttggggGgggggggggggggggggggGgggggggggggggGgggggtt",
-  "ttggggggggggGggggfgggggggggggggggGggfgggggggggtt",
-	"ttggggggggggggggfggggggggggggggggggfwwwwwwwwwgtt",
-	"ttggggggWWgggggggggggggggggggfgggggrwwwwwwwwwgtt",
-	"ttgggfggDWggggggggggggggfgggggggggggwwwwwwwwwgtt",
-	"ttggggggdggfggggggggggggggggggfgggggwwwwwwwwwgtt",
-	"ttggggggdggggggggggggggggggfgggggggrwwwwwwwwwgtt",
-	"ttggggggdggggfggggggggggggggggggfgggwwwwwwwwwgtt",
-	"ttggggggdggggggfggggggggggggggggggfgggggggggggtt",
-		# t69 (17.11): x16 «g»->«R» — клетка колодца VillageArt.WELL_TILE, физика
-		# которой на арте (VillageV4Solids 12x10); R = семейство «проп с физикой на
-		# арте», как W/D избы: рисует тот же слот травы, коллайдера в Walls не
-		# даёт, соседей в массу t58 не превращает. Арт байт-в-байт тот же.
-	"ttggggggdgsgggggRggfggggggggggggggggggfgggggggtt",
-	"ttggdddddddddddddddddddddddddddddddddddddddddgtt",
-  "ttgggGggggggggggggggGgdggggggggggggggggggggGggtt",
-	"ttggggggggggggggggggggdgggggggggggggggggggggggtt",
+## ── PIN_MAP_ROWS (перепин g21b/t65 от 17.11, класс 1) ───────────────────────
+## Было: PIN_ROWS_0_14 — 15 строк по 48 символов (деревня). Вердикт
+## OPEN_WORLD.md фаза 1 (масштаб ≈×1,5) согласован 17.11; генератор расширения
+## закоммичен: tools_art/scale_village_v1.gd (структура — ручная маска, декор —
+## FNV(salt 61), сид структуры фиксирован). Карта стала 59×37, и пин честно
+## переснят ПОЛНЫМ золотым дампом всех 37 строк (сильнее прежнего: прежний
+## пин не покрывал лесные строки 15..29 целиком, их держали inv3/inv5).
+## ЧТО ИЗМЕНИЛОСЬ В СТАРОМ ЯДРЕ (полный список, всё остальное байт-в-байт):
+##  • строки 0..14 и 27: к старым 48 символам дописан восточный пояс «t»×11;
+##  • 6 швов сквозь прежний глухой пояс (иначе новые земли отрезаны):
+##    (46,20),(47,20) «t»->«d» — дорога от арки A(45,20) на восток;
+##    (21,28),(22,28),(21,29),(22,29) «t»->«d» — южная тропа от x=22 на юг;
+##  • добавлены строки 30..36 (южная полоса: тракт, «Загон-роща», поляна).
+##  POI/NPC/арки/колодец/каменоломни НЕ ДВИНУТЫ (зеркала inv1/inv2/PIN_FIXED).
+## t69 (17.11) комментарий прежний: row11 x16 «R» — клетка колодца
+## VillageArt.WELL_TILE (физика на арте, слот травы, без коллайдера Walls).
+const PIN_MAP_ROWS := [
+	"ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+	"ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+	"ttggggGgggggggggggggggggggGgggggggggggggGgggggttttttttttttt",
+	"ttggggggggggGggggfgggggggggggggggGggfgggggggggttttttttttttt",
+	"ttggggggggggggggfggggggggggggggggggfwwwwwwwwwgttttttttttttt",
+	"ttggggggWWgggggggggggggggggggfgggggrwwwwwwwwwgttttttttttttt",
+	"ttgggfggDWggggggggggggggfgggggggggggwwwwwwwwwgttttttttttttt",
+	"ttggggggdggfggggggggggggggggggfgggggwwwwwwwwwgttttttttttttt",
+	"ttggggggdggggggggggggggggggfgggggggrwwwwwwwwwgttttttttttttt",
+	"ttggggggdggggfggggggggggggggggggfgggwwwwwwwwwgttttttttttttt",
+	"ttggggggdggggggfggggggggggggggggggfgggggggggggttttttttttttt",
+	"ttggggggdgsgggggRggfggggggggggggggggggfgggggggttttttttttttt",
+	"ttggdddddddddddddddddddddddddddddddddddddddddgttttttttttttt",
+	"ttgggGggggggggggggggGgdggggggggggggggggggggGggttttttttttttt",
+	"ttggggggggggggggggggggdgggggggggggggggggggggggttttttttttttt",
+	"ttfTrrfTTttfTTttTTTrTTdsTfttTTfTrrfTTttfTTrTfTttttttttttttt",
+	"ttTTTrTTTTtTfTTttTTrfTdTTTTttTTTTrTTfTttTTrrTftttgggffggfgt",
+	"ttTTTTTtTTtTTTTTTTtTTTdTTTTTTTTTTTTTTTtTTTTTTTtttggggrrgggt",
+	"ttTTTTTttTTTTTTTTTttTTdTTTTttTTTTTTTTTTTttTTTTtttggrrgggfgt",
+	"ttTTTTTtTTTrrTTTTTtTTTTTTTTTttTTTTTTTTTTttTTTTtttfgrggggggt",
+	"ttTTttTTTTTTTTTTTTTrTTdddddddddddddddddddddddAddddddggggggt",
+	"ttTTttTTTTttTTTTTTTrrTTTTTTTttTTTTTTTTTTTTTTTTtttggdggggggt",
+	"ttTTTTTTTTtTTTTTTTTTTTTTTTTTTttTTTTrrTTTTTTTTTtttTTdddggfgt",
+	"ttTTTttTTrTTTTTTTTTTTttTTTTTTTTTTTTTTTTTrTTTTTtttTTggdrrggt",
+	"ttTTTttTTrTTTTtTTTTTTTtTTTrTTTTTTTttTTTTrTTTTTtttgggggrgggt",
+	"ttTTTTTTTrTTTttTTTTTTTtTTTrTTTTTTTtTTTTTTTTTTTtttgggggggggt",
+	"ttTTTTTTTTTTTTtTTTTTTTTTTTrTTTTTTTTTTTTTTTTTTTttttttttttttt",
+	"ttggggggggggggggggggggggggggggggggggggggggggggttttttttttttt",
+	"tttttttttttttttttttttddtttttttttttttttttttttttttttttttttttt",
+	"tttttttttttttttttttttddtttttttttttttttttttttttttttttttttttt",
+	"ttgggggggggggggggggggddgggfgggfgfgfgfgfgggggfgttttttttttttt",
+	"ttgggttttttttttttttfgddgttgggggttfgggfrrgggfggttttttttttttt",
+	"ttgggtggfTTgggffgggggddgtfgggggftggggggrggggggttttttttttttt",
+	"ttgggtgggTgggrrgggddddddddddddddddddddddddddddttttttttttttt",
+	"ttgggtgggfgffgfgggtgggggggttgggfggggggggttggggttttttttttttt",
+	"ttgggttttttttttttttggfggggtgggggggggfffgftffggttttttttttttt",
+	"ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
 ]
 # фикс. клетки внутри лесных строк (x,y,ch)
 const PIN_FIXED_CELLS := [
@@ -102,6 +141,9 @@ const FOREST_ROWS := [15, 26]
 const FOREST_COLS := [2, 45]
 const BLOCK_CHARS := "tWrWDR#s"
 const FOREST_ALPHABET := "trTfdsA"
+## g21b/t65 (17.11): масштаб фазы 1 — см. _inv_scale в конце файла.
+const PIN_SEAMS := [[46, 20, "d"], [47, 20, "d"], [21, 28, "d"], [22, 28, "d"],
+	[21, 29, "d"], [22, 29, "d"]]
 
 var pass_n := 0
 var fail_n := 0
@@ -145,13 +187,13 @@ func _ready() -> void:
 	var npcs_raw: Array = []
 	for n in data.get("npcs", []):
 		npcs_raw.append([String(n[0]), int(n[1]), int(n[2])])
-	chk(W == 48 and H == 30 and grid.size() == H, "карта 48x30")
+	chk(W == 59 and H == 37 and grid.size() == H, "карта 59x37 (g21b, было 48x30)")
 	var rows_ok := true
 	for r in grid:
 		if String(r).length() != W:
 			rows_ok = false
-	chk(rows_ok, "все строки по 48")
-	if not (W == 48 and H == 30 and grid.size() == H):
+	chk(rows_ok, "все строки по %d" % W)
+	if not (W == 59 and H == 37 and grid.size() == H):
 		print("QA_VLG %d/%d" % [pass_n, pass_n + fail_n])
 		get_tree().quit(1)
 		return
@@ -160,6 +202,7 @@ func _ready() -> void:
 	_inv3()
 	_inv4()
 	_inv5()
+	_inv_scale()
 	_inv7()
 	await _inv8()
 	await _inv9()
@@ -168,6 +211,7 @@ func _ready() -> void:
 	await _inv12()
 	await _inv_seal()
 	_inv_wellsync()
+	await _inv_scale_resume()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -196,18 +240,19 @@ func _blocked(x: int, y: int) -> bool:
 func _inv1(npcs_raw: Array) -> void:
 	chk(spawn == PIN_SPAWN, "inv1: spawn %s" % str(PIN_SPAWN))
 	chk(npcs_raw == PIN_NPCS, "inv1: npcs пин (3 шт)")
-	chk(herbs == PIN_HERBS, "inv1: herbs пин (7 шт)")
+	chk(herbs == PIN_HERBS, "inv1: herbs пин (%d шт)" % PIN_HERBS.size())
 	chk(chests == PIN_CHESTS, "inv1: chests пин (37,21)")
 	chk(slimes == PIN_SLIMES, "inv1: slimes пин (6 шт)")
 
 # ---------------------------------------------------------------- инв. 2
 func _inv2() -> void:
 	var rows_bad := 0
-	for y in 15:
-		if String(grid[y]) != String(PIN_ROWS_0_14[y]):
+	for y in PIN_MAP_ROWS.size():
+		if y >= H or String(grid[y]) != String(PIN_MAP_ROWS[y]):
 			rows_bad += 1
 			print("   row %d рассинхрон с пином" % y)
-	chk(rows_bad == 0, "inv2: строки 0..14 = пин-дамп деревни")
+	chk(rows_bad == 0 and H == PIN_MAP_ROWS.size(),
+		"inv2: все %d строк карты = золотой пин-дамп (g21b)" % PIN_MAP_ROWS.size())
 	var alpha_bad := 0
 	for y in range(FOREST_ROWS[0], FOREST_ROWS[1] + 1):
 		for x in range(FOREST_COLS[0], FOREST_COLS[1] + 1):
@@ -1385,3 +1430,159 @@ func _inv_seal() -> void:
 				if not seen_c.has("%d,%d" % [x, y]):
 					missed += 1
 	chk(missed == 0, "seal/t59: сетка — все %d walkable-клеток достижимы из спавна (отрезанных %d)" % [walk_total, missed])
+
+# ---------------------------------------------------------------- инв. 13 (g21b/t65)
+## Масштаб фазы 1 (OPEN_WORLD.md, вердикт пользователя 17.11): деревня+лес
+## расширены 48×30 -> 59×37 (2183 клетки, ×1.516 — задача просила ≈×1,5).
+## Генератор расширения в репозитории: tools_art/scale_village_v1.gd (структура —
+## ручная маска, декор — FNV(salt 61); детерминизм держит md5-пин qa_lp t44).
+## Старое ядро НЕ двинуто: POI/NPC/арки/колодец/каменоломни пинятся inv1/inv2,
+## вся сетка золотым дампом PIN_MAP_ROWS; исключение — РОВНО 6 швов сквозь
+## прежний глухой пояс (PIN_SEAMS), без них новые земли отрезаны (пояс
+## rows28-29/cols46-47 — глухая масса t58). Этот инв проверяет НОВЫЕ земли
+## теми же правилами, что inv3 держит для старых лесных рядов: одиночных
+## блокеров ноль, валунные группы 2..3, валуны не смешаны с деревьями,
+## горизонтальные проходы >=2 клетки, отрезанных карманов ноль (зеркало BFS
+## inv4 по reach_map), от спавна свободны все 8 направлений, новые травы в
+## meta и достижимы. Карманы «поляна с камнями» (восток), «загон-роща» и
+## южная поляна interest — осмысленные площадки без маркеров квестов.
+## g21b: клетка относится к НОВЫМ землям (восточная полоса правее старой
+## лесной рамки x=45 и южная полоса ниже старого пояса rows 28-29).
+func _in_new_land(x: int, y: int) -> bool:
+	return (y >= 15 and x >= 48) or y >= 30
+
+func _inv_scale() -> void:
+	var area := W * H
+	chk(W == 59 and H == 37 and area >= 2100 and area <= 2304,
+		"inv13: размер %dx%d, площадь %d (%.3f прежней 1440) — в пределах вердикта ≈×1,5" % [
+			W, H, area, float(area) / 1440.0])
+	var wide := 0
+	for y in H:
+		if String(grid[y]).length() != W:
+			wide += 1
+	chk(wide == 0, "inv13: все %d строк одной ширины %d (старое ядро 48 целых — inv2)" % [H, W])
+	var seam_bad := 0
+	for s in PIN_SEAMS:
+		if _ch(int(s[0]), int(s[1])) != String(s[2]):
+			seam_bad += 1
+			print("   шов (%d,%d)='%s' != '%s'" % [int(s[0]), int(s[1]), _ch(int(s[0]), int(s[1])), String(s[2])])
+	chk(seam_bad == 0, "inv13: 6 швов в старый пояс целы (восток от A(45,20), юг от x=22)")
+	# — правила новых земель (то же, что inv3 для старых рядов) —
+	var seen := {}
+	var singles := 0
+	var rock_bad := ""
+	var mixed := 0
+	for y in H:
+		for x in W:
+			if not _in_new_land(x, y):
+				continue
+			var c0 := _ch(x, y)
+			if c0 != "t" and c0 != "r":
+				continue
+			if c0 == "r":
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+					if _ch(x + d[0], y + d[1]) == "t":
+						mixed += 1
+			if seen.has("%d,%d" % [x, y]):
+				continue
+			var n := 0
+			var q := [[x, y]]
+			seen["%d,%d" % [x, y]] = true
+			while not q.is_empty():
+				var cc: Array = q.pop_front()
+				n += 1
+				for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+					var nx: int = cc[0] + d[0]
+					var ny: int = cc[1] + d[1]
+					if not _in_new_land(nx, ny) or seen.has("%d,%d" % [nx, ny]):
+						continue
+					if _ch(nx, ny) != c0:
+						continue
+					seen["%d,%d" % [nx, ny]] = true
+					q.append([nx, ny])
+			if n == 1:
+				singles += 1
+				print("   одиночный блокер (%d,%d) '%s' в новых землях" % [x, y, c0])
+			elif c0 == "r" and (n < 2 or n > 3):
+				rock_bad += " (%d,%d)=%d" % [x, y, n]
+	chk(singles == 0, "inv13: новых земель одиночных блокеров — 0 (масса t58, силуэтов-щелей нет)")
+	chk(rock_bad == "", "inv13: валунные группы новых земель 2..3 (нарушения:%s)" % (rock_bad if rock_bad != "" else " нет"))
+	chk(mixed == 0, "inv13: валуны новых земель не смешаны с деревьями (правило inv3)")
+	var gap_bad := ""
+	for y in range(16, 26):
+		var run := 0
+		var mn := 99
+		for x in range(49, 58):
+			if not _blocked(x, y):
+				run += 1
+			else:
+				if run > 0 and run < mn:
+					mn = run
+				run = 0
+		if run > 0 and run < mn:
+			mn = run
+		if mn < 2:
+			gap_bad += " E r%d=%d" % [y, mn]
+	for y in range(31, 36):
+		var run2 := 0
+		var mn2 := 99
+		for x in range(2, 46):
+			if not _blocked(x, y):
+				run2 += 1
+			else:
+				if run2 > 0 and run2 < mn2:
+					mn2 = run2
+				run2 = 0
+		if run2 > 0 and run2 < mn2:
+			mn2 = run2
+		if mn2 < 2:
+			gap_bad += " S r%d=%d" % [y, mn2]
+	chk(gap_bad == "", "inv13: проходы новых земель >=2 клетки (нарушения:%s)" % (gap_bad if gap_bad != "" else " нет"))
+	var pockets := 0
+	for y in H:
+		for x in W:
+			if _in_new_land(x, y) and not _blocked(x, y) and not bool(reach_map[y][x]):
+				pockets += 1
+				if pockets <= 3:
+					print("   карман (%d,%d) '%s' недостижим" % [x, y, _ch(x, y)])
+	chk(pockets == 0, "inv13: отрезанных карманов в новых землях — %d" % pockets)
+	var dirs8 := [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+	var busy := 0
+	for d in dirs8:
+		if _blocked(int(spawn[0]) + d[0], int(spawn[1]) + d[1]):
+			busy += 1
+	chk(busy == 0, "inv13: от спавна свободны все 8 направлений (занято %d)" % busy)
+	var nh_ok := 0
+	for c in [[11, 33], [44, 32]]:
+		for e in herbs:
+			if int(e[0]) == int(c[0]) and int(e[1]) == int(c[1]):
+				nh_ok += 1
+				if not bool(reach_map[int(c[1])][int(c[0])]):
+					nh_ok -= 1
+	chk(nh_ok == 2, "inv13: новые травы (11,33) загон и (44,32) поляна — в meta и достижимы")
+
+## g21b/t65: сейв-совместимость расширения. Старый сейв (писан на карте 48×30)
+## хранит мировые координаты; все старые клетки целы => позиция обязана остаться
+## валидной, а _place_resumed_player — НЕ выбросить героя на спавн. Берём
+## дорожную клетку у лавки (22,13) = (360,216) px: она в старом ядре,
+## проходима и на старой, и на новой карте.
+func _inv_scale_resume() -> void:
+	var w: Node2D = game_world
+	if w == null or w.player == null:
+		chk(false, "resume/g21b: живой мир не построен")
+		return
+	var f := FileAccess.open("user://save_morkheim.json", FileAccess.WRITE)
+	if f == null:
+		chk(false, "resume/g21b: сейв не пишется")
+		return
+	f.store_string(JSON.stringify({"px": 360.0, "py": 216.0, "pos_valid": true}))
+	f.flush()
+	f = null
+	chk(GameState.load_game(), "resume/g21b: старый сейв (48×30) читается")
+	chk(GameState.pos_valid and GameState.player_pos == Vector2(360.0, 216.0),
+		"resume/g21b: px/py/pos_valid прочитаны: (360,216) — клетка (22,13) старого ядра")
+	w.call("_place_resumed_player")
+	chk(w.player.global_position.distance_to(Vector2(360.0, 216.0)) < 0.01,
+		"resume/g21b: _place_resumed_player оставил героя на старой позиции (не выбросил)")
+	if FileAccess.file_exists("user://save_morkheim.json"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_morkheim.json"))
