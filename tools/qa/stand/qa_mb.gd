@@ -1,6 +1,6 @@
 extends "res://mb_base.gd"
 ## qa_mb — t20 P0-3 «мета-прогресс смерти»: экран смерти с итогами забега +
-## Пепельная доска (таланты ×3 ранга) + ретеншн пепла 60–70% + благословение
+## Пепельная доска (таланты ×3 ранга) + ретеншн пепла 100% (t70: не догорает) + благословение
 ## волхвы (+2%/смерть круга, кап). Мир не поднимаем (паттерн qa_run): каналы
 ## GameState/Ash/Loot/MetaBoard/RunSummary напрямую; рантайм-панель R6 —
 ## RunSummary на голом Node-хосте (автолоады есть, hud нет — _busy ложен).
@@ -64,9 +64,10 @@ func r1_runstats() -> void:
 	check("R1: Loot.on_mob_death x2 -> rs.k.slime=2", int(GameState.flags.get("rs.k.slime", -1)) == 2)
 	Loot.on_mob_death("boss2", Vector2.INF)
 	check("R1: босс считается по своему kind (rs.k.boss2=1)", int(GameState.flags.get("rs.k.boss2", -1)) == 1)
-	# баланс 4, earned 7: keep=floor(4.55)=4, burn=min(3,4)=3 -> 1; rs.* стёрты
+	# t70 (17.11): баланс 4, earned 7 — при смерти не сгорает НИЧЕГО: 4 и остаётся
+	# (по прежнему keep 0.65 было бы 1); rs.* стёрты вайпом.
 	GameState.start_new_run()
-	check("R1: после смерти баланс = 4-сгоревшее(3) = 1", Ash.balance() == 1)
+	check("R1/t70: после смерти баланс цел = 4 (заработанное не догорает)", Ash.balance() == 4)
 	check("R1: rs.earned стёр вайпом", not GameState.flags.has("rs.earned"))
 	check("R1: rs.k.* стёрты вайпом", not GameState.flags.has("rs.k.slime") and not GameState.flags.has("rs.k.boss2"))
 
@@ -113,30 +114,45 @@ func r3_effects_on_new_run() -> void:
 	GameState.flags["meta.mb.deep_pockets"] = 1
 	check("R3: deep_pockets ранг 1 -> надбавка золота мобов +8% (mb_value=8)", GameState.mb_value("deep_pockets") == 8)
 
-# --- R4: ретеншн 60–70% ЗАРАБОТАННОГО пепла (диапазон + точная формула) ---
+# --- R4: t70 (17.11) «earnings survive death fully» — заработанное переживает
+#     смерть и отказ от круга на 100 % (прежнее догорание 35 % убрано) ---
 
 func r4_ash_retention_band() -> void:
+	# t70: правило keep = floor(earned × 0.65) убрано ВМЕСТЕ с константами. Пин
+	# держит два факта: дельта баланса при конце забега = ровно 0 (весь заработок
+	# уже начислен Ash.add), и констант догорания в GameState нет — иначе
+	# «балансировку» вернут молча, а экран смерти снова начнёт врать игроку.
+	var consts: Dictionary = GameState.get_script().get_script_constant_map()
+	check("R4/t70: констант догорания в GameState нет (RATE/MIN/MAX)",
+		not consts.has("ASH_KEEP_RATE") and not consts.has("ASH_KEEP_MIN") and not consts.has("ASH_KEEP_MAX"))
 	for e in [10, 20, 50, 100, 1000]:
-		mk({"flags": flags_with({"meta.ash": e, "rs.earned": e})})
+		mk({"flags": flags_with({"meta.ash": 90})})
+		var b0 := Ash.balance()
+		Ash.add(e)  # боевой канал: баланс и rs.earned растут вместе
+		check("R4/t70: earned=%d -> надбавка баланса ровно %+d (%d->%d)" % [e, e, b0, Ash.balance()], Ash.balance() == b0 + e)
 		GameState.start_new_run()
-		var b := Ash.balance()
-		var lo := int(ceil(0.60 * e))
-		var hi := int(floor(0.70 * e))
-		check("R4: earned=%d -> сохранено %d ∈ [%d..%d] (60–70%%)" % [e, b, lo, hi], b >= lo and b <= hi)
-		check("R4: earned=%d -> ровно floor(0.65*%d)=%d" % [e, e, int(floor(0.65 * e))], b == int(floor(0.65 * e)))
-	# вечный remainder не горит: 90 «из прошлых жизней» + 10 заработано -> 90+6
+		check("R4/t70: смерть при earned=%d -> баланс цел %d (при keep 0.65 было бы %d)" % [
+			e, b0 + e, b0 + int(floor(0.65 * e))], Ash.balance() == b0 + e)
+	# тот же заработок переживает «Новую игру» (отказ от круга) — оба пути когерентны
+	for e2 in [10, 100]:
+		mk({"flags": flags_with({"meta.ash": 90})})
+		var b1 := Ash.balance()
+		Ash.add(e2)
+		GameState.start_fresh_game()
+		check("R4/t70: start_fresh_game при earned=%d -> баланс цел %d" % [e2, b1 + e2], Ash.balance() == b1 + e2)
+	# вечный remainder как не горел, так и не горит: 100 баланса / 10 заработано -> 100
 	mk({"flags": flags_with({"meta.ash": 100, "rs.earned": 10})})
 	GameState.start_new_run()
-	check("R4: balance 100 / earned 10 -> 96 (сгорело только 4 от заработанного)", Ash.balance() == 96)
-	# заработанное проедено: earned 10, баланс 3 -> выгорает весь баланс, минуса нет
+	check("R4/t70: balance 100 / earned 10 -> 100 (ничего не сгорело)", Ash.balance() == 100)
+	# заработанное проедено: баланс 3 при rs.earned 10 -> смерть ничего не снимает
 	mk({"flags": flags_with({"meta.ash": 3, "rs.earned": 10})})
 	GameState.start_new_run()
-	check("R4: earned>balance -> баланс гаснет в 0, не в минус", Ash.balance() == 0)
+	check("R4/t70: earned>balance -> баланс 3 цел (вычитания больше нет)", Ash.balance() == 3)
 	# канон qa_run R2: заработано 0 -> баланс нетронут (12)
 	mk({"flags": flags_with({"meta.ash": 12})})
 	GameState.start_new_run()
 	check("R4: earned=0 -> баланс 12 цел (qa_run-канон «мета-слой вечен»)", Ash.balance() == 12)
-	check("R4: константы диапазона: 0.60 <= RATE <= 0.70", GameState.ASH_KEEP_MIN <= GameState.ASH_KEEP_RATE and GameState.ASH_KEEP_RATE <= GameState.ASH_KEEP_MAX)
+
 
 # --- R5: благословение волхвы (+2%/смерть круга, кап, сброс на новом круге) ---
 
@@ -193,7 +209,7 @@ func r6_death_screen() -> void:
 	check("R6: глубина/волна показана (Круг (глубь): 2)", st.contains("Круг (глубь): 2"))
 	check("R6: время mm:ss (Время: 01:05)", st.contains("Время: 01:05"))
 	check("R6: золото показано (Золото: 41)", st.contains("Золото: 41"))
-	check("R6: пепел: заработано 8 / сохранится ~5", st.contains("заработано 8") and st.contains("сохранится ~5"))
+	check("R6/t70: пепел: заработано 8 / сохраняется всё", st.contains("заработано 8") and st.contains("сохраняется всё"))
 	check("R6: убийца — RU-имя из AchvCatalog (Пал от: Осквернённый Гром)", st.contains("Пал от: Осквернённый Гром"))
 	check("R6: убийства по типам (Слайм ×2)", rs.kills_lbl.text.contains("Слайм ×2"))
 	check("R6: статус боссов (Гром повержен / Ведьма повержена)", rs.kills_lbl.text.contains("Гром повержен") and rs.kills_lbl.text.contains("Ведьма повержена"))

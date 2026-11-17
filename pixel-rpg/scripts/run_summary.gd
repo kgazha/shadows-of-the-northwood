@@ -189,13 +189,14 @@ func _refresh() -> void:
 	var ash := GameState._num(f.get("meta.ash", 0), 0)
 	var deaths := GameState._num(f.get("ach.n.deaths", 0), 0)
 	var earned := GameState._num(f.get("rs.earned", 0), 0)
-	var keep := int(floor(float(earned) * GameState.ASH_KEEP_RATE))
 	var tsec := int(GameState._num(f.get("rs.t", 0), 0))
 	var w := GameState.ng_wave()
-	stats_lbl.text = "Забег: #%d · Круг (глубь): %d\nВремя: %02d:%02d · Золото: %d\nПепел: баланс %d · заработано %d · сохранится ~%d\n%s\nСид: %d" % [
+	# t70 (17.11, вердикт 16:14): заработанное переживает смерть целиком — строки
+	# «сохранится ~N» больше нет: врать про догорание нечем, цифра = всё E.
+	stats_lbl.text = "Забег: #%d · Круг (глубь): %d\nВремя: %02d:%02d · Золото: %d\nПепел: баланс %d · заработано %d · сохраняется всё\n%s\nСид: %d" % [
 		deaths + 1, w,
 		int(tsec / 60.0), tsec % 60, GameState.gold,
-		ash, earned, keep,
+		ash, earned,
 		_killer_line(), GameState.run_seed,
 	]
 	kills_lbl.text = _kills_block() + _boss_line(w)

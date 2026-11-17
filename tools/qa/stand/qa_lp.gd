@@ -3448,8 +3448,9 @@ func _t37() -> void:
 	chk(int(GameState.gold) == 0 and int(GameState.level) == 1 and int(GameState.xp) == 0
 			and String(GameState.class_id) == "" and not bool(GameState.has_sword),
 		"c37: fresh — герой/золото/класс обнулены (gold=%d lv=%d class=[%s])" % [int(GameState.gold), int(GameState.level), String(GameState.class_id)])
-	chk(int(GameState.flags.get("meta.ash", 0)) == 465,
-		"c37: пепел по канону смерти: 500 − догорание(100−65) = 465 (получено %d)" % int(GameState.flags.get("meta.ash", 0)))
+	# t70 (17.11): догорания заработанного больше нет — 500 с rs.earned=100 остаётся 500
+	chk(int(GameState.flags.get("meta.ash", 0)) == 500,
+		"c37/t70: пепел без догорания: 500 (earned 100) -> 500 (получено %d)" % int(GameState.flags.get("meta.ash", 0)))
 	chk(bool(GameState.has_amulet) and GameState.flags.has("ach.test")
 			and GameState.flags.has("daily.test") and GameState.flags.has("hint.test")
 			and not GameState.flags.has("q.smelt") and not GameState.flags.has("tal.x")
@@ -3672,7 +3673,13 @@ const G12_HINTS := [  # С1-С3 живут в world.gd (FirstHint.show_hint вы
 # изменили; поведение запинено в _t42. Остальные — по-прежнему бит-в-бит.
 const G12_UNTOUCHED := {
 	"res://scripts/settings_menu.gd": "c7b90737cc53c457cf3963b69e5bd742",
-	"res://scripts/run_summary.gd": "6404ba292ef8ea899d6a0c0db43655f8",
+	# t70 (вердикт пользователя 17.11 16:14 «заработанное полностью исчезает»): в
+	# run_summary.gd снята строка «сохранится ~N» — заработанное переживает смерть
+	# полностью, врать про догорание нечем. Файл изменён ЦЕЛЕНАПРАВЛЕННО (формат
+	# ярлыка итогов + датированный комментарий), поведение запинено в qa_mb R1/R4/R6
+	# и qa_lp c37. Ре-пин по прецедентам g13/g14/g15/t50/g19 (базис — md5 файла на
+	# диске стадии, CRLF из git archive; сверено: копия в рабочем дереве == стадия).
+	"res://scripts/run_summary.gd": "cb2ef60241fbdf5739b9afbb3e0d13b5",
 	# g19 (вердикт пользователя 16.11 22:44 «старейшина не должен давать
 	# возможность начинать ng+») ЦЕЛЕНАПРАВЛЕННО изменили npc.gd — снята ветка
 	# elder с предложением круга; поведение запинено инверсией qa_ng2 v2.
