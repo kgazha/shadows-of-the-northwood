@@ -71,7 +71,11 @@ const PIN_ROWS_0_14 := [
 	"ttggggggdggggggggggggggggggfgggggggrwwwwwwwwwgtt",
 	"ttggggggdggggfggggggggggggggggggfgggwwwwwwwwwgtt",
 	"ttggggggdggggggfggggggggggggggggggfgggggggggggtt",
-	"ttggggggdgsggggggggfggggggggggggggggggfgggggggtt",
+		# t69 (17.11): x16 «g»->«R» — клетка колодца VillageArt.WELL_TILE, физика
+		# которой на арте (VillageV4Solids 12x10); R = семейство «проп с физикой на
+		# арте», как W/D избы: рисует тот же слот травы, коллайдера в Walls не
+		# даёт, соседей в массу t58 не превращает. Арт байт-в-байт тот же.
+	"ttggggggdgsgggggRggfggggggggggggggggggfgggggggtt",
 	"ttggdddddddddddddddddddddddddddddddddddddddddgtt",
   "ttgggGggggggggggggggGgdggggggggggggggggggggGggtt",
 	"ttggggggggggggggggggggdgggggggggggggggggggggggtt",
@@ -163,6 +167,7 @@ func _ready() -> void:
 	await _inv11()
 	await _inv12()
 	await _inv_seal()
+	_inv_wellsync()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1161,6 +1166,108 @@ func _inv12() -> void:
 	jr.call("close")
 	print("qa_vlg inv12: рубрики достижений запинены: покрытие, id-порядок, иконки-палитра, автовход, счётчик, фильтр, оба состояния")
 
+# ------------------------------------------------- t69: карта == физика пропов (П0)
+## t67 (П0-диагноз 17.11) вынесла из жалобы «в лесу не могу двигаться наверх»
+## отдельный точечный дефект: клетка WELL_TILE была свободна по
+## map_village.json, а её держал коллайдер VillageV4Solids (арт-физика колодца
+## 12x10). _village_walkable читает только JSON, поэтому клик-движение считало
+## клетку проходимой, герой упирался в невидимую стену, а сохранение в ней —
+## тот же риск «оказался на входе», что разбирал t58. Починка: клетка помечена
+## «R» (семейство арт-пропов, как W/D избы) — рисует тот же слот травы,
+## коллайдера в Walls не даёт, соседей в глухую массу t58 не превращает,
+## колодец визуально не двинут. Пин держит обе стороны согласия по РЕАЛЬНЫМ
+## коллайдерам слоя 2 живой сцены (метод seal/t59: сетка запрещённых центров —
+## коллайдеры, раздутые на половину бокса героя):
+##   (1) ни одной клетки «JSON свободен, а бокс героя по центру не проходит»;
+##   (2) клетка VillageArt.WELL_TILE заблокирована и сеткой, и физикой — сдвинет
+##       арт колодец без правки карты => пин покраснеет, молча не разъедется;
+##   (3) обратный класс (сетка блокирует, центр боксу свободен) — легальные
+##       арт-пропы, печатается таблицей по символам.
+func _inv_wellsync() -> void:
+	var w = game_world
+	if w == null or w.player == null:
+		chk(false, "wellsync: живой мир не построен")
+		return
+	# половина бокса героя — из живого тела, не с потолка (player.gd)
+	var hw := 5.0
+	var hh := 4.0
+	for c in w.player.get_children():
+		if c is CollisionShape2D and c.shape is RectangleShape2D:
+			var hs: Vector2 = (c.shape as RectangleShape2D).size
+			hw = hs.x * 0.5
+			hh = hs.y * 0.5
+			break
+	var rects: Array = []
+	var seen := {}
+	for root: Node in [w.village_zone, w]:
+		var stack: Array = [root]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			for cc in n.get_children():
+				stack.append(cc)
+			if not (n is StaticBody2D) or int(n.collision_layer) & 2 == 0:
+				continue
+			for cs in n.get_children():
+				if not (cs is CollisionShape2D) or not (cs.shape is RectangleShape2D):
+					continue
+				var sz: Vector2 = (cs.shape as RectangleShape2D).size
+				var r := Rect2(cs.global_position - sz * 0.5, sz)
+				var key := "%.1f|%.1f|%.1f|%.1f" % [r.position.x, r.position.y, r.size.x, r.size.y]
+				if seen.has(key):
+					continue
+				seen[key] = true
+				rects.append(r)
+	var held := func(p: Vector2) -> bool:
+		for r: Rect2 in rects:
+			if p.x > r.position.x - hw and p.x < r.end.x + hw and p.y > r.position.y - hh and p.y < r.end.y + hh:
+				return true
+		return false
+	var ghost := 0
+	var ghost_first := ""
+	var art_free := 0
+	var art_by := {}
+	var grid_free := 0
+	for y in H:
+		for x in W:
+			var p := Vector2(float(x * 16 + 8), float(y * 16 + 8))
+			if bool(w.call("_village_walkable", Vector2i(x, y))):
+				grid_free += 1
+				if held.call(p):
+					ghost += 1
+					if ghost_first == "":
+						ghost_first = "%d,%d '%s'" % [x, y, _ch(x, y)]
+			elif not held.call(p):
+				art_free += 1
+				var ch := _ch(x, y)
+				art_by[ch] = int(art_by.get(ch, 0)) + 1
+	var parts: Array = []
+	for k in art_by.keys():
+		parts.append("'%s':%d" % [String(k), int(art_by[k])])
+	parts.sort()
+	chk(ghost == 0, "wellsync/t69: «JSON свободен, физика держит» = %d (первая %s) ; сетка свободна %d ; арт-пропов с пустым центром %d (%s)" % [
+		ghost, ghost_first if ghost_first != "" else "—", grid_free, art_free, " ".join(parts)])
+	var VA := preload("res://scripts/village_art.gd")
+	var wt: Vector2i = VA.WELL_TILE
+	chk(not bool(w.call("_village_walkable", wt)),
+		"wellsync/t69: клетка колодца %s ('%s') заблокирована сеткой — карта догоняет арт-физику" % [
+			str(wt), _ch(wt.x, wt.y)])
+	chk(held.call(Vector2(float(wt.x * 16 + 8), float(wt.y * 16 + 8))),
+		"wellsync/t69: центр клетки колодца %s и впрямь держит коллайдер (пин не станет зелёным молча)" % str(wt))
+	# пол клетки: «R» (idx 7) и «g» рисуют ОДИН слот v4-пола (world.gd:338 -> (1,(0,0)),
+	# VillageArt.FLOOR_SLOTS["g"] == 0) => правка символа не двигает ни одного пикселя.
+	var base_tm: TileMapLayer = null
+	for ch2 in w.village_zone.get_children():
+		if ch2 is TileMapLayer and String(ch2.name) != "AtmoWater":
+			base_tm = ch2
+			break
+	if base_tm == null:
+		chk(false, "wellsync/t69: базовый тайлмап деревни не найден")
+	else:
+		var gslot := int(VA.FLOOR_SLOTS["g"])
+		chk(base_tm.get_cell_source_id(wt) == 1 and base_tm.get_cell_atlas_coords(wt) == Vector2i(gslot, 0) \
+				and gslot == 0,
+			"wellsync/t69: пол клетки колодца — тайлмап source %d атлас %s, тот же слот травы, что под «g» (пиксель не двинут)" % [
+				base_tm.get_cell_source_id(wt), str(base_tm.get_cell_atlas_coords(wt))])
 # ------------------------------------------------- t59: герметичность пояса (П0)
 ## t59 (вердикт пользователя 16.11 22:39 «в начальной локации можно уйти за
 ## территорию лагеря»): на сборке до t58 скан конфигурационного пространства
