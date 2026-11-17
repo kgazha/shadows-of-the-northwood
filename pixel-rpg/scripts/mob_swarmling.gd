@@ -258,7 +258,7 @@ func _face(dvec: Vector2) -> void:
 		facing = "up" if dvec.y < 0.0 else "down"
 
 func _anim(delta: float) -> void:
-	if anim == null or not anim.sprite_frames.has_animation("idle_down"):
+	if anim == null or anim.sprite_frames == null or not anim.sprite_frames.has_animation("idle_down"):
 		return
 	var want := "act" if bit_t > 0.0 else ("walk" if velocity.length_squared() > 1.0 else "idle")
 	var an := "%s_%s" % [want, facing]
