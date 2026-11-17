@@ -212,6 +212,7 @@ func _ready() -> void:
 	await _inv_seal()
 	_inv_wellsync()
 	await _inv_scale_resume()
+	await _inv_halo()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1586,3 +1587,122 @@ func _inv_scale_resume() -> void:
 		"resume/g21b: _place_resumed_player оставил героя на старой позиции (не выбросил)")
 	if FileAccess.file_exists("user://save_morkheim.json"):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://save_morkheim.json"))
+
+## g22/t68 (вердикт пользователя 17.11 12:57 «почти полная прозрачность крон
+## вокруг персонажа» + диагноз t67 «иллюзия прохода»): пузырь прозрачности и
+## читаемость глухих просветов. Честный пересъём метрик g18 с датой: на базе
+## g21b (ореол g18: ядро 40 px @ 0.40, градиент к 1.0 на 110) в точке чаще
+## (24,21) в ядре <=60 px крон с альфой > 0.4 было 50 (замер out-зондом
+## 17.11); после g22 — 0. Ствол (нижние 8 px кадра) — непрозрачный strip,
+## в ореол не входит. Корневые маты: количество строго по детерминированной
+## формуле (горизонтальные глухие пары t/r с хотя бы одним деревом), физика
+## не тронута ни одной клеткой.
+func _inv_halo() -> void:
+	var w: Node2D = game_world
+	if w == null or w.player == null:
+		chk(false, "halo/g22: живой мир не построен")
+		return
+	w.player.global_position = Vector2(24 * 16 + 8, 21 * 16 + 8)
+	w.call("_snap_camera")
+	await _frames(70)  # лерп дима (8/с) сходится за ~0.6 с; запас в кадрах
+	var hero_box := Rect2(w.player.global_position + Vector2(-8.0, -8.0), Vector2(16.0, 16.0))
+	var hz := int(w.player.z_index)
+	var core := 0          # кроны с ближайшей точкой <= 56 px
+	var core_gt45 := 0     # из них с альфой > 0.45 (метрика A/B: база 50)
+	var cover_gt20 := 0    # накрывающие >=50% бокса и сверху: цель 0.10
+	var leak_far := 0      # дальше 155 px, но не штатная 1.0 (стык без шва)
+	var cover := 0
+	for c in w._ys_canopies:
+		if not is_instance_valid(c):
+			continue
+		var spr := c as Sprite2D
+		if spr == null or spr.texture == null:
+			continue
+		var a: float = spr.modulate.a
+		var sz := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height()))
+		var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
+		var np := Vector2(clampf(w.player.global_position.x, cr.position.x, cr.end.x),
+				clampf(w.player.global_position.y, cr.position.y, cr.end.y))
+		var d: float = w.player.global_position.distance_to(np)
+		if d <= 56.0:
+			core += 1
+			if a > 0.45:
+				core_gt45 += 1
+		if d >= 155.0 and a < 0.99:
+			leak_far += 1
+		if spr.z_index > hz and cr.intersects(hero_box) \
+				and cr.intersection(hero_box).get_area() / maxf(hero_box.get_area(), 1.0) >= 0.5:
+			cover += 1
+			if a > 0.20:
+				cover_gt20 += 1
+	chk(core >= 10 and core_gt45 == 0,
+		"halo/g22: ядро 56 px в чаще — кроны почти прозрачны (в ядре %d, с альфой>0.45 %d; база g21b: 50/50, пересъём 17.11)" % [core, core_gt45])
+	chk(cover >= 1 and cover_gt20 == 0,
+		"halo/g22: крона над героем (>=50%% бокса) — тень силуэта <=0.20 (накрывающих %d, нарушителей %d)" % [cover, cover_gt20])
+	chk(leak_far == 0, "halo/g22: за ореолом (>=155 px) кроны штатно непрозрачны, протечек %d" % leak_far)
+	# подлесок/«трава» (meta ys_dim_alpha, g18) в ядре светлеет до 0.9
+	var bush := 0
+	var bush_dim := 0
+	for p in w._ys_props_dim:
+		if not is_instance_valid(p):
+			continue
+		if not p.has_meta("ys_dim_alpha"):
+			continue
+		var spr2 := p as Sprite2D
+		if spr2 == null or spr2.texture == null:
+			continue
+		var sz2 := Vector2(float(spr2.texture.get_width()), float(spr2.texture.get_height()))
+		var cr2 := Rect2(spr2.get_global_transform().origin - sz2 * 0.5, sz2)
+		var np2 := Vector2(clampf(w.player.global_position.x, cr2.position.x, cr2.end.x),
+				clampf(w.player.global_position.y, cr2.position.y, cr2.end.y))
+		if w.player.global_position.distance_to(np2) <= 56.0:
+			bush += 1
+			if spr2.modulate.a <= 0.95:
+				bush_dim += 1
+	chk(bush >= 3 and bush == bush_dim,
+		"halo/g22: подлесок в ядре светлеет до 0.9 (в ядре %d, светлеют %d; база: 0/9)" % [bush, bush_dim])
+	# ствольные полосы (g22 пул): деревья зарегистрированы в пуле по числу крон,
+	# у героя полосы активны и никогда не димятся (в реестры дима не входят)
+	var pool: Node = null
+	if w.get("forest_v1") != null:
+		pool = (w.forest_v1 as Node2D).get_node_or_null("TrunkPool")
+	chk(pool != null and int(pool.trees.size()) == int(w._ys_canopies.size()),
+		"halo/g22: пул стволов: деревьев зарегистрировано %d == крон %d" % [
+			(int(pool.trees.size()) if pool != null else -1), w._ys_canopies.size()])
+	var active := 0
+	var pool_ok := pool != null
+	if pool_ok:
+		var hp: Vector2 = w.player.global_position
+		for s in pool.pool:
+			var sp := s as Sprite2D
+			if sp == null or not sp.visible:
+				continue
+			active += 1
+			if sp.modulate.a < 0.999 or hp.distance_to(sp.global_position) > 175.0:
+				pool_ok = false
+	chk(pool_ok and active > 0,
+		"halo/g22: у героя %d активных полос, все непрозрачны и в радиусе пула" % active)
+	# корневые маты глухих просветов: реестр == независимая формула
+	var expected := 0
+	for y in H:
+		var row := String(grid[y])
+		for x in row.length() - 1:
+			var a2 := String(row[x])
+			var b2 := String(row[x + 1])
+			if (a2 == "t" or a2 == "r") and (b2 == "t" or b2 == "r") and (a2 == "t" or b2 == "t"):
+				expected += 1
+	var mats: Array = w.get("_g22_gap_mats") if w.get("_g22_gap_mats") != null else []
+	chk(expected > 0 and mats.size() == expected,
+		"roots/g22: ковриков корней %d == формуле глухих пар %d (t67: 52 упора выглядели проходом)" % [mats.size(), expected])
+	var mats_ok := true
+	for m in mats:
+		var mx := int(m["x"])
+		var my := int(m["y"])
+		if not _blocked(mx, my) or not _blocked(mx + 1, my):
+			mats_ok = false
+	chk(mats_ok, "roots/g22: ни один мат не стоит на проходимой клетке (проходы не закрашены)")
+	# физика не тронута: глухая пара (27..28,16) остаётся глухой, тропа (22,16)
+	# и просвет (24,21) — проходимы (совпадает с базой: правок карты/коллайдеров
+	# в g22 нет вообще)
+	chk(_blocked(27, 16) and _blocked(28, 16) and not _blocked(22, 16) and not _blocked(24, 21),
+		"roots/g22: физика bit-in-bit — пара (27,16)/(28,16) глуха, тропа (22,16) и просвет (24,21) открыты")

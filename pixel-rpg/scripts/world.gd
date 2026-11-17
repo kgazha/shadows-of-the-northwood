@@ -50,7 +50,14 @@ const DZ := preload("res://scripts/dungeon_zone.gd")
 const YS_CYCLE := 4800.0         # шаг «этажей» зон == CAVE_OFFSET.y (ASHEN — кратно)
 const YS_ACTOR_BIAS := 8         # t51 (16px-мир): стопа актёра ≈ +8 ниже центра ноды (узел в центре 16px-кадра)
 const YS_CANOPY_DIM_AT := 0.5    # крона «растворяется», когда закрывает >= 50% бокса героя (крона над героем)
-const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нависании (паттерн Glimpse/T3)
+const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha МЕЛКОГО ПРОПА при нависании (паттерн Glimpse/T3);
+                                 # кроны с g22 используют YS_CANOPY_COVER_ALPHA (ниже)
+# g22/t68 (вердикт пользователя 17.11 12:57 «сделай почти полную прозрачность
+# вокруг персонажа, когда он гуляет среди деревьев»): крона, лежащая на боксе
+# героя, растворяется до 0.10 — от неё остаётся тень силуэта. Стволы НЕ димятся:
+# нижние ~8 px кадра дерева — отдельный непрозрачный overlay-strip (ForestArt.
+# TrunkFollow), видимая подсказка «сюда не войти».
+const YS_CANOPY_COVER_ALPHA := 0.1
 # 16.11 (просьба пользователя «в лесу плохо видно врагов»): ореол прозрачности
 # вокруг героя. Крона, чей прямоугольник попадает в диск радиуса
 # YS_CANOPY_HALO_R от центра героя, плавно светлеет до YS_CANOPY_HALO_ALPHA
@@ -63,9 +70,18 @@ const YS_CANOPY_DIM_ALPHA := 0.5 # целевая alpha кроны при нав
 # g18 (второй вердикт того же вечера 16.11, «всё равно плохо видно — нужно
 # больше прозрачности»): радиус 88->110, прозрачность ядра 0.55->0.60
 # (целевая alpha кроны 0.45->0.40). Механика прежняя, только два числа.
-const YS_CANOPY_HALO_R := 110.0   # px от центра героя: внешняя граница ореола
-const YS_CANOPY_HALO_IN := 40.0   # px: внутри — полное растворение до HALO_ALPHA
+# g22 (t68, вердикт 17.11 12:57): ядро ореола раздвинуто до 60 px и доведено до
+# почти полной прозрачности крон (alpha 0.10, «тень силуэта»); кольцевой
+# градиент выводит к штатной g18-vals 0.40 на внешнем радиусе 120 px; далее
+# короткий стык 120->150 px поднимает крону к штатной 1.0 без кольцевого шва.
+# Мелкий проп с meta "ys_dim_alpha" (лесной подлесок/«трава» g18) в том же
+# ядре светлеет до YS_PROP_HALO_ALPHA=0.9; пропы без meta ореола не знают.
+const YS_CANOPY_HALO_CORE_R := 60.0   # px: ядро — почти полная прозрачность
+const YS_CANOPY_HALO_CORE_ALPHA := 0.10
+const YS_CANOPY_HALO_R := 120.0       # px: внешняя граница — штатные g18 0.40
 const YS_CANOPY_HALO_ALPHA := 0.40
+const YS_CANOPY_HALO_OUT_R := 150.0   # px: стык к непрозрачной кроне (без шва)
+const YS_PROP_HALO_ALPHA := 0.9       # подлесок/трава в ядре (не гуще тени крон)
 const YS_PROP_DIM_AT := 0.4      # t41: мелкий проп деревни димится, когда накрывает >= 40% бокса героя
                                  # (порог ниже крон: пропы мелкие, цель — hero visibility на тяжёлых тайлах)
 const YS_HUD_Z := 4000           # цифры урона поверх любой глубины: локальная y зон ≤ 480 << 4000 ≤ 4096
@@ -126,6 +142,7 @@ var cave_v1: Node2D     # c3: слой «Пещера v1» (CaveArt) — алт�
 # t52 снос: GroveCanopy/VillageProps/Env4Props/живая земля сняты (VISUAL_REBUILD
 # «план сноса»).
 var _ys_canopies: Array = []   # Sprite2D крон — overhead-дим по герою (V-01/V-07); пусто с t52
+var _g22_gap_mats: Array = []  # g22/t68: координаты корневых матов глухих пар (для пинов)
 var _ys_props_dim: Array = []  # Sprite2D мелких пропов — дим-контракт по герою;
                                # с t54/c3 заполнен кодоген-пропами village/ и cave/
 var cave_zone: Node2D
@@ -1023,10 +1040,11 @@ func _ys_update(delta: float) -> void:
 		var cr := Rect2(spr.get_global_transform().origin - sz * 0.5, sz)
 		if spr.z_index > hz:  # крона над героем (южнее — герой сам поверх, дим не нужен)
 			if cr.intersects(hr) and cr.intersection(hr).get_area() / maxf(hr.get_area(), 1.0) >= YS_CANOPY_DIM_AT:
-				target = YS_CANOPY_DIM_ALPHA
+				target = YS_CANOPY_COVER_ALPHA  # g22: 0.5 -> 0.1, тень силуэта (ствол — strip)
 		if target >= 1.0:
-			# ореол 16.11: крона не лежит на герое, но стоит в диске вокруг —
-			# растворяем пропорционально близости, чтобы видеть врагов за ней.
+			# ореол 16.11 / g22: крона не лежит на герое, но стоит в диске вокруг —
+			# растворяем по кольцевому градиенту: ядро<=60 px — 0.10; 60..120 — до
+			# штатной g18 0.40; 120..150 — к 1.0 (без кольцевого шва).
 			# Гейт z_index>hz НЕ ставим: крона может быть ниже героя по глубине
 			# и всё ещё держать врага-северянина за собой ширмой (её z выше z
 			# врага — рисуются в правильном порядке, но врага не видно).
@@ -1035,8 +1053,11 @@ func _ys_update(delta: float) -> void:
 					clampf(player.global_position.y, cr.position.y, cr.end.y))
 			var d := player.global_position.distance_to(np)
 			if d < YS_CANOPY_HALO_R:
-				var k := clampf((d - YS_CANOPY_HALO_IN) / maxf(YS_CANOPY_HALO_R - YS_CANOPY_HALO_IN, 1.0), 0.0, 1.0)
-				target = lerpf(YS_CANOPY_HALO_ALPHA, 1.0, k * k)
+				var k := clampf((d - YS_CANOPY_HALO_CORE_R) / maxf(YS_CANOPY_HALO_R - YS_CANOPY_HALO_CORE_R, 1.0), 0.0, 1.0)
+				target = lerpf(YS_CANOPY_HALO_CORE_ALPHA, YS_CANOPY_HALO_ALPHA, k * k)
+			elif d < YS_CANOPY_HALO_OUT_R:
+				var k2 := clampf((d - YS_CANOPY_HALO_R) / maxf(YS_CANOPY_HALO_OUT_R - YS_CANOPY_HALO_R, 1.0), 0.0, 1.0)
+				target = lerpf(YS_CANOPY_HALO_ALPHA, 1.0, k2 * k2)
 		var a := spr.modulate.a
 		# плавное растворение; в покое (вдали) — ровно 1.0, без «хвоста» лерпа
 		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
@@ -1061,6 +1082,18 @@ func _ys_update(delta: float) -> void:
 				# пол дима meta "ys_dim_alpha" (лесный подлесок — 0.8, а не 0.5);
 				# остальные пропы — прежний YS_CANOPY_DIM_ALPHA
 				target = float(spr.get_meta("ys_dim_alpha", YS_CANOPY_DIM_ALPHA))
+		if target >= 1.0 and spr.has_meta("ys_dim_alpha"):
+			# g22 (t68): лесной подлесок/«трава» в ядре ореола светлеет до 0.9 —
+			# земля под ногами читается, а вдали проп остаётся штатным. Ореол
+			# только для пропов с meta: избы/колодец/алтари не трогаем.
+			var sz2 := Vector2(float(spr.texture.get_width()), float(spr.texture.get_height())) * spr.get_global_transform().get_scale().abs()
+			var cr2 := Rect2(spr.get_global_transform().origin - sz2 * 0.5, sz2)
+			var np2 := Vector2(clampf(player.global_position.x, cr2.position.x, cr2.end.x),
+					clampf(player.global_position.y, cr2.position.y, cr2.end.y))
+			var dp := player.global_position.distance_to(np2)
+			if dp < YS_CANOPY_HALO_R:
+				var kp := clampf((dp - YS_CANOPY_HALO_CORE_R) / maxf(YS_CANOPY_HALO_R - YS_CANOPY_HALO_CORE_R, 1.0), 0.0, 1.0)
+				target = lerpf(YS_PROP_HALO_ALPHA, 1.0, kp * kp)
 		var a := spr.modulate.a
 		a = target if absf(a - target) < 0.02 else lerpf(a, target, clampf(delta * 8.0, 0.0, 1.0))
 		spr.modulate.a = a
