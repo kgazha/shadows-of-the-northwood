@@ -87,6 +87,27 @@ const CAMPFIRE_SPOTS := {
 const CAVE_MOB_BANDS := {1: [4, 7], 2: [8, 11], 3: [12, 999]}
 const CAVE_MOB_CAPS := {1: 3, 2: 4, 3: 5}
 
+# --- t64 (17.11, фаза 1): «запределье» зоны ------------------------------------
+# Если карта зоны меньше вьюпорта хотя бы по одной оси (залы пещеры 480×352 при
+# экране 640×360), Godot честно ЦЕНТРИРУЕТ вид по лимитам: клампить там нечего,
+# математически экран шире мира. По краям легла бы clear-заливка (0.3,0.3,0.3) —
+# серые полосы 80 px слева/справа, что и запрещает задача («без чёрных полос»).
+# Расширять карту в t64 нельзя (это t65), зум 1 и 640×360 — инвариант OPEN_WORLD,
+# поэтому пустоту ЗА краем карты дорисовываем самым тёмным тоном СОБСТВЕННОГО
+# материала зоны: край карты перестаёт быть швом, а тёмный тон не спорит с
+# подсветками и не добавляет ни одного цвета вне PixelPalette.
+# Polygon2D (не ColorRect на CanvasLayer): вместе с миром попадает под
+# CanvasModulate цветокор atmosphere.gd, иначе зона и её «продолжение» разъехались
+# бы по тону. Рисуется под всеми слоями зоны (z_index ниже тайлмапов).
+const PAL := preload("res://scripts/pixel_palette.gd")
+const VOID_RAMP := {
+	"village": ["PINE", 3],       # деревня со всех сторон об глухую массу леса (t58)
+	"cave": ["VIOLET", 3],        # CAVE_ROCK == VIOLET (pixel_palette.gd)
+	"ashen": ["ASH_GROUND", 3],   # пепел
+}
+const VOID_MARGIN := 512.0        # запас на разрыв окна (stretch=expand показывает шире)
+const VOID_Z := -4096             # гарантированно под тайлмапами и пропами зон
+
 var map_rows: Array = []
 var map_w := 0
 var map_h := 0
@@ -118,6 +139,7 @@ var cave_map: Dictionary = {}
 var ashen_map: Dictionary = {}
 var active_area := "village"  # "village" | "cave" | "ashen" — где сейчас герой
 var cam: Camera2D
+var _void_poly: Polygon2D = null    # t64: тёмное «запределье» зоны (см. VOID_RAMP)
 var fade_rect: ColorRect
 var village_return_pos := Vector2.INF  # куда возвращаться из пещеры (то место, где вошли)
 var ashen_return_pos := Vector2.INF    # куда возвращаться из Пепелища
@@ -414,7 +436,13 @@ func _spawn_player() -> void:
 	player.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	player.position = tile_to_world(spawn_tile)
 	add_child(player)
-	cam = Camera2D.new()
+	# t64 (17.11, фаза 1 открытого мира): вместо голого Camera2D — риг
+	# camera_rig.gd. Канон он не меняет (зум 1, лимиты по-прежнему ставит
+	# _set_cam_limits) и добавляет ровно две вещи: сглаживание 0.20 кадра
+	# (с limit_smoothed, чтобы догоняющий кадр не выглянул за мир) и снап при
+	# телепорте. Тип переменной остаётся Camera2D: риг — наследник, все прежние
+	# читатели cam.* (Juice, qa_z1, qa_lp, qa_gb) работают как работали.
+	cam = load("res://scripts/camera_rig.gd").new()
 	# t51 (закон пользователя 13.11): возврат масштаба «до Крупного мира» — зум 1
 	# во всех зонах, в кадре 640×360 ~40×22.5 клетки. Лимиты — мировые пиксели,
 	# Godot клампит вид-окно внутрь лимитов зоны, а _set_cam_limits переставляет
@@ -427,6 +455,9 @@ func _spawn_player() -> void:
 	player.add_child(cam)
 	cam.make_current()
 	Juice.attach_camera(cam)  # t18 «сочность»: мазок-тряска пишется в cam.offset (juice.gd)
+	# t64: тот же путь, что при смене зоны (лимиты + «запределье» + снап), чтобы
+	# полигон пустоты и снап существовали и при заходе без apply_area().
+	_set_cam_limits(String(active_area))
 	hint_label = Label.new()
 	# текст world-space подсказок — не «картинка», держим пиксельную чёткость
 	# (наследовать LINEAR от героя ему не надо)
@@ -1317,6 +1348,7 @@ func _place_resumed_player() -> void:
 	var p: Vector2 = GameState.player_pos
 	if GameState.pos_valid and _pos_walkable(p):
 		player.global_position = p
+		_snap_camera()  # t64: резюме — не «долёт», а мгновенная посадка камеры
 		if p.y > ASHEN_OFFSET.y:
 			apply_area("ashen", false)  # сейв оставил героя в Пепелище
 		return
@@ -1348,6 +1380,7 @@ func _place_resumed_player() -> void:
 				ashen_return_pos = tile_to_world(ASHEN_ENTRANCE_TILE)
 	apply_area(zone, false)
 	player.global_position = entry
+	_snap_camera()  # t64 (g18b): «вышел к входу» — камера сразу на арке, старый край не показываем
 	GameState.toast.emit("Герой вышел к входу")
 
 ## Проходима ли мировая точка в зоне, которой она принадлежит по координате/флагу.
@@ -1430,6 +1463,49 @@ func _set_cam_limits(area: String) -> void:
 		cam.limit_top = 0
 		cam.limit_right = map_w * TILE
 		cam.limit_bottom = map_h * TILE
+	# t64: смена зоны = моментальная перестановка героя (телепорт) — камера обязана
+	# встать на него в этом же кадре; и заодно переставляем «запределье» под новые
+	# границы. Порядок важен: сначала лимиты, потом прямоугольник пустоты по ним.
+	_apply_void_backdrop(area)
+	_snap_camera()
+
+## Камера строго на герое, без хвоста сглаживания (t64). зовётся после любой
+## моментальной перестановки героя: смена зоны, резюме из сейва, арка, возрождение.
+func _snap_camera() -> void:
+	if cam != null and is_instance_valid(cam) and cam.has_method("snap"):
+		cam.call("snap")
+
+## Прямоугольник «за пределами карты» для текущей зоны (t64, подробности у VOID_RAMP).
+func _apply_void_backdrop(area: String) -> void:
+	if _void_poly == null or not is_instance_valid(_void_poly):
+		_void_poly = Polygon2D.new()
+		_void_poly.name = "ZoneVoid"
+		add_child(_void_poly)
+		_void_poly.z_index = VOID_Z   # z относительно мира (=0) => под всеми слоями зон
+	var r := Rect2(float(cam.limit_left), float(cam.limit_top),
+			float(cam.limit_right - cam.limit_left), float(cam.limit_bottom - cam.limit_top))
+	# Инфлейт ровно настолько, насколько вид шире мира по каждой оси, плюс запас на
+	# expand-растяжение окна. Если мир больше вида — инфлейт только маргин (полосы
+	# и так невозможны, но полигон не должен мелькать при ресайзе).
+	var view := get_viewport_rect().size
+	if cam != null and is_instance_valid(cam) and cam.zoom.x > 0.0:
+		view = view / cam.zoom
+	var pad := Vector2(
+			maxf(0.0, (view.x - r.size.x) * 0.5) + VOID_MARGIN,
+			maxf(0.0, (view.y - r.size.y) * 0.5) + VOID_MARGIN)
+	var a := r.position - pad
+	var b := r.end + pad
+	_void_poly.polygon = PackedVector2Array([a, Vector2(b.x, a.y), b, Vector2(a.x, b.y)])
+	var spec: Array = VOID_RAMP.get(area, VOID_RAMP["village"])
+	_void_poly.color = PAL.c(String(spec[0]), int(spec[1]))
+	var vp := get_viewport()
+	if vp != null and not vp.is_connected("size_changed", _on_viewport_resized):
+		vp.size_changed.connect(_on_viewport_resized)
+
+## Окно растянули: stretch=expand показывает больше мира, чем было в момент смены
+## зоны — инфлейт «запределья» пересчитываем по факту (t64).
+func _on_viewport_resized() -> void:
+	_apply_void_backdrop(String(active_area))
 
 ## Плавный переход: затемнение -> смена зоны -> просветление.
 ## after — что сделать после (обычно диалог); без него просто снимаем блокировку ввода.
@@ -1724,6 +1800,7 @@ func respawn_player() -> void:
 		player.global_position = CAVE_OFFSET + dungeon_zone.spawn_world_pos
 	else:
 		player.global_position = tile_to_world(spawn_tile)
+	_snap_camera()  # t64: возрождение — это телепорт, не шаг
 	GameState.heal_full()
 
 # --- объекты ---
