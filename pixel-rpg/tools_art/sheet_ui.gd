@@ -354,25 +354,30 @@ func _blit_image(img: Image, x0: int, y0: int, scale: int) -> void:
 
 static func _prj_arrow(body_ramp: String) -> Array:
 	# стрела вправо; ramp-материал тела (IRON — обычная, BONE — призрак)
+	#
+	# t60 (16.11 22:58, «стрелы у лучника слишком большие и толстые — уменьшить,
+	# скорость увеличить»). Было: тело 3..11 + голова-треугольник до x14 и веер
+	# оперения y5..y10 -> габарит 15×8, 91 непрозрачный пиксель. Стало: тело —
+	# только два ряда древка (y7..y8, x3..x10), обводка по контуру добавляет по
+	# пикселю сверху/снизу и с флангов -> габарит 10×4 (длина −1/3, толщина −1/2),
+	# 40 пикселей. Форма «палочка в обводке» выбрана не по вкусу, а по канону
+	# листа: при теле в 2 px любая лишняя строка возвращает габарит к 6 px, а
+	# самопроверка листа требует нижний ряд спрайта = OUTLINE-тон и popcount
+	# снаряда >= 32 (оба условия соблюдены: нижний ряд — кольцо обводки, 40 px).
+	# Скорость полёта — classes_data.gd (герой) и mob_archer.gd (лучник-моб).
 	var cells: Array = []
-	for x in range(3, 12):
+	for x in range(3, 11):
 		cells.append("%d,7" % x)
 		cells.append("%d,8" % x)
-	for d in range(0, 3):
-		for y in range(7 - d, 9 + d):
-			cells.append("%d,%d" % [12 + d, y])
-	for y in range(5, 11):
-		var w: int = 6 - absi(y - 7) * 2
-		for x in range(2, 2 + maxi(1, w)):
-			cells.append("%d,%d" % [x, y])
 	var b := _mask(cells)
 	var o := _dilate(b)
 	var f := func(x: int, y: int) -> String:
-		if x >= 12:
-			return body_ramp + ":%d" % (_L if y <= 7 else _M)
+		if x >= 9:
+			# жало: верхняя половина светлее, нижняя в тон обводке — кон читается
+			return body_ramp + ":%d" % (_M if y == 7 else _O)
 		if x <= 4:
-			return "CLOTH:%d" % (_L if y < 7 else (_M if y <= 8 else _D))
-		return body_ramp + ":%d" % (_L if y == 7 else _M)
+			return "CLOTH:%d" % (_L if y == 7 else _M)  # оперение тёплым
+		return body_ramp + ":%d" % (_L if y == 7 else _M)  # древко: блик/тень
 	var bd: Dictionary = b[0]
 	var ring := {}
 	for k in o[0]:

@@ -1544,6 +1544,7 @@ func talk(id: String) -> void:
 			# g13 (Г1.5 «сделка»): за репликой открывается лавка Драна — смола
 			# за 15 и готовый факел за 25 (BALANCE строки 6–7). Д2 («цена,
 			# готовый факел») звучит, пока факела нет; с факелом — Д3 (повтор).
+			# Исключение — сдача квеста (t60 ниже): квест не зовёт к прилавку.
 			match GameState.slime_quest:
 				0:
 					start_dialogue("merchant", func():
@@ -1553,12 +1554,18 @@ func talk(id: String) -> void:
 						Shop.open("merchant"))
 				1:
 					if GameState.slime_kills_circle >= 3:  # работа текущего круга (total — у ачивок)
+						# 16.11 22:56 (t60): сдача квеста НЕ открывает лавку. Реплика
+						# «принёс трофеи» — это квест, а прилавок — это торговля: окно
+						# всплывало само сразу после диалога, хотя игрок его не звал
+						# (источник — этот колбэк, а не «проглоченная» клавиша E:
+						# диалог гасит ввод сам, см. QA-пин qa_dr D3). Торговец
+						# остаётся торговцем: прилавок Драна открывается следующим E
+						# по нему — ниже по этой же ветке (merchant_after).
 						start_dialogue("merchant_done", func():
 							GameState.slime_quest = 2
 							GameState.add_xp(30)  # урон теперь от класса/меча/амулета
 							GameState.add_gold(QuestsData.GOLD_QUEST_SLIMES)  # BALANCE строка 2 (g12)
-							GameState.quest_changed.emit()  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
-							Shop.open("merchant"))
+							GameState.quest_changed.emit())  # автосейв: квест закрыт, повторной сдачи нет (фикс T1)
 					elif GameState.torches == 0:
 						start_dialogue("merchant_progress", func(): Shop.open("merchant"))
 					else:
