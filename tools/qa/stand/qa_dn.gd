@@ -79,7 +79,7 @@ func _t1_pool() -> void:
 	_check(host.active_count() == 12, "T1 cap 12 active: %d" % host.active_count())
 	var nodes := host.get_child_count()
 	_check(nodes <= 12, "T1 nodes still <=12: %d" % nodes)
-	# 0.75 с (45物理 кадров) — все в пул, ни одной ноды не удалено (queue_free нет)
+	# 0.75 с (45 физических кадров) — все в пул, ни одной ноды не удалено (queue_free нет)
 	await frames(48)
 	_check(host.active_count() == 0, "T1 all retired after 0.75s: %d" % host.active_count())
 	_check(host.get_child_count() == nodes, "T1 no queue_free (child count stable): %d" % host.get_child_count())
