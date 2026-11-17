@@ -3690,7 +3690,11 @@ const G12_UNTOUCHED := {
 	# 16.11 вечер: текст-фикс пользователя «здрав->здоров» тронул alchemy.gd —
 	# ре-пин по прецеденту вердиктных волн (g13/g14/g15), базис прежний: md5
 	# файла на диске архива (CRLF), измерен распаковкой git archive HEAD.
-	"res://scripts/alchemy.gd": "abbb8e8687fe4c9c289bcfa1e7254845",
+	# g20a (вердикт 17.11 ~10:00, INVENTORY.md поставка А) ЦЕЛЕНАПРАВЛЕННО
+	# изменили alchemy.gd: cost_text — «есть/нужно» (N/M) и исключение окна
+	# инвентаря в гейте drink_brewed («скиллы/зелья с хотбара живут»).
+	# Ре-пин тем же прецедентом; поведение запинено qa_inv N2/N4.
+	"res://scripts/alchemy.gd": "d2e1f04905b46f3fcf185b91286a5f7c",
 	# g14 (рубрики+значки достижений, просьба пользователя 16.11) ЦЕЛЕНАПРАВЛЕННО
 	# изменил journal.gd — ре-пин по прецеденту g13 (hud/shop/game_state убраны
 	# из таблицы): поведение g12-приёмки живое, новый хеш принятого файла.
@@ -4135,7 +4139,11 @@ func _t42() -> void:
 	chk(ldr and GameState.torches == 2 and GameState.mat_count("smola") == 3,
 		"g13: сейв/загрузка: факелы=2 и смола=3 восстановлены")
 	var wss := _g13_src("res://scripts/game_state.gd")
-	chk(wss.contains("torches = 0") and wss.contains("\"torches\": torches"),
+	# g20a (вердикт 17.11 ~10:00, INVENTORY.md «сейв предметов»): литерал сейва
+	# переехал в контейнер inv — было "torches": torches, стало "torch": torches
+	# (строка 444). Сброс «нажитого круга» torches = 0 (строка 747) — цел.
+	# Функциональная пара проверок выше (сейв/загрузка факелов) — зелёная.
+	chk(wss.contains("torches = 0") and wss.contains("\"torch\": torches"),
 		"g13: torches в сейве и в круговом вайпе (нажитое круга сгорает)")
 	# 7) деревенский сундук = плановые +15 (кошель не его); кошель живёт вне деревни
 	var ichs := _g13_src("res://scripts/interactable.gd")

@@ -566,8 +566,11 @@ func fire_projectile(dir: Vector2, mult := 1.0, pierce := false, aoe := 0.0, spr
 
 ## Каст скилла по слоту 0..3 (клавиши 1-4 или клик по иконке).
 ## at — точка под курсором (для «Дождя стрел»), Vector2.INF — без точки.
+## g20a (вердикт 17.11 ~10:00): lock окна инвентаря каст не глушит —
+## «скиллы с хотбара живут»; любой чужой lock (диалог/модалка/лавка) — как был.
 func cast_skill(i: int, at := Vector2.INF) -> bool:
-	if i < 0 or i >= 4 or GameState.input_locked or GameState.class_id == "":
+	if i < 0 or i >= 4 or (GameState.input_locked and not Inventory.is_open()) \
+			or GameState.class_id == "":
 		return false
 	var sids: Array = Classes.skills_for(GameState.class_id)
 	var sid := String(sids[i])

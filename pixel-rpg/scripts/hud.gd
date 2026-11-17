@@ -856,7 +856,11 @@ func _update_camp_ui() -> void:
 			for mid in r.get("cost", {}):
 				if GameState.mat_count(String(mid)) < int(r["cost"][mid]):
 					afford = false
-			(camp_btns[rid] as Button).modulate = Color.WHITE if afford else Color(0.55, 0.55, 0.6)
+			var b: Button = camp_btns[rid]
+			# g20a: ряд живёт числами — «есть/нужно» перерисовывается каждый
+			# кадр панели (стоимость списывается целиком, вердикт «N/M»)
+			b.text = "%s — %s" % [String(r.get("name", String(rid))), Alch.cost_text(String(rid))]
+			b.modulate = Color.WHITE if afford else Color(0.55, 0.55, 0.6)
 	# полоса отдыха: ищем костёр с активным каналом (world.campfires — массив костров)
 	var cf_rest = null
 	if world != null:
@@ -898,7 +902,10 @@ func refresh_skills() -> void:
 ## -40..-4 с хоткеями/КД/уровнями — при открытом окне слой просто гаснет
 ## (только visibility, якоря и layout не двигаем).
 func _hotbar_allowed() -> bool:
-	return not (GameState.input_locked or is_dialog_open() or is_modal_open())
+	# g20a (вердикт 17.11 ~10:00): окно инвентаря хотбар НЕ гасит — «скиллы с
+	# хотбара живут»; любой чужой lock/окно гасит, как раньше (qa_ib B-03).
+	return not (is_dialog_open() or is_modal_open()
+			or (GameState.input_locked and not Inventory.is_open()))
 
 ## Кадровый надзор за хотбаром: панель гаснет в тот же кадр, что открылось
 ## окно диалога, и возвращается сразу после закрытия (иначе висела бы скрытой

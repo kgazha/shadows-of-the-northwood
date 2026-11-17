@@ -92,47 +92,61 @@ const SELL_DIV := 2
 ## {"item": id, "chance": float, "qty": int}; special-id предметов:
 ## "herb" (трава) и "potion" (заряд крепкого зелья) — свободных слотов
 ## инвентаря в игре нет, снаряжение покупается, а не падает с мобов.
+## g20a (вердикт 17.11 ~10:00): строка {"mat": id, "chance": …, "qty": …} —
+## материал в стопку (materials). Шкуры/жилы — «дроп мобов всегда» (chance 1.0):
+## слизни и мглокрысы — шкуру, брут/лучник/тенеплёт — жилу, боссы — и то, и то.
 const LOOT := {
 	"slime": [
 		{"gold": [2, 5], "chance": 0.85},
 		{"item": "herb", "chance": 0.12, "qty": 1},
+		{"mat": "hide", "chance": 1.0, "qty": 1},
 	],
 	# золото брюта по ярусам (ECONOMY_BALANCE, вердикт 3): тир 1 слабее,
 	# тир 3 жирнее — фарм глубоких ярусов перестанет быть выгодным в час.
 	"brute": [
 		{"gold": [6, 9], "chance": 0.9},
 		{"item": "potion", "chance": 0.12, "qty": 1},
+		{"mat": "sinew", "chance": 1.0, "qty": 1},
 	],
 	"brute_t2": [
 		{"gold": [8, 12], "chance": 0.9},
 		{"item": "potion", "chance": 0.12, "qty": 1},
+		{"mat": "sinew", "chance": 1.0, "qty": 1},
 	],
 	"brute_t3": [
 		{"gold": [10, 15], "chance": 0.9},
 		{"item": "potion", "chance": 0.12, "qty": 1},
+		{"mat": "sinew", "chance": 1.0, "qty": 1},
 	],
 	"boss": [
 		{"gold": [25, 40], "chance": 1.0},
 		{"item": "potion", "chance": 1.0, "qty": 1},
+		{"mat": "hide", "chance": 1.0, "qty": 2},
+		{"mat": "sinew", "chance": 1.0, "qty": 2},
 	],
 	# Ведьма Пепелища — мини-босс Зоны 2 (лут-строка запрошена оркестратором).
 	"boss2": [
 		{"gold": [35, 60], "chance": 1.0},
 		{"item": "potion", "chance": 0.5, "qty": 1},
+		{"mat": "hide", "chance": 1.0, "qty": 2},
+		{"mat": "sinew", "chance": 1.0, "qty": 2},
 	],
 	# новые архетипы: лучник сытее гнилодына (дальний бой рискует),
 	# тенеплёт жирнее всех (эфир — самый опасный), мглокрыс — мелочь на 1 хит.
 	"swarmling": [
 		{"gold": [1, 3], "chance": 0.8},
 		{"item": "herb", "chance": 0.08, "qty": 1},
+		{"mat": "hide", "chance": 1.0, "qty": 1},
 	],
 	"archer": [
 		{"gold": [6, 11], "chance": 0.8},
 		{"item": "herb", "chance": 0.15, "qty": 1},
+		{"mat": "sinew", "chance": 1.0, "qty": 1},
 	],
 	"wraith": [
 		{"gold": [10, 18], "chance": 0.9},
 		{"item": "potion", "chance": 0.15, "qty": 1},
+		{"mat": "sinew", "chance": 1.0, "qty": 1},
 	],
 }
 

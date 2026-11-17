@@ -102,21 +102,26 @@ func _ui(exp: String) -> void:
 	menu.queue_free()
 
 # --- v3 / run_seed (PROCGEN §2): три блока ребейса ---
+# g20a (вердикт пользователя 17.11 ~10:00, INVENTORY.md «сейв предметов с
+# миграцией»): to_dict поднял контейнер предметов до v4 ("inv") — номер версии
+# в файлах/то_dict стал 4, СЕМАНТИКА блока не изменилась (run_seed раундтрип,
+# сид рождается ровно раз, чистый load не трогает диск — всё прежнее).
+# Ре-пин old→new: v 3→4 в трёх проверках, по прецеденту вердиктных волн.
 
 func _run_seed_v3() -> void:
-	# SV-раундтрип сида: осознанно записанный сид переживает reset+load, v == 3.
+	# SV-раундтрип сида: осознанно записанный сид переживает reset+load, v == 4.
 	GameState.run_seed = 987654321
 	_check(GameState.save_game(), "v3: save с run_seed 987654321")
 	var j: Variant = JSON.parse_string(_read("user://save_morkheim.json").get_string_from_utf8())
 	if typeof(j) != TYPE_DICTIONARY:
 		_check(false, "v3: сохранённый JSON — словарь")
 		return
-	_check(int(j.get("v", 0)) == 3, "v3: файл v == 3")
+	_check(int(j.get("v", 0)) == 4, "v4: файл v == 4")
 	_check(int(j.get("run_seed", -1)) == 987654321, "v3: файл run_seed == 987654321")
 	GameState.run_seed = -1
 	_check(GameState.load_game(), "v3: load_game после сейва с сидом")
 	_check(GameState.run_seed == 987654321, "v3: run_seed раундтрип (reset -1 -> load -> 987654321)")
-	_check(int(GameState.to_dict().get("v", 0)) == 3, "v3: to_dict().v == 3")
+	_check(int(GameState.to_dict().get("v", 0)) == 4, "v4: to_dict().v == 4")
 
 func _migrate_v2_to_v3() -> void:
 	# Валидный v2-сейв БЕЗ run_seed: load_game рождает сид ровно один раз,
@@ -137,7 +142,7 @@ func _migrate_v2_to_v3() -> void:
 	if typeof(j) != TYPE_DICTIONARY:
 		_check(false, "v2->v3: файл после миграции — словарь")
 		return
-	_check(int(j.get("v", 0)) == 3, "v2->v3: файл стал v == 3")
+	_check(int(j.get("v", 0)) == 4, "v2->v4: файл стал v == 4")
 	_check(int(j.get("run_seed", -1)) == born, "v2->v3: сид на диске == в памяти")
 	var after := _read("user://save_morkheim.json")
 	_check(GameState.load_game(), "v2->v3: повторный load_game")

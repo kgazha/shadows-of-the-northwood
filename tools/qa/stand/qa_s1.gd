@@ -218,7 +218,9 @@ func _run() -> void:
 	ck(GameState.level == 3 and GameState.xp == 5, "T16 legacy level/xp")
 	ck(GameState.max_hp == 12 + 2 * 2, "T16 legacy max_hp=16", "got %d" % GameState.max_hp)
 	ck(GameState.hp == 9, "T16 legacy hp=9", "got %d" % GameState.hp)
-	ck(int(GameState.to_dict().get("v", 0)) == 3, "T16 re-save versioned v3")
+	# g20a (вердикт 17.11 ~10:00): re-save легаси стал v4 ("inv"-контейнер
+	# предметов, миграция без потерь запинута выше и в qa_inv). Ре-пин v 3->4.
+	ck(int(GameState.to_dict().get("v", 0)) == 4, "T16 re-save versioned v4")
 	ck(GameState.run_seed >= 0, "T16 legacy migration seeds run_seed", str(GameState.run_seed))
 
 	# --- T17 битые поля ---

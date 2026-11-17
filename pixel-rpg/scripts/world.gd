@@ -251,6 +251,10 @@ func _ready() -> void:
 	add_child(quest_marker)
 	quest_marker.setup(self)
 	add_child(Journal.new())  # журнал квестов (J): quests_data.gd + journal.gd, самодостаточен
+	# g20a (вердикт 17.11 ~10:00): окно инвентаря (I). Между Journal и Shop:
+	# Esc/I принадлежат ему до лавки, а лавка/диалог/модалка — старше него
+	# (взаимные гейты _busy в обоих окнах).
+	add_child(Inventory.new())
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
 	add_child(RunSummary.new())  # «Забег окончен» (смерть-петля §1.8): скрыта; последняя из модалок — её Esc приоритетнее
@@ -1126,10 +1130,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	# движение гейтилось в player.gd. input_locked при этом не сериализуется,
 	# так что залипание переживало быструю загрузку и снималось только
 	# рестартом процесса. Снимаем его при первом же вводе и обрабатываем
-	# событие штатно (F9, например, сразу сработает).
-	if GameState.input_locked and not hud.is_dialog_open() and not hud.is_modal_open():
+	# событие штатно (F9, например, сразу сработает). g20a: из страховки
+	# исключён инвентарь — его lock легален и без диалога/модалки, окно само
+	# перекладывает его в _process (паттерн Shop), «потери» не бывает.
+	if GameState.input_locked and not hud.is_dialog_open() and not hud.is_modal_open() \
+			and not Inventory.is_open():
 		GameState.input_locked = false
-	if GameState.input_locked:
+	if GameState.input_locked and not (Inventory.is_open() and _inv_hot_action(event)):
 		var advance_input: bool = event.is_action_pressed("interact") or event.is_action_pressed("attack") \
 			or event.is_action_pressed("ui_accept") \
 			or (event is InputEventMouseButton and event.pressed \
@@ -1161,9 +1168,21 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # --- зелья ---
 
+## g20a (вердикт 17.11 ~10:00 «скиллы с хотбара живут»): действия, которые
+## world проводит сквозь lock окна инвентаря — скиллы 1–4 и Q-зелье. Всё
+## остальное (движение/атака/E/F5/F9) под локом остаётся мёртвым.
+func _inv_hot_action(event: InputEvent) -> bool:
+	if event.is_action_pressed("potion"):
+		return true
+	for i in 4:
+		if event.is_action_pressed("skill_%d" % (i + 1)):
+			return true
+	return false
+
 ## Лесное зелье: трава -> +3 HP (клавиша Q или кнопка на HUD).
 func drink_potion() -> void:
-	if GameState.input_locked or hud.is_dialog_open() or hud.is_modal_open():
+	if (GameState.input_locked and not Inventory.is_open()) \
+			or hud.is_dialog_open() or hud.is_modal_open():
 		return
 	if GameState.herbs <= 0:
 		GameState.toast.emit("Трав нет. Собери их у кустов (E).")
@@ -1787,6 +1806,10 @@ func on_player_death() -> void:
 	# lock (иначе show_dialog() поднял бы lock поверх, а close() лавки снял бы его).
 	if Shop.is_open():
 		Shop.close()
+	# g20a: окно инвентаря живёт на том же CanvasLayer 5 с таким же вуалем —
+	# смерть закрывает и его (семантика B-02, до start_dialogue).
+	if Inventory.is_open():
+		Inventory.close()
 	# Смерть гасит забег (CONTRACT_RUNLOOP §1.1): респавна больше нет — после
 	# диалога открывается модалка RunSummary, «Вспыхнуть заново» = start_new_run().
 	if FirstHint.I != null: FirstHint.I.show_hint("death", "Смерть гасит забег: опыт и добыча сгорят. Но пепел, достижения и благословения алтаря — навсегда с тобой.")

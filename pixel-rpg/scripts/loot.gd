@@ -29,6 +29,9 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 			gold += _roll_gold(e["gold"])
 		elif e.has("item"):
 			_give_item(GameState, String(e.get("item", "")), maxi(1, int(e.get("qty", 1))))
+		elif e.has("mat"):
+			# g20a: материал в стопку инвентаря (шкура/жила — «всегдашний» дроп)
+			_give_mat(GameState, String(e.get("mat", "")), maxi(1, int(e.get("qty", 1))))
 	# NG+ §1.3: золото × ng_gold_mult(волна) — на ИТОГ ролла, формула в game_state.gd
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).
@@ -71,6 +74,18 @@ static func _roll_gold(v: Variant) -> int:
 	if typeof(v) == TYPE_ARRAY and (v as Array).size() >= 2:
 		return randi_range(int(v[0]), int(v[1]))
 	return maxi(0, int(v))
+
+## Выдача материала в стопку (g20a): qty штук через единственную точку
+## add_material(); переполнение стопки (99) — «потерян» как у старых дропов.
+static func _give_mat(gs: Node, mid: String, qty: int) -> void:
+	var added := 0
+	for q in qty:
+		if GameState.add_material(mid):
+			added += 1
+	if added == 0:
+		gs.toast.emit("Инвентарь полон — %s потерян" % GameState.mat_name(mid))
+	else:
+		gs.toast.emit("Трофей: %s (%d/%d)." % [GameState.mat_name(mid), gs.mat_count(mid), GameState.MAT_CAP])
 
 ## Выдача special-предмета: "herb" — трава (Q-зелье), "potion" — заряд
 ## крепкого зелья (до BREWED_CAP, излишек — травами). Свободного инвентаря

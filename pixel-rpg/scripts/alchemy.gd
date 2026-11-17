@@ -23,10 +23,14 @@ static func recipe(rid: String) -> Dictionary:
 	var r: Variant = recipes().get(rid, {})
 	return r if typeof(r) == TYPE_DICTIONARY else {}
 
+## g20a (вердикт 17.11 ~10:00): рецепт «на количества» — список стоимости
+## показывает есть/нужно («2/1 сухоцвет»), а не голое «1 сухоцвет»: стопки
+## инвентаря до 99, списывается ровно нужное (try_spend_materials).
 static func cost_text(rid: String) -> String:
 	var parts: Array[String] = []
 	for mid in recipe(rid).get("cost", {}):
-		parts.append("%d %s" % [int(recipe(rid)["cost"][mid]), GameState.mat_name(String(mid)).to_lower()])
+		parts.append("%d/%d %s" % [GameState.mat_count(String(mid)),
+				int(recipe(rid)["cost"][mid]), GameState.mat_name(String(mid)).to_lower()])
 	return " + ".join(parts)
 
 ## Сварить рецепт: сначала проверяем осуществимость (материалы + лимонка эффекта),
@@ -71,7 +75,9 @@ static func drink_brewed() -> bool:
 	# t29 B-03 (реестр t28): модалка/диалог не гейтили заряд — зелье выпивалось
 	# «сквозь разговор». Тот же гейт, что у Q-зелья (world.gd::drink_potion):
 	# под input_locked (диалог, модалка, лавка, настройки, журнал-лок) — отказ.
-	if GameState.input_locked:
+	# g20a (вердикт 17.11 ~10:00): исключение — окно инвентаря: хотбар живёт
+	# и заряд пьётся из открытого инвентаря (клик по ячейке/кнопке).
+	if GameState.input_locked and not Inventory.is_open():
 		return false
 	if GameState.brewed_potions <= 0:
 		GameState.toast.emit("Крепких зелий нет. Вари у костра.")

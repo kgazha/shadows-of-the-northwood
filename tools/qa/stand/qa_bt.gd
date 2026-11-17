@@ -15,15 +15,22 @@ func _ready() -> void:
 
 func _table() -> void:
 	var t: Variant = GearData.LOOT
-	_check(t.get("brute") == [{"gold": [6, 9], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}], "brute row [6,9]")
-	_check(t.get("brute_t2") == [{"gold": [8, 12], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}], "brute_t2 row [8,12]")
-	_check(t.get("brute_t3") == [{"gold": [10, 15], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}], "brute_t3 row [10,15]")
-	_check(t.get("swarmling") == [{"gold": [1, 3], "chance": 0.8}, {"item": "herb", "chance": 0.08, "qty": 1}], "swarmling 0.8+herb0.08")
-	# нет регрессий по чужим строкам
-	_check(t.get("slime") == [{"gold": [2, 5], "chance": 0.85}, {"item": "herb", "chance": 0.12, "qty": 1}], "slime untouched")
-	_check(t.get("boss") == [{"gold": [25, 40], "chance": 1.0}, {"item": "potion", "chance": 1.0, "qty": 1}], "boss untouched")
-	_check(t.get("archer") == [{"gold": [6, 11], "chance": 0.8}, {"item": "herb", "chance": 0.15, "qty": 1}], "archer untouched")
-	_check(t.get("wraith") == [{"gold": [10, 18], "chance": 0.9}, {"item": "potion", "chance": 0.15, "qty": 1}], "wraith untouched")
+	# g20a (вердикт пользователя 17.11 ~10:00, INVENTORY.md: «шкуры/жилы — дроп
+	# мобов всегда»): каждая строка дополнена mat-строкой chance 1.0 —
+	# слизень/мглокрыс шкуру (hide), брут×3/лучник/тенеплёт жилу (sinew), боссы
+	# обе по qty 2. Золото/травы/зелья строк НЕ тронуты (значения ниже —
+	# прежние, mat-строки только дописаны): ре-пин old→new = «+1–2 mat-строки»,
+	# по прецеденту вердиктных волн (g13/g14/g15/t50/g19).
+	_check(t.get("brute") == [{"gold": [6, 9], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "brute row [6,9]")
+	_check(t.get("brute_t2") == [{"gold": [8, 12], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "brute_t2 row [8,12]")
+	_check(t.get("brute_t3") == [{"gold": [10, 15], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "brute_t3 row [10,15]")
+	_check(t.get("swarmling") == [{"gold": [1, 3], "chance": 0.8}, {"item": "herb", "chance": 0.08, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 1}], "swarmling 0.8+herb0.08")
+	# нет регрессий по чужим строкам (g20a: «чужих» больше нет — у всех строк
+	# есть мат-строка; золотые/предметные кортежи прежние 1-в-1)
+	_check(t.get("slime") == [{"gold": [2, 5], "chance": 0.85}, {"item": "herb", "chance": 0.12, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 1}], "slime untouched")
+	_check(t.get("boss") == [{"gold": [25, 40], "chance": 1.0}, {"item": "potion", "chance": 1.0, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 2}, {"mat": "sinew", "chance": 1.0, "qty": 2}], "boss untouched")
+	_check(t.get("archer") == [{"gold": [6, 11], "chance": 0.8}, {"item": "herb", "chance": 0.15, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "archer untouched")
+	_check(t.get("wraith") == [{"gold": [10, 18], "chance": 0.9}, {"item": "potion", "chance": 0.15, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "wraith untouched")
 
 func _achv_new_kind() -> void:
 	# «Первая кровь» должна сработать с НОВЫМ kind (brute_t3) и не сломать счётчики

@@ -20,12 +20,16 @@ const COMBAT_HOLD := 6.0        # сколько секунд считаем «�
 const MANA_REGEN_EVERY := 2.0   # +2 маны каждые 2 с вне боя
 const MANA_REGEN_STEP := 2
 
-# --- привалы и алхимия (дефицит: дроп редкий, перенос ограничен, костёр одноразовый) ---
-const MAT_CAP := 5              # лимит переноса на каждый материал
+# --- привалы и алхимия (дефицит: дроп редкий, костёр одноразовый) ---
+## g20a (вердикт 17.11 ~10:00, INVENTORY.md): «рюкзак-карман» стал инвентарём —
+## материалы живут стопками по 99 (ячейка сетки с угловым счётчиком, как в
+## лавке); прежний лимит переноса 5 отменён вердиктом «заводим сразу».
+const MAT_CAP := 99             # размер стопки материала (старый «лимит переноса» 5 отменён g20a)
 const BREWED_CAP := 2           # запас варёных зелий (крепких)
 const STRONG_POTION_HEAL := 6   # HP за крепкое зелье (обычное травяное — 3)
 const MAT_NAMES := {"suhotsvet": "Сухоцвет", "zhim": "Жим",
-	"smola": "Смола"}  # g13 (Г1.3): «Смола» — материал факела, покупается у Драна
+	"smola": "Смола",  # g13 (Г1.3): «Смола» — материал факела, покупается у Драна
+	"hide": "Шкура слизня", "sinew": "Волчья жила"}  # g20a: материалы всегдашнего дропа
 
 var max_hp := 10
 var hp := 10
@@ -55,7 +59,8 @@ var slime_kills := 0
 ## slime_kills остаётся lifetime-счётчиком ачивок (Охотник 25/100).
 var slime_kills_circle := 0
 ## Алхимия: материалы с врагов (id -> кол-во, см. MAT_NAMES) и заряды варёных зелий.
-var materials := {"suhotsvet": 0, "zhim": 0, "smola": 0}
+## g20a: стопки до MAT_CAP; hide/sinew — всегдашний дроп мобов (INVENTORY.md §2).
+var materials := {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0}
 var brewed_potions := 0
 ## Факелы (g13/Г1.3). Счётчик-расходник: факел из лавки Драна и факел, сплетённый
 ## Гриимом, — один предмет ("torch" в GearData.ITEMS), один add_torch() на оба
@@ -423,7 +428,11 @@ func to_dict() -> Dictionary:
 	return {
 		"max_hp": max_hp, "hp": hp, "mana": mana, "level": level, "xp": xp, "xp_next": xp_next,
 		"damage": damage, "has_sword": has_sword, "class_id": class_id,
-		"herbs": herbs, "slime_kills": slime_kills,
+		# g20a (вердикт 17.11 ~10:00): ВЕТКИ ПРЕДМЕТОВ переехали в inv — сейв v4
+		# (см. from_dict: v≤3 читаются через миграцию без потерь). has_key/
+		# has_amulet остались top-level: это квестовые флаги сюжета, а не
+		# стопки; сетка инвентаря показывает их как ячейки-единицы.
+		"slime_kills": slime_kills,
 		"slime_kills_circle": slime_kills_circle,
 		"elder_quest": elder_quest, "slime_quest": slime_quest,
 		"seen_intro": seen_intro,
@@ -431,11 +440,13 @@ func to_dict() -> Dictionary:
 		"door_opened": door_opened,
 		"in_cave": in_cave, "seen_cave_intro": seen_cave_intro,
 		"seen_boss_intro": seen_boss_intro, "boss_defeated": boss_defeated,
-		"materials": materials.duplicate(), "brewed": brewed_potions,
-		"torches": torches,
+		"inv": {
+			"herb": herbs, "brewed": brewed_potions, "torch": torches,
+			"mat": materials.duplicate(),
+		},
 		"campfires_used": campfires_used.duplicate(),
 		"chests_used": chests_used.duplicate(),
-		"v": 3, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
+		"v": 4, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
 		"run_seed": run_seed,
 	}
@@ -449,7 +460,7 @@ func from_dict(d: Dictionary) -> void:
 	# damage — производный, из справочника классов (legacy-поле сейва игнорируется)
 	class_id = _str(d.get("class_id", "warrior"), "warrior")  # старый сейв без класса => воин
 	has_sword = _flag(d.get("has_sword", false), false)
-	herbs = maxi(0, _num(d.get("herbs", 0), 0))
+	# g20a: травы — часть инвентарного блока inv ниже (сейвы v≤3 мигрируются там же)
 	slime_kills = maxi(0, _num(d.get("slime_kills", 0), 0))
 	slime_kills_circle = maxi(0, _num(d.get("slime_kills_circle", d.get("slime_kills", 0)), 0))  # легаси-сейв без поля — seed тоталом: активный квест круга не обнуляется (Q5-C5)
 	elder_quest = clampi(_num(d.get("elder_quest", 0), 0), 0, 2)
@@ -465,14 +476,31 @@ func from_dict(d: Dictionary) -> void:
 	seen_boss_intro = _flag(d.get("seen_boss_intro", false), false)
 	if _flag(d.get("boss_defeated", false), false):
 		cave_state = maxi(cave_state, 2)
+	# --- g20a (вердикт 17.11 ~10:00): инвентарь сейва v4 ---
+	# v4 несёт ветки предметов в словаре inv. Сейвы v≤3 (herbs/materials/
+	# brewed/torches top-level) читаются тем же резолвером напрямую — это и
+	# есть миграция «в сетку без потерь»: каждый старый ключ попадает в своё
+	# поле, а следующий save_game() уже пишет v4. Ключей g19 (tal.*, meta.mb.*)
+	# блок не касается: вечный слой в flags живёт отдельным ключом сейва.
+	var inv: Variant = d.get("inv", {})
+	var inv_d: Dictionary = inv if typeof(inv) == TYPE_DICTIONARY else {}
+	var has_inv: bool = not inv_d.is_empty()
+	var herb_v: Variant = inv_d.get("herb", 0) if has_inv else d.get("herbs", 0)
+	# травы исторически были без капа; стопка сетки — MAT_CAP, излишек старого
+	# сейва клампится (99 трав в забеге нереалистичны; потери нулевые на практике)
+	herbs = clampi(_num(herb_v, 0), 0, MAT_CAP)
 	# привалы и алхимия: СТАРЫЕ сейвы без этих полей => пустой рюкзак, костры целы
-	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0}
-	var md: Variant = d.get("materials", {})
+	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0}
+	# v4: материалы в inv.mat; v≤3: top-level "materials" (hide/sinew там
+	# заведомо нет — нули)
+	var md: Variant = inv_d.get("mat", {}) if has_inv else d.get("materials", {})
 	if typeof(md) == TYPE_DICTIONARY:
 		for mid in materials:
-			materials[mid] = clampi(_num(md.get(mid, 0), 0), 0, MAT_CAP)
-	brewed_potions = clampi(_num(d.get("brewed", 0), 0), 0, BREWED_CAP)
-	torches = maxi(0, _num(d.get("torches", 0), 0))  # старый сейв без поля — ноль факелов
+			materials[mid] = clampi(_num((md as Dictionary).get(mid, 0), 0), 0, MAT_CAP)
+	var br_v: Variant = inv_d.get("brewed", 0) if has_inv else d.get("brewed", 0)
+	brewed_potions = clampi(_num(br_v, 0), 0, BREWED_CAP)
+	var torch_v: Variant = inv_d.get("torch", 0) if has_inv else d.get("torches", 0)
+	torches = clampi(_num(torch_v, 0), 0, MAT_CAP)  # старый сейв без поля — ноль факелов
 	var cu: Variant = d.get("campfires_used", {})
 	# M4 (QA): каппим как сундуки (64) с varning — раньше кап был только у
 	# chests_used и молча резал данные, а campfires_used не валидировался вовсе.
@@ -715,7 +743,7 @@ func _wipe_circle() -> void:
 	door_opened = false
 	chests_used = []
 	campfires_used = {}
-	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0}  # структура сохраняем: add_material сверяет has()
+	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0}  # структура сохраняем: add_material сверяет has()
 	brewed_potions = 0
 	torches = 0  # g13: факелы — нажитое круга, сгорает вместе с кругом (как травы)
 	# травы — подвальный инвентарь деревенского круга («Сухоцвет впрок»
