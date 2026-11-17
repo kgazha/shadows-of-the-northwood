@@ -357,7 +357,8 @@ func set_class(id: String) -> void:
 # --- древо талантов (CONTRACT_TALENTS §2): ранги живут в flags "tal."+id ---
 ## Никаких новых top-level полей сейва: только int-ранги 0..max в flags.
 ## Реестр узлов и их максимумы — scripts/talents.gd (class_name Talents).
-## Кап CAP-128 на число ключей flags учитывает 14 ключей tal.* (док в from_dict).
+## Кап CAP-128 на число ключей flags учитывает 14 ключей tal.* по числу
+## узлов (12 общих + 2 классовых прока g19) + служебный tal.gift (док в from_dict).
 
 ## Ранг узла talents (0..max_of); неизвестный id => max_of=0 => 0.
 func tal_rank(id: String) -> int:
@@ -370,21 +371,53 @@ func tal_spent() -> int:
 		s += tal_rank(String(id))
 	return s
 
-## Свободные очки таланта: по одному за каждый уровень выше 1-го минус вложенные.
+## Свободные очки таланта: по одному за каждый уровень выше 1-го минус
+## вложенные. g19: + tal.gift — подаренные очки за миграцию proc-рангов
+## с доски пепла (вердикт 16.11 22:44: перенос «бесплатный», очко не съедается).
+## Gift живёт в семействе tal.* и сгорает на смерти/кругу вместе с рангами.
 func tal_points() -> int:
-	return maxi(level - 1 - tal_spent(), 0)
+	return maxi(level - 1 + _num(flags.get("tal.gift", 0), 0) - tal_spent(), 0)
 
 ## Потратить очко в узел id. false (со звуком ui_deny) — неизвестный id, узел
-## прокачан до cap или нет свободных очков. Успех — +1 ранг, ui_confirm и
+## прокачан до cap, чужой классовый прок (g19: воину не виден и недоступен
+## прок лучника) или нет свободных очков. Успех — +1 ранг, ui_confirm и
 ## quest_changed (тот же канал автосейва, что квесты/ачивки).
 func try_spend_talent(id: String) -> bool:
-	if not Talents.NODES.has(id) or tal_rank(id) >= Talents.max_of(id) or tal_points() <= 0:
+	if not Talents.NODES.has(id) or tal_rank(id) >= Talents.max_of(id) or tal_points() <= 0 \
+			or (Talents.class_of(id) != "" and Talents.class_of(id) != class_id):
 		GameAudio.sfx("ui_deny")
 		return false
 	flags["tal." + id] = tal_rank(id) + 1
 	quest_changed.emit()
 	GameAudio.sfx("ui_confirm")
 	return true
+
+## g19 (вердикт 16.11 22:44): миграция proc-рангов с доски пепла в таланты.
+## Старые сейвы могли купить «Клык вепря»/«Скрученную стрелу» за пепел
+## (meta.mb.<id>, вечный слой). При загрузке: класс совпал — равный ранг
+## выдаётся в tal.<id> бесплатно, а в tal.gift ложится компенсация очков
+## (иначе подаренный ранг молча съел бы будущие очки); класс не совпал —
+## токен просто стирается (перенос чужого прока не имеет смысла). Токен
+## чистится всегда => операция идемпотентна (из вечного слоя флаг исчезает,
+## gift остаётся до конца круга как у всех tal.*). true — хоть один токен
+## найден и сейв надо зафиксировать (паттерн run_seed-миграции ниже).
+func _migrate_proc_tokens() -> bool:
+	var touched := false
+	for pid in ["boar_fang", "twisted_arrow"]:
+		var pid_s := String(pid)  # цикл по untyped Array: pid — Variant, явное String
+		var key: String = "meta.mb." + pid_s
+		var rank := clampi(_num(flags.get(key, 0), 0), 0, Talents.max_of(pid_s))
+		if not flags.has(key):
+			continue
+		flags.erase(key)
+		touched = true
+		if rank <= 0:
+			continue
+		if Talents.class_of(pid_s) == class_id:
+			flags["tal." + pid_s] = mini(tal_rank(pid_s) + rank, Talents.max_of(pid_s))
+			flags["tal.gift"] = _num(flags.get("tal.gift", 0), 0) + rank
+		# чужой класс: токен стёрт, ранг не переносится
+	return touched
 
 func to_dict() -> Dictionary:
 	return {
@@ -535,6 +568,11 @@ func load_game() -> bool:
 	if typeof(data) != TYPE_DICTIONARY:
 		return false
 	from_dict(data)
+	# g19 (вердикт 16.11 22:44): миграция proc-токенов доски в таланты — ДО
+	# любой записи, найденное сразу фиксируется на диске (тот же паттерн, что
+	# run_seed ниже: миграция совершается ровно один раз).
+	if _migrate_proc_tokens():
+		save_game()
 	# PROCGEN §2 миграция: сейв без run_seed (v2) или с стражом −1 — сид забега
 	# рождается РОВНО ОДИН РАЗ и сразу фиксируется на диске, чтобы рестарты его
 	# не перегенерили. Глобальный RNG здесь допустим: это рождение сида, а не
@@ -632,12 +670,11 @@ func start_ng_plus() -> int:
 	# t20 P0-3: «Благословение волхвы» считается по смертям ТЕКУЩЕГО круга —
 	# новый круг обнуляет счётчик (волхва благословляет заново с чистого листа).
 	flags["meta.vd"] = 0
-	# g17 (TALENT_PROCS, утверждено 16.11): NG+ стирает таланты-проки — вместе с
-	# живыми ветвями (tal.* выметет общий _wipe_circle ниже), исключений нет.
-	# Проки живут в вечном meta.mb.*, потому что покупаются на экране смерти и
-	# обязаны дожить до конца купившего их забега (смерть их НЕ ест — канон
-	# продажи доски); здесь — их собственная NG+-очистка по тому же механизму
-	# «стираем флаги семейства», только семейство proc:true.
+	# g17 (TALENT_PROCS): NG+ стирал таланты-проки точечно из вечного meta.mb.*.
+	# g19 (вердикт 16.11 22:44): проки переехали в tal.* (Talents, классовые
+	# узлы) — их выметает общий _wipe_circle ниже вместе с ветвями, как и всё
+	# живое. Цикл по proc_ids() оставлен стопором: таблица доски пуста — проход
+	# холостой; вернутся proc-строки — снова станут чиститься точечно.
 	for pid in MetaBoard.proc_ids():
 		flags.erase(MetaBoard.KEY_PREFIX + String(pid))
 	# Вайп-набор — общий хелпер _wipe_circle() (CONTRACT_RUNLOOP §1.3). Герой

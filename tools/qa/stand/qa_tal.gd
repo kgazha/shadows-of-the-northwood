@@ -92,18 +92,38 @@ func _run() -> void:
 	var sum_max := 0
 	var branch_ok := true
 	var cost_ok := true
+	var sum_common := 0
 	for id in nodes:
 		sum_max += int(nodes[id].get("max", 0))
+		if Talents.class_of(String(id)) == "":
+			sum_common += int(nodes[id].get("max", 0))
 		if not Talents.BRANCHES.has(String(nodes[id].get("branch", ""))):
 			branch_ok = false
 		if int(nodes[id].get("cost_per_rank", 0)) != 1:
 			cost_ok = false
-	_chk("t0_registry_enum", nodes.size() == 12, "NODES=%d — канон: перечисленные §1 id (в прозе §1 «14» — опечатка контракта, см. INFO)" % nodes.size())
-	print("QA_TAL INFO contract_discrepancy | prose «14 узлов/13 хуков» vs enumerated §1 = 12 id, сумма max = 20 (реализован перечисленный канон; импровизация числами запрещена)")
-	_chk("t0_sum20", sum_max == 20, "sum(max)=%d (Сила 7 + Лес 7 + Пепел 6)" % sum_max)
+	# g19 РЕ-ПИН (вердикт 16.11 22:44 «Проки перенеси в таланты … проки у
+	# каждого класса свои»): контракт расширен полями class/vals — к 12 общим
+	# узлам (сумма max 20 — прежний канон §1, в прозе «14» была опечаткой)
+	# добавлены 2 классовых прока (max 3+3). 12+2=14 узлов, 20+6=26 — и есть
+	# обновленный перечисленный канон; числа не импровизация, а ровно узлы.
+	_chk("t0_registry_enum", nodes.size() == 14, "NODES=%d — 12 общих (§1) + 2 классовых прока (g19)" % nodes.size())
+	print("QA_TAL INFO contract_discrepancy | prose §1 «14 узлов» vs перечисленные 12 id — историческая опечатка; с g19 NODES=14, из них 12 общих + boar_fang/twisted_arrow (class)")
+	_chk("t0_sum20", sum_common == 20 and sum_max == 26, "sum общих max=%d (Сила 7+Лес 7+Пепел 6), с проками=%d (g19)" % [sum_common, sum_max])
 	_chk("t0_branches", branch_ok and Talents.BRANCHES.size() == 3, "3 ветки, у всех узлов валидный branch")
 	_chk("t0_cost1", cost_ok, "cost_per_rank == 1 у всех 14")
 	_chk("t0_maxof", Talents.max_of("fury") == 3 and Talents.max_of("zzz") == 0, "max_of: fury=3, неизвестный=0")
+	# g19: поля class/vals + таблица шансов проков в реестре
+	_chk("t0_g19_class_of", Talents.class_of("boar_fang") == "warrior" \
+			and Talents.class_of("twisted_arrow") == "archer" \
+			and Talents.class_of("fury") == "" and Talents.class_of("zzz") == "",
+			"class_of: boar_fang=warrior, twisted_arrow=archer, общий='' , неизвестный=''")
+	_chk("t0_g19_vals", Talents.value_at_rank(1, "boar_fang") == 20 \
+			and Talents.value_at_rank(2, "twisted_arrow") == 30 \
+			and Talents.value_at_rank(3, "boar_fang") == 40 \
+			and Talents.value_at_rank(0, "boar_fang") == 0 \
+			and Talents.value_at_rank(4, "boar_fang") == 0 \
+			and Talents.value_at_rank(1, "fury") == 0,
+			"value_at_rank проков 20/30/40; ранг вне диапазона и узел без vals -> 0")
 
 	# ---- T01: tal_points / трата / отказы ----
 	_fresh()
@@ -124,6 +144,38 @@ func _run() -> void:
 	_chk("t1_fury_cap3", fz and GameState.tal_rank("fury") == 3 and not GameState.try_spend_talent("fury"), "fury 3 траты, 4-я — отказ (cap 3)")
 	GameState.level = 7  # 6-5 вложенных = 1 очко под heavy
 	_chk("t1_heavy_cap1", GameState.try_spend_talent("heavy") and not GameState.try_spend_talent("heavy"), "heavy: 1 трата, cap=1")
+
+	# ---- T01b: g19 — классовые проки (verdict 16.11 22:44 «не нужно воину
+	# видеть талантов для проков лучника»): guard траты по class + gift-очки ----
+	# Класс переключаем ПРЯМЫМ присваиванием class_id (set_class однократный,
+	# паттерн T15 ниже).
+	_fresh()
+	GameState.class_id = "warrior"
+	GameState.level = 4
+	_chk("t1b_warrior_denies_archer", not GameState.try_spend_talent("twisted_arrow") \
+			and not GameState.flags.has("tal.twisted_arrow") and GameState.tal_points() == 3,
+			"воин: чужой прок refused, флаг не создан, очки целы")
+	_chk("t1b_warrior_own_ok", GameState.try_spend_talent("boar_fang") and GameState.tal_rank("boar_fang") == 1,
+			"воин: свой прок покупается очком таланта (1/ранг)")
+	GameState.class_id = "archer"
+	_chk("t1b_archer_denies_warrior", not GameState.try_spend_talent("boar_fang") \
+			and GameState.tal_rank("boar_fang") == 1,
+			"лучник: чужой прок refused (и ранг воина не тронут)")
+	_chk("t1b_archer_own_ok", GameState.try_spend_talent("twisted_arrow") and GameState.tal_rank("twisted_arrow") == 1,
+			"лучник: свой прок покупается")
+	# gift: подаренные миграцией очки расширяют пул и сгорают вайпом круга
+	_fresh()
+	GameState.level = 2
+	_chk("t1b_gift_base", GameState.tal_points() == 1, "level=2: пул 1")
+	GameState.flags["tal.gift"] = 3
+	_chk("t1b_gift_plus", GameState.tal_points() == 4, "tal.gift=3 => пул 4 (подарок не ест очки)")
+	GameState.flags["tal.boar_fang"] = 2
+	GameState.start_ng_plus()
+	_chk("t1b_gift_wiped", not GameState.flags.has("tal.gift") and GameState.tal_rank("boar_fang") == 0,
+			"вайп круга: gift и проки сгорели вместе с tal.* (после смерти/круга — с нуля)")
+	# класс обратно «без класса» — прежний нейтральный базис секций T02..T14
+	# (t11_btn12 считает журнал без классовых узлов)
+	GameState.class_id = ""
 
 	# ---- T02: tal_rank — клампы и битые данные ----
 	_fresh()
@@ -449,7 +501,10 @@ func _run() -> void:
 
 	# ---- T15: g17 «таланты-проки» — шанс на фиксированном randf-сиде (инъекция);
 	#      g17c: эффект обоих проков = сброс отката своего слота
-	#      («Клык вепря» -> Мощный удар, «Скрученная стрела» -> Пробивающий) ----
+	#      («Клык вепря» -> Мощный удар, «Скрученная стрела» -> Пробивающий)
+	#      g19 РЕ-ПИН (вердикт 16.11 22:44): ранг читается из Talents (tal.<id>),
+	#      тестовые флаги переехали с meta.mb.* на tal.* — механика броска/сброса
+	#      те же, перепинен только источник ранга ----
 	_fresh()
 	GameState.set_class("warrior")
 	_fresh()
@@ -458,7 +513,7 @@ func _run() -> void:
 	await _frames(1)
 	# ранг 0: false всегда и бросок не тратится (проц не куплен)
 	PlayerScript.proc_rng = null
-	GameState.flags["meta.mb.boar_fang"] = 0
+	GameState.flags["tal.boar_fang"] = 0
 	var zero_hits := 0
 	for i in 100:
 		if p15._proc_roll("boar_fang"):
@@ -466,7 +521,7 @@ func _run() -> void:
 	_chk("t15_rank0_never", zero_hits == 0, "ранг 0: %d true из 100 (нужен 0)" % zero_hits)
 	# шанс-функция на фиксированном сиде: два прохода одного сида совпадают побитово-детерминированно
 	var seeded := func(rank: int, n: int) -> int:
-		GameState.flags["meta.mb.boar_fang"] = rank
+		GameState.flags["tal.boar_fang"] = rank
 		var g := RandomNumberGenerator.new()
 		g.seed = 4242
 		PlayerScript.proc_rng = g
@@ -527,7 +582,7 @@ func _run() -> void:
 	var gf := RandomNumberGenerator.new(); gf.seed = seed_false
 	var gt := RandomNumberGenerator.new(); gt.seed = seed_true
 	# ранг 0: штатный кд 4.0, сброса нет
-	GameState.flags["meta.mb.boar_fang"] = 0
+	GameState.flags["tal.boar_fang"] = 0
 	PlayerScript.proc_rng = gt
 	t15sl.hp = 30
 	t15pl.skill_cd = [0.0, 8.0, 7.0, 12.0]
@@ -535,7 +590,7 @@ func _run() -> void:
 	_chk("t15c_rank0_cd", cast_ok and is_equal_approx(float(t15pl.skill_cd[0]), 4.0),
 		"ранг 0: «Мощный удар» тратит кд 4.0 как обычно, сброса нет")
 	# форк-true, Р1: кд своего слота в ноль; чужие таймеры (8/7/12) и мана целы
-	GameState.flags["meta.mb.boar_fang"] = 1
+	GameState.flags["tal.boar_fang"] = 1
 	PlayerScript.proc_rng = gt
 	var mana15 := GameState.mana
 	t15pl.skill_cd = [0.0, 8.0, 7.0, 12.0]
@@ -547,7 +602,7 @@ func _run() -> void:
 			and GameState.mana == mana15,
 		"форк true, Р1: кд «Мощного» 4.0->0, чужие (8/7/12) и мана не тронуты")
 	# форк-false на ранге 3: сброса нет, кд 4.0 на месте
-	GameState.flags["meta.mb.boar_fang"] = 3
+	GameState.flags["tal.boar_fang"] = 3
 	PlayerScript.proc_rng = gf
 	t15pl.skill_cd = [0.0, 8.0, 7.0, 12.0]
 	cast_ok = t15pl.cast_skill(0, Vector2.INF)
@@ -557,7 +612,7 @@ func _run() -> void:
 	# «Скрученная стрела» -> pierce (лучник, слот 0, кд 5.0): форк-true — сброс,
 	# форк-false — кд 5.0 на месте; чужие таймеры (3/6/9) не тронуты
 	GameState.class_id = "archer"
-	GameState.flags["meta.mb.twisted_arrow"] = 1
+	GameState.flags["tal.twisted_arrow"] = 1
 	gt.seed = seed_true  # пересев: «первый randf заведомо true» действует только для первого броска
 	PlayerScript.proc_rng = gt
 	t15pl.skill_cd = [0.0, 3.0, 6.0, 9.0]

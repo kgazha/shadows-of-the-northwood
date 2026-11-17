@@ -49,7 +49,9 @@ func _ready() -> void:
 
 func _icons_checks() -> void:
 	var ids: Array = Talents.NODES.keys()
-	_chk("i0_twelve_ids", ids.size() == 12, "NODES=%d узлов (ждём 12)" % ids.size())
+	# g19 РЕ-ПИН (вердикт 16.11 22:44): к 12 общим узлам добавлены 2 классовых
+	# прока — иконки есть у всех 14 (маски в _PIXELS, отрисовка та же).
+	_chk("i0_twelve_ids", ids.size() == 14, "NODES=%d узлов (12 общих + 2 прока g19)" % ids.size())
 	var n_img := 0
 	var n_88 := 0
 	var n_fmt := 0
@@ -64,10 +66,10 @@ func _icons_checks() -> void:
 				n_fmt += 1
 			# PNG-байты как канонический отпечаток (у Image в 4.x нет hash()/sha256)
 			hashes[img.save_png_to_buffer().hex_encode()] = String(id)
-	_chk("i1_images_built", n_img == 12, "icon_image() вернул Image для %d/12 узлов" % n_img)
-	_chk("i2_size_8x8", n_88 == 12, "Image.get_size()==8x8 для %d/12" % n_88)
-	_chk("i3_format_rgba8", n_fmt == 12, "FORMAT_RGBA8 для %d/12" % n_fmt)
-	_chk("i4_unique", hashes.size() == 12, "уникальных hash: %d/12" % hashes.size())
+	_chk("i1_images_built", n_img == 14, "icon_image() вернул Image для %d/14 узлов (g19)" % n_img)
+	_chk("i2_size_8x8", n_88 == 14, "Image.get_size()==8x8 для %d/14" % n_88)
+	_chk("i3_format_rgba8", n_fmt == 14, "FORMAT_RGBA8 для %d/14" % n_fmt)
+	_chk("i4_unique", hashes.size() == 14, "уникальных hash: %d/14" % hashes.size())
 	var n_tex := 0
 	var n_16 := 0
 	for id in ids:
@@ -76,8 +78,8 @@ func _icons_checks() -> void:
 			n_tex += 1
 			if tex.get_size() == Vector2(16, 16):
 				n_16 += 1
-	_chk("i5_texture_16x16", n_tex == 12 and n_16 == 12,
-		"ImageTexture (nearest resize 8->16) размером 16x16: %d/12" % n_16)
+	_chk("i5_texture_16x16", n_tex == 14 and n_16 == 14,
+		"ImageTexture (nearest resize 8->16) размером 16x16: %d/14" % n_16)
 	_chk("i6_same_instance", Talents.icon_texture("whetstone") == Talents.icon_texture("whetstone"),
 		"кэш: повторный вызов отдаёт тот же объект")
 	_chk("i7_unknown_null", Talents.icon_image("nosuch") == null and Talents.icon_texture("nosuch") == null,
@@ -105,7 +107,9 @@ func _journal_checks() -> void:
 			if b.text == "%s %d/%d" % [String(nd.get("name", "")), 0, Talents.max_of(String(raw_id))]:
 				n_text += 1
 	print("QA_UI INFO journal buttons=%d icon=%d icon16=%d text='%s'" % [btns.size(), n_icon, n_16, (btns[0] as Button).text if not btns.is_empty() else "-"])
-	_chk("j1_rows_12", btns.size() == 12, "кнопок-узлов: %d (ждём 12)" % btns.size())
+	# g19 (вердикт 16.11 22:44): здесь class_id == "" — безкласса-проки скрыты,
+	# рядов ровно 12 общих; матрица видимости по классам — j5/j6 ниже.
+	_chk("j1_rows_12", btns.size() == 12, "кнопок-узлов: %d (класс не выбран: 12 общих, проки скрыты)" % btns.size())
 	_chk("j2_icon_on_row", n_icon == 12 and n_16 == 12,
 		"иконка 16x16 на строке: %d/12" % n_16)
 	_chk("j3_name_rank", n_text == 12, "текст 'Имя ранг/max': %d/12" % n_text)
@@ -153,6 +157,39 @@ func _journal_checks() -> void:
 	_chk("j6_paper_on_frame", j6_ok,
 		"PaperEdge — сосед _panel под _root, rect==rect окна: paper=%s panel=%s" % [
 			str(paper.size) if paper != null else "-", str(j._panel.size)])
+	# ---- g19 (вердикт 16.11 22:44): матрица видимости классовых проков ----
+	# «Не нужно воину видеть талантов для проков лучника»: warrior=13 (с клыком),
+	# archer=13 (со стрелой), без класса=12 (проков нет). Пересборка явная:
+	# подпись rebuild (очки/траты) смену класса не ловит, в живой игре её
+	# сделает смена вкладки/уровня. Блок ПОСЛЕ замеров — rebuild освобождает
+	# старые кнопки (иначе «cast a freed object» в j5_no_clip).
+	var has_bf := func(arr: Array) -> bool:
+		for raw_b2 in arr:
+			if String((raw_b2 as Button).text).begins_with("Клык вепря"):
+				return true
+		return false
+	var has_ta := func(arr: Array) -> bool:
+		for raw_b2 in arr:
+			if String((raw_b2 as Button).text).begins_with("Скрученная стрела"):
+				return true
+		return false
+	GameState.class_id = "warrior"
+	j._rebuild_talents()
+	await _frames(1)
+	var btns_w: Array = []
+	_buttons(j._tal_list, btns_w)
+	_chk("j7_warrior_sees_own_only", btns_w.size() == 13 and has_bf.call(btns_w) \
+			and not has_ta.call(btns_w),
+			"воин: %d рядов, клык=%s стрела=%s" % [btns_w.size(), str(has_bf.call(btns_w)), str(has_ta.call(btns_w))])
+	GameState.class_id = "archer"
+	j._rebuild_talents()
+	await _frames(1)
+	var btns_a: Array = []
+	_buttons(j._tal_list, btns_a)
+	_chk("j8_archer_sees_own_only", btns_a.size() == 13 and has_ta.call(btns_a) \
+			and not has_bf.call(btns_a),
+			"лучник: %d рядов, стрела=%s клык=%s" % [btns_a.size(), str(has_ta.call(btns_a)), str(has_bf.call(btns_a))])
+	GameState.class_id = ""
 	j.close()
 
 # --- п.2 + п.4: hud.gd ---

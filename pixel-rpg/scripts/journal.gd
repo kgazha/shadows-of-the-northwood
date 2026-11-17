@@ -588,6 +588,12 @@ func _rebuild_talents() -> void:
 			var nd: Dictionary = Talents.NODES[raw_n]
 			if String(nd.get("branch", "")) != bkey:
 				continue
+			# g19 (вердикт 16.11 22:44): узлов-проков с полем "class" видно
+			# только их классу — «не нужно воину видеть талантов для проков
+			# лучника». Узлы без class — общие, как все прежние.
+			var cls := Talents.class_of(id)
+			if cls != "" and cls != GameState.class_id:
+				continue
 			var mx := Talents.max_of(id)
 			var r := GameState.tal_rank(id)
 			var avail := r < mx and pts > 0

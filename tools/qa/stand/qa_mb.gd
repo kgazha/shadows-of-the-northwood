@@ -393,7 +393,10 @@ func r7_infra_pins() -> void:
 				if ash_img.get_pixel(xx, yy).a > 0.0:
 					ash_ink += 1
 	check("R7: код-иконка пепла непустая (непрозрачных пикселей %d > 0)" % ash_ink, ash_ink > 0)
-	check("R7: доска — 6 талантов (4 вечных и 2 таланта-прока, g17)", MetaBoard.TALENTS.size() == 6)
+	# g19 РЕ-ПИН (вердикт 16.11 22:44 «Проки перенеси в таланты, а не за очки
+	# пепла»): с экрана смерти сняты proc-ряды, таблица доски сведена к вечной
+	# четвёрке. Прежний пин 6 (4+2 прока) отзыван вместе с волной g17-моделей.
+	check("R7: доска — 4 вечных таланта (proc-ряды сняты в g19)", MetaBoard.TALENTS.size() == 4)
 	var ok := true
 	for t in MetaBoard.TALENTS:
 		var vals: Array = t["vals"]
@@ -401,41 +404,41 @@ func r7_infra_pins() -> void:
 			ok = false
 	check("R7: каждый талант — id + ровно 3 значения рангов", ok)
 
-# --- R9: g17 «таланты-проки» — семейство доски, цены 2/3/5, покупка, NG+-смерть ----
+# --- R9: g19 — доска БЕЗ проков + миграция старых proc-токенов в таланты ---
+# (вердикт 16.11 22:44: «Проки перенеси в таланты, а не за очки пепла».)
 
 func r9_procs() -> void:
 	mk({"flags": flags_with({"meta.ash": 20})})
 	var bf := "boar_fang"
 	var ta := "twisted_arrow"
-	check("R9: доска — 6 талантов: 4 вечных + 2 прока",
-		MetaBoard.TALENTS.size() == 6 and MetaBoard.proc_ids() == [bf, ta])
-	check("R9: цены проков 2/3/5 (вечные сохраняют [2,5,9] и прежнюю сигнатуру next_cost(rank))",
-		MetaBoard.next_cost(0, bf) == 2 and MetaBoard.next_cost(1, bf) == 3
-			and MetaBoard.next_cost(2, bf) == 5 and MetaBoard.next_cost(3, bf) == -1
-			and MetaBoard.next_cost(1) == 5 and MetaBoard.next_cost(2, "coal_heart") == 9)
-	check("R9: таблица шансов проков 20/30/40 (ранг 0 -> 0)",
-		MetaBoard.value_at_rank(1, bf) == 20 and MetaBoard.value_at_rank(2, ta) == 30
-			and MetaBoard.value_at_rank(3, bf) == 40 and MetaBoard.value_at_rank(0, ta) == 0)
-	# «семейство в советнице по купленному пеплу»: каждый ранг списывает свою цену
-	check("R9: «Клык вепря» ранг 1 списывает 2 (баланс 18)", MetaBoard.buy(bf) and Ash.balance() == 18)
-	check("R9: «Клык вепря» ранг 2 списывает 3 (баланс 15)", MetaBoard.buy(bf) and Ash.balance() == 15)
-	check("R9: «Клык вепря» ранг 3 списывает 5 (баланс 10)", MetaBoard.buy(bf) and Ash.balance() == 10)
-	check("R9: за капом отказ, деньги целы", not MetaBoard.buy(bf) and Ash.balance() == 10)
-	check("R9: «Скрученная стрела» ранг 1 за 2 (баланс 8)", MetaBoard.buy(ta) and Ash.balance() == 8)
-	check("R9: ранг живёт в meta.mb.<id> (вечный слой: покупка на экране смерти обязана дожить до забега)",
-		int(GameState.flags.get("meta.mb." + bf, -1)) == 3 and int(GameState.flags.get("meta.mb." + ta, -1)) == 1)
-	# t46-паттерн «до/после»: смерть прок НЕ ест (иначе продажа доски бессмысленна),
-	# NG+ стирает проки вместе с ветвями — без исключений.
-	GameState.flags["meta.mb.coal_heart"] = 2
+	check("R9: доска чиста: 4 вечных, proc_ids() пуст (стопор против возврата)",
+		MetaBoard.TALENTS.size() == 4 and MetaBoard.proc_ids().is_empty())
+	check("R9: proc id больше не таблицный — цены дефолтной линейки [2,5,9], покупка отказана, пепел цел",
+		MetaBoard.next_cost(1, bf) == 5 and not MetaBoard.buy(bf) and Ash.balance() == 20)
+	check("R9: вечная четвёрка покупается как прежде (coal_heart ранг 1 за 2, баланс 18)",
+		MetaBoard.buy("coal_heart") and Ash.balance() == 18)
+	# смерть круга — вечный слой цел (канон доски не менялся)
 	GameState.start_new_run()
-	check("R9: смерть круга — проки уцелели (канон продажи доски)",
-		MetaBoard.rank_of(bf) == 3 and MetaBoard.rank_of(ta) == 1)
-	GameState.start_ng_plus()
-	check("R9: NG+ — проки стёрты без исключений",
-		MetaBoard.rank_of(bf) == 0 and MetaBoard.rank_of(ta) == 0
-			and not GameState.flags.has("meta.mb." + bf) and not GameState.flags.has("meta.mb." + ta))
-	check("R9: NG+ — вечная четвёрка цела (чистка точечная, не вся доска)",
-		MetaBoard.rank_of("coal_heart") == 2)
+	check("R9: смерть — вечный coal_heart уцелел", MetaBoard.rank_of("coal_heart") == 1)
+	# --- миграция meta.mb.<proc> -> tal.<proc> (класс совпал / не совпал) ---
+	mk({"class_id": "warrior", "level": 3, "flags": flags_with({
+		"meta.mb.boar_fang": 2, "meta.mb.twisted_arrow": 1})})
+	check("R9: воин — свой токен стал рангом таланта бесплатно (boar_fang=2)",
+		GameState.tal_rank(bf) == 2)
+	check("R9: чужой токен стёрт без ранга (twisted_arrow у воина не появляется)",
+		GameState.tal_rank(ta) == 0 and not GameState.flags.has("tal." + ta))
+	check("R9: токены исчезли из вечного слоя",
+		not GameState.flags.has("meta.mb." + bf) and not GameState.flags.has("meta.mb." + ta))
+	check("R9: подарок не ест очки: level=3 с рангом 2 имеет те же 2 очка, что и без токенов",
+		GameState.tal_rank(bf) == 2 and GameState.tal_points() == 2)
+	GameState.save_game()
+	GameState.load_game()
+	check("R9: идемпотентность — повторная загрузка ничего не добавляет",
+		GameState.tal_rank(bf) == 2 and int(GameState.flags.get("tal.gift", 0)) == 2)
+	# смерть круга — прок сгорает вместе со всеми tal.* («после смерти с нуля»)
+	GameState.start_new_run()
+	check("R9: смерть — прок-ранг и gift сгорели в общем вайпе tal.*",
+		GameState.tal_rank(bf) == 0 and not GameState.flags.has("tal.gift"))
 	# пин «аудиозапись в реестре»: прок-клавесин зарегистрирован и собирается
 	check("R9: «прок-клавесин» записан в кодоген-реестре (KEYS+GAIN)",
 		SfxCatalog.KEYS.has("proc_chime") and SfxCatalog.GAIN.has("proc_chime"))

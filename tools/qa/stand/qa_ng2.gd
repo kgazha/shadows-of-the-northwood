@@ -1,6 +1,11 @@
 extends Node
-## QA-стенд NG+ UX (P2): опция Старейшины «Начать круг N» (ветка elder в npc.gd)
-## и строка «Круг N» в meta_hud.gd. В сдачу (sand_ng2.diff) НЕ входит.
+## QA-стенд NG+ UX. ИСТОРИЯ: v1 пинил опцию Старейшины «Начать круг N»
+## (ветка elder в npc.gd). v2 (g19, вердикт пользователя 16.11 22:44
+## «старейшина не должен давать возможность начинать ng+») — ИНВЕРСИЯ
+## матрицы: опции БОЛЬШЕ НЕТ ни у кого, и стенд пинит именно это: мёртвая
+## Ведьма не рождает предложения, мир не вытирается, ng.cap_seen не пишется.
+## Строка «Круг N» в meta_hud остаётся витриной счётчика (механика счёта
+## жива, входа в неё нет); сами формулы/вайпы start_ng_plus пинит qa_ng.
 
 const SAVE := "user://save_morkheim.json"
 
@@ -118,68 +123,59 @@ func _ready() -> void:
 	GameState.flags["ashen.chest"] = "taken"
 	GameState.save_game()
 
-	# --- 4) Старейшина предлагает круг 1; дочитывание = согласие ---
+	# --- 4) g19 ИНВЕРСИЯ: мёртвая Ведьма, волна 0 — Старейшина молчит про
+	# круги: обычный разговор (elder_after «Ступай»), мир не вытерт, счётчик цел ---
 	elder.try_interact()
 	var txt := _all_text()
-	ck("offer_dialog_opens", bool(h.is_dialog_open()), txt)
-	ck("offer_says_round1", txt.contains("Круг 1") and txt.contains("ведьмы"), txt)
+	ck("g19_no_offer_plain", bool(h.is_dialog_open()) and txt.contains("Ступай") \
+		and not txt.contains("Круг Пепла") and not txt.contains("Станешь угольком"), txt)
 	_close_dialog()
-	ck("ng_started_w1", GameState.ng_wave() == 1, "wave=%d" % GameState.ng_wave())
-	ck("reset_after_offer", GameState.elder_quest == 0 and GameState.slime_quest == 0 \
-		and GameState.cave_state == 0 and GameState.chests_used.is_empty() \
-		and GameState.campfires_used.is_empty() and not GameState.in_cave \
-		and not GameState.pos_valid)
-	ck("reset_ashen_q_after_offer", not GameState.flags.has("ashen.boss") \
-		and not GameState.flags.has("ashen.chest") and not GameState.flags.has("q.grims"))
-	# meta.ash >= 7: внутри круга Achv._check_ng/ng_second вправе докинуть Пепла
-	# (cad57bb). ng.boss_0 из переноса УБРАН: 9402ee1 намеренно стирает ng.boss_*
-	# (пепел босса перезарабатывается каждый круг) — отдельный reset-чек ниже.
-	ck("carry_after_offer", GameState.gold == 123 and String(GameState.gear["weapon"]) == "sword" \
-		and GameState.has_amulet and GameState.level == 3 \
-		and int(GameState.flags.get("meta.ash", 0)) >= 7 \
-		and int(GameState.flags.get("daily.streak", 0)) == 3 \
-		and int(GameState.flags.get("ach.probe", 0)) == 1, \
-		"ash=%s" % str(GameState.flags.get("meta.ash", -1)))
-	ck("reset_ng_boss_gates_offer", not GameState.flags.has("ng.boss_0"), "P0 9402ee1")
-	ck("autosave_w1_disk", GameState.load_game() and GameState.ng_wave() == 1)
-	ck("dialog_unlocked", not bool(h.is_dialog_open()) and not GameState.input_locked)
+	ck("g19_wave_stays_0", GameState.ng_wave() == 0)
+	ck("g19_no_wipe_by_talk", GameState.elder_quest == 2 and GameState.cave_state == 4 \
+		and not GameState.campfires_used.is_empty() and GameState.in_cave \
+		and String(GameState.flags.get("ashen.boss", "")) == "dead" \
+		and GameState.flags.has("ng.boss_0"),
+		"прогресс круга/флаги ведьмы не вытерты разговором (вайп умеет только start_ng_plus, входа нет)")
+	ck("g19_cap_seen_never_written", not GameState.flags.has("ng.cap_seen"))
+	ck("g19_dialog_unlocked", not bool(h.is_dialog_open()) and not GameState.input_locked)
 
-	# --- 5) meta_hud: волна 1 — «Круг 1» виден ---
+	# --- 5) meta_hud — витрина счётчика цела: волну ставим вручную (входа в
+	# прибавку нет, дисплейная логика прежняя) ---
+	GameState.flags["ng.wave"] = 1
 	mh.call("_update")
 	ck("hud_ng_shown_w1", bool(ng_lbl.visible) and String(ng_lbl.text) == "Круг 1", \
 		String(ng_lbl.text))
 
-	# --- 6) кап: волна 5 + ведьма мертва — финальная реплика без действия ---
+	# --- 6) кап-волна + мёртвая Ведьма: cap-реплики «Финальный круг» и
+	# предложения нет; первая беседа = вариант 5-й волны (TEXT-AUDIT B7) ---
 	GameState.flags["ng.wave"] = 5
 	GameState.flags["ashen.boss"] = "dead"
-	GameState.elder_quest = 2  # чтобы обычный разговор после кап-реплики = elder_after
+	GameState.elder_quest = 2  # обычный разговор = elder_after
 	mh.call("_update")
 	ck("hud_ng_shown_w5", bool(ng_lbl.visible) and String(ng_lbl.text) == "Круг 5", \
 		String(ng_lbl.text))
 	elder.try_interact()
 	var txt2 := _all_text()
-	ck("cap_final_line", txt2.contains("Финальный круг пройден") and not txt2.contains("Круг 6"), \
-		txt2)
-	# Колбэк капа — обычный разговор (world.talk). Канон 2dcbb05 (TEXT-AUDIT B7):
-	# ПЕРВАЯ обычная беседа на волне N — однократный elder_after_<N> («Пятая
-	# свеча»), дедуп-флаг dlg_elder_after_5; лишь потом — обычный «Ступай».
-	# Крутим advance ПОКА не увидим вариант: закрытие кап-реплики синхронно
-	# открывает следующую (say() не даёт typing'у дотикать — advance в typing
-	# просто досматривает строку), цикл _close_dialog'а проглотил бы её целиком.
+	ck("g19_no_cap_line", not txt2.contains("Финальный круг") \
+		and not txt2.contains("Станешь угольком") and not txt2.contains("Круг 6"), txt2)
+	# Канон 2dcbb05: ПЕРВАЯ беседа на волне 5 — однократный elder_after_5
+	# («Пятая свеча»). Крутим advance ПОКА не увидим вариант: закрытие строки
+	# синхронно открывает следующую (advance в typing досматривает строку).
 	var guard := 0
 	while h.is_dialog_open() and not _all_text().contains("Пятая свеча") and guard < 60:
 		h.advance()
 		guard += 1
-	ck("cap_then_wave5_variant", bool(h.is_dialog_open()) and _all_text().contains("Пятая свеча"), \
+	ck("wave5_variant_direct", bool(h.is_dialog_open()) and _all_text().contains("Пятая свеча"), \
 		_all_text())
 	_close_dialog()
-	ck("cap_wave_stays_5", GameState.ng_wave() == 5 and \
-		int(GameState.flags.get("ng.cap_seen", -1)) == 5)
+	ck("cap_wave_stays_5", GameState.ng_wave() == 5 \
+		and not GameState.flags.has("ng.cap_seen"), "кап-реплика не писалась")
 
-	# --- 7) кап повтор: финальная реплика уже не показывается ---
+	# --- 7) повторная беседа: обычный elder_after, NG+-реплик нет вообще ---
 	elder.try_interact()
-	ck("cap_shown_once", bool(h.is_dialog_open()) and _all_text().contains("Ступай") \
-		and not _all_text().contains("Финальный круг"), _all_text())
+	ck("plain_repeat", bool(h.is_dialog_open()) and _all_text().contains("Ступай") \
+		and not _all_text().contains("Финальный круг") \
+		and not _all_text().contains("Круг Пепла"), _all_text())
 	_close_dialog()
 
 	# --- 8) чужие NPC не затронуты: у торговца нет NG+ реплик (на волне 5!) ---
@@ -188,9 +184,8 @@ func _ready() -> void:
 		and not _all_text().contains("круг"), _all_text())
 	_close_dialog()
 
-	# --- 9) волна 2, ведьма ЖИВА: Старейшина снова ordinary ---
-	# (§6 оставил ashen.boss="dead" — с ним матрица легитимно предлагает «Круг 3»,
-	# стираем ключ, иначе стенд проверял бы не ту ветку)
+	# --- 9) волна 2, ведьма ЖИВА: Старейшина ordinary (как и с мёртвой — g19)
+	# (§6 оставил ashen.boss="dead" — стираем ключ: стенд проверяет и этот срез)
 	GameState.flags["ng.wave"] = 2
 	GameState.flags.erase("ashen.boss")
 	GameState.elder_quest = 2
