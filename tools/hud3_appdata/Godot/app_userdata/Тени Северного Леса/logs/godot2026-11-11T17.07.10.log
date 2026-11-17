@@ -1,0 +1,5 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+NPRMARGINS patch_margin_left:2, patch_margin_top:2, patch_margin_right:2, patch_margin_bottom:2
+NPRSET done
+NPRGET texture_margin_left=<null>

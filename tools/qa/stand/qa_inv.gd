@@ -150,17 +150,21 @@ func _cell(i: int) -> Dictionary:
 func _n0_structure() -> void:
 	print("== N0: структура окна ==")
 	_check(not Inventory.is_open(), "N0: на старте окно закрыто")
+	# g20b (вердикт 17.11): состав строк прежний счёт (10), но амулет уехал в
+	# экипировку, ряд — у точильного камня. Класс 1: список изменил вердикт.
 	_check(Inventory.grid_kinds().size() == 10,
-			"N0: строк сетки 10 (2 зелья + факел + 5 материалов + 2 квеста) — <=12 ячеек")
+			"N0: строк сетки 10 (2 зелья + факел + 6 материалов + ключ) — <=12 ячеек")
 	_check(invn.cells.size() == 12, "N0: ячеек ровно 12 (сетка 6×2)")
 	_check(invn.grid.columns == 6, "N0: GridContainer columns == 6")
 	_check(invn.head_lbl.text == "Инвентарь", "N0: заголовок «Инвентарь»")
 	_check(GameState.MAT_CAP == 99, "N0: стопка материала = 99 (MAT_CAP переписан вердиктом)")
-	# порядок колонок: СЕТКА СЛЕВА — HBox: grid precede hint-колонку
-	var hb: Node = invn.grid.get_parent()
+	# порядок колонок: СЕТКА СЛЕВА (в левой колонке первой), СПРАВА — колонка
+	# экипировки (g20b: вердикт «справа от сетки — герой и слоты»).
+	var hb: Node = invn.grid.get_parent().get_parent()
 	var kids: Array = hb.get_children()
-	_check(kids.size() >= 2 and kids[0] == invn.grid,
-			"N0: сетка — первый ребёнок ряда (слева), подсказки справа")
+	_check(kids.size() >= 2 and kids[0] == invn.grid.get_parent() \
+			and StringName(kids[1].name) == &"GearColumn",
+			"N0: слева колонка сетки, справа колонка экипировки GearColumn")
 
 # ---------------- N1 открытие/закрытие ----------------
 
@@ -313,11 +317,14 @@ func _n5_hotbar_mirror() -> void:
 	await _fr(2)
 	var c0: Dictionary = _cell(0)
 	var c2: Dictionary = _cell(2)
-	var c8: Dictionary = _cell(8)
+	# g20b (вердикт 17.11): амулет уехал из сетки в экипировку (слот «Оберег»),
+	# ряд занял точильный камень — ключ сдвинулся 8 -> 9. Класс 1: факт изменил
+	# вердикт; функциональный двойник (контент ячейки) проверяется ниже.
+	var c9: Dictionary = _cell(9)
 	_check((c0["btn"] as Button).icon != null and String((c0["cnt"] as Label).text) == "7",
 			"N5: 7 трав -> ячейка 0 иконка + счётчик «7»")
 	_check(String((c2["cnt"] as Label).text) == "2", "N5: 2 факела -> ячейка 2 «2»")
-	_check(String((c8["cnt"] as Label).text) == "1", "N5: ключ пещеры -> ячейка 8 «1»")
+	_check(String((c9["cnt"] as Label).text) == "1", "N5: ключ пещеры -> ячейка 9 «1»")
 	_check(hud.potion_btn.text == "x7", "N5: хотбар-кнопка зеркалит те же 7 («%s»)" % hud.potion_btn.text)
 	# клик по ячейке зелья = Use тратит из инвентаря (общий источник)
 	GameState.hp = mini(GameState.max_hp - 5, GameState.hp)

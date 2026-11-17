@@ -1,0 +1,11 @@
+﻿QA battery @ C:\Users\gazhakv\Documents\deepseek-harness\default-workspace\tools\t34_stage
+godot: C:\Users\gazhakv\Documents\deepseek-harness\default-workspace\tools\t34_stage\tools\godot\Godot_v4.7.2-stable_win64_console.exe
+stage: C:\Users\gazhakv\Documents\deepseek-harness\default-workspace\tools\t34_stage\tools\appdata_qa\stage\pixel-rpg
+[import] godot --headless --import ... exit=0
+[run ] qa_s1         ... -/1 exit=0 RED  log=tools\appdata_qa\logs\qa_s1_1.log
+
+STAND         PASS  FAIL  EXIT    VERDICT        DESC
+qa_s1            -     1  0       RED            Shop/GearData/save v3 roundtrip/legacy v1
+
+TOTAL: 0 green / 1 red | checks: 0 pass / 1 fail | 14s
+BATTERY VERDICT: NO-GO

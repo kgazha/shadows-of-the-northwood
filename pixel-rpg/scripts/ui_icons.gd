@@ -670,6 +670,154 @@ static func _ic_item_amulet() -> void:
 	# светящееся ядро (акцент подсветки)
 	_F(7, 7, "FIRE_HOT")
 
+# ================== g20b (t63): снаряжение вердикта ==================
+# Тот же канон ряда: LIGHT — верх/лево открытой грани, DARK — правый бок,
+# OUTLINE — низ/кромка; материалы только PixelPalette (IRON — сталь клинков,
+# BONE — кость клыка, UI_BLUE — гарда «северян», VIOLET — клыко-клинок).
+
+## whet — «Точильный камень»: брусок с лоском заточки и искоркой трения.
+static func _ic_item_whet() -> void:
+	# тело бруска: верх световой, низ тёмный
+	_hl(4, 10, 7, "IRON", _L)
+	_hl(3, 10, 8, "IRON", _M)
+	_hl(3, 10, 9, "IRON", _D)
+	_hl(4, 11, 10, "IRON", _O)
+	_vl(11, 8, 9, "IRON", _D)
+	_P(11, 7, "IRON", _M)
+	# лоск на верхней грани
+	_hl(5, 8, 7, "BONE", _L)
+	# искра трения (след заточки)
+	_P(12, 5, "FIRE", _L)
+	_P(13, 6, "FIRE", _M)
+	_P(12, 7, "FIRE", _O)
+
+## shortsword — «Краткий меч»: короткий прямой клинок, бронзовая гарда.
+static func _ic_item_shortsword() -> void:
+	_P(8, 2, "IRON", _L)
+	_vl(7, 3, 8, "IRON", _L)
+	_vl(8, 3, 8, "IRON", _M)
+	_vl(9, 4, 8, "IRON", _D)
+	_hl(9, 9, 3, "IRON", _O)
+	# гарда и рукоять
+	_hl(5, 11, 9, "BRONZE", _M)
+	_P(5, 9, "BRONZE", _L)
+	_P(11, 9, "BRONZE", _D)
+	_vl(8, 10, 12, "BARK", _M)
+	_P(8, 13, "BRONZE", _D)
+
+## nordsword — «Меч северян»: широкое полотну, синяя гарда-«крылья».
+static func _ic_item_nordsword() -> void:
+	_P(8, 1, "IRON", _L)
+	_vl(7, 2, 8, "IRON", _L)
+	_vl(8, 2, 8, "IRON", _M)
+	_vl(9, 2, 8, "IRON", _D)
+	_vl(6, 4, 8, "IRON", _L)
+	_vl(10, 5, 8, "IRON", _D)
+	# гарда-крылья (северная синь)
+	_hl(3, 13, 9, "UI_BLUE", _M)
+	_hl(4, 12, 10, "UI_BLUE", _D)
+	_P(3, 9, "UI_BLUE", _L)
+	_P(13, 9, "UI_BLUE", _O)
+	_P(13, 10, "UI_BLUE", _O)
+	# рукоять в обмотке и яблоко
+	_vl(8, 11, 13, "CLOTH", _D)
+	_P(8, 14, "UI_BLUE", _O)
+
+## fangblade — «Клыко-клинок»: изогнутый клык на стальной рукояти, фиолет
+## вкрапление смолы (очень редкий — цвет рамки сделает своё, тут намёк).
+static func _ic_item_fangblade() -> void:
+	# клык: дуга BONE от низа-слева к острию вправо-вверх
+	_vl(5, 9, 11, "BONE", _M)
+	_P(5, 12, "BONE", _O)
+	_diag([[6, 8], [7, 7], [8, 6], [9, 5]], "BONE", _M)
+	_diag([[10, 4], [11, 3], [12, 2]], "BONE", _L)
+	_P(13, 1, "BONE", _L)
+	_P(6, 9, "BONE", _L)
+	_P(7, 8, "BONE", _L)
+	# теневая сторона клыка
+	_diag([[6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [11, 5], [12, 4]], "BONE", _D)
+	# фиолетовая смола в основании
+	_P(6, 11, "VIOLET", _M)
+	_P(5, 10, "VIOLET", _D)
+	# стальная рукоять с навершием
+	_hl(2, 4, 13, "IRON", _M)
+	_P(2, 13, "IRON", _L)
+	_P(4, 13, "IRON", _O)
+
+## leather — «Кожаный доспех»: нагрудник из дублёной кожи с заклёпками.
+static func _ic_item_leather() -> void:
+	_hl(5, 10, 3, "BARK", _L)
+	_hl(4, 11, 4, "BARK", _M)
+	_hl(4, 11, 5, "BARK", _M)
+	_hl(4, 11, 6, "BARK", _D)
+	_hl(5, 10, 7, "BARK", _D)
+	_hl(5, 10, 8, "BARK", _O)
+	# V-вырез
+	_diag([[7, 4], [8, 5], [9, 4]], "BARK", _O)
+	# заклёпки бронзой
+	_P(5, 5, "BRONZE", _L)
+	_P(10, 5, "BRONZE", _M)
+	_P(7, 7, "BRONZE", _M)
+	_P(9, 7, "BRONZE", _D)
+
+## chain — «Кольчуга»: сетка колец (сталь), подкладка тёмная.
+static func _ic_item_chain() -> void:
+	# подкладка
+	_hl(4, 11, 4, "CHAR", _D)
+	_hl(4, 11, 5, "CHAR", _O)
+	_hl(4, 11, 6, "CHAR", _O)
+	# ряды колец (свет/тень в шахматке)
+	for y in [4, 6]:
+		for x in [5, 8, 11]:
+			_P(x, y, "IRON", _L)
+			_P(x + 1, y, "IRON", _M)
+			_P(x, y + 1, "IRON", _D)
+		for x in [6, 9]:
+			_P(x + 1, y + 1, "IRON", _M)
+	_hl(5, 10, 7, "IRON", _D)
+	_hl(5, 10, 8, "IRON", _O)
+
+## boarhide — «Шкура вепря»: шкура с клыками и щетиной (верх трофейного сета).
+static func _ic_item_boarhide() -> void:
+	# мездра: тёмный край сверху, тело кожи
+	_hl(4, 11, 3, "BARK", _D)
+	_hl(3, 12, 4, "BARK", _M)
+	_hl(3, 12, 5, "BARK", _M)
+	_hl(3, 12, 6, "BARK", _D)
+	_hl(4, 11, 7, "BARK", _D)
+	_hl(4, 11, 8, "BARK", _O)
+	# щетина
+	_vl(5, 1, 2, "CHAR", _D)
+	_vl(8, 1, 2, "CHAR", _D)
+	_vl(11, 1, 2, "CHAR", _D)
+	# клыки по нижним углам
+	_diag([[4, 9], [3, 10], [3, 11]], "BONE", _L)
+	_diag([[11, 9], [12, 10], [12, 11]], "BONE", _M)
+	_P(6, 6, "BONE", _M)
+	_P(9, 6, "BONE", _D)
+
+## hero — силуэт героя для колонки экипировки: голову/плечи/ пояс/меч в руке.
+static func _ic_hero_silhouette() -> void:
+	# голова
+	_hl(7, 8, 2, "BONE", _L)
+	_hl(7, 8, 3, "BONE", _M)
+	_hl(6, 9, 4, "CLOTH", _D)
+	# плечи и торс (плащ)
+	_hl(5, 10, 5, "CLOTH", _M)
+	_hl(5, 10, 6, "CLOTH", _M)
+	_hl(5, 10, 7, "CLOTH", _D)
+	# пояс
+	_hl(6, 9, 8, "BRONZE", _M)
+	# ноги
+	_vl(6, 9, 12, "CLOTH", _D)
+	_vl(9, 9, 12, "CLOTH", _D)
+	_hl(5, 7, 13, "IRON", _O)
+	_hl(8, 10, 13, "IRON", _O)
+	# меч в правой руке
+	_vl(12, 4, 10, "IRON", _M)
+	_P(12, 3, "IRON", _L)
+	_hl(11, 13, 11, "BRONZE", _M)
+
 # ---------- низкоуровневая графика (предметы/таланты — легаси-примитивы) ----
 
 static func _px(img: Image, x: int, y: int, c: Color) -> void:
@@ -741,6 +889,21 @@ static func _stamp_item(img: Image, id: String) -> void:
 				"resin": _ic_item_resin()
 				"key": _ic_item_key()
 				"amulet": _ic_item_amulet()
+			_cv = null
+			_cv_ox = 0
+		"whet", "shortsword", "nordsword", "fangblade", "boarhide", "leather", "chain", "hero":
+			# g20b (t63): снаряжение вердикта + точильный камень + силуэт героя
+			_cv = img
+			_cv_ox = 0
+			match id:
+				"whet": _ic_item_whet()
+				"shortsword": _ic_item_shortsword()
+				"nordsword": _ic_item_nordsword()
+				"fangblade": _ic_item_fangblade()
+				"boarhide": _ic_item_boarhide()
+				"leather": _ic_item_leather()
+				"chain": _ic_item_chain()
+				"hero": _ic_hero_silhouette()
 			_cv = null
 			_cv_ox = 0
 		_:

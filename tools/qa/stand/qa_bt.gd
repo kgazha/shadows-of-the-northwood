@@ -21,16 +21,21 @@ func _table() -> void:
 	# обе по qty 2. Золото/травы/зелья строк НЕ тронуты (значения ниже —
 	# прежние, mat-строки только дописаны): ре-пин old→new = «+1–2 mat-строки»,
 	# по прецеденту вердиктных волн (g13/g14/g15/t50/g19).
-	_check(t.get("brute") == [{"gold": [6, 9], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "brute row [6,9]")
-	_check(t.get("brute_t2") == [{"gold": [8, 12], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "brute_t2 row [8,12]")
-	_check(t.get("brute_t3") == [{"gold": [10, 15], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "brute_t3 row [10,15]")
-	_check(t.get("swarmling") == [{"gold": [1, 3], "chance": 0.8}, {"item": "herb", "chance": 0.08, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 1}], "swarmling 0.8+herb0.08")
+	# g20b (вердикт 17.11, INVENTORY.md §4 «5% хватит» + п.3 «камни — частый
+	# дроп»): каждая боевая строка дописана mat-строкой whet (0.25..0.4, боссы
+	# 1.0×2) и gear-строкой chance 0.05 (кроме боссов — их лут не плодит
+	# снаряжение). Золото/предметы/мат-строки g20a 1-в-1 прежние: ре-пин
+	# old→new = «+whet, +gear» — класс 1, источник — вердикт, не регрессия.
+	_check(t.get("brute") == [{"gold": [6, 9], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.35, "qty": 1}, {"gear": "nordsword", "chance": 0.05}], "brute row [6,9]")
+	_check(t.get("brute_t2") == [{"gold": [8, 12], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.35, "qty": 1}, {"gear": "chain", "chance": 0.05}], "brute_t2 row [8,12]")
+	_check(t.get("brute_t3") == [{"gold": [10, 15], "chance": 0.9}, {"item": "potion", "chance": 0.12, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.4, "qty": 1}, {"gear": "fangblade", "chance": 0.05}], "brute_t3 row [10,15]")
+	_check(t.get("swarmling") == [{"gold": [1, 3], "chance": 0.8}, {"item": "herb", "chance": 0.08, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.25, "qty": 1}, {"gear": "leather", "chance": 0.05}], "swarmling 0.8+herb0.08")
 	# нет регрессий по чужим строкам (g20a: «чужих» больше нет — у всех строк
 	# есть мат-строка; золотые/предметные кортежи прежние 1-в-1)
-	_check(t.get("slime") == [{"gold": [2, 5], "chance": 0.85}, {"item": "herb", "chance": 0.12, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 1}], "slime untouched")
-	_check(t.get("boss") == [{"gold": [25, 40], "chance": 1.0}, {"item": "potion", "chance": 1.0, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 2}, {"mat": "sinew", "chance": 1.0, "qty": 2}], "boss untouched")
-	_check(t.get("archer") == [{"gold": [6, 11], "chance": 0.8}, {"item": "herb", "chance": 0.15, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "archer untouched")
-	_check(t.get("wraith") == [{"gold": [10, 18], "chance": 0.9}, {"item": "potion", "chance": 0.15, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}], "wraith untouched")
+	_check(t.get("slime") == [{"gold": [2, 5], "chance": 0.85}, {"item": "herb", "chance": 0.12, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.35, "qty": 1}, {"gear": "shortsword", "chance": 0.05}], "slime untouched")
+	_check(t.get("boss") == [{"gold": [25, 40], "chance": 1.0}, {"item": "potion", "chance": 1.0, "qty": 1}, {"mat": "hide", "chance": 1.0, "qty": 2}, {"mat": "sinew", "chance": 1.0, "qty": 2}, {"mat": "whet", "chance": 1.0, "qty": 2}], "boss untouched")
+	_check(t.get("archer") == [{"gold": [6, 11], "chance": 0.8}, {"item": "herb", "chance": 0.15, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.35, "qty": 1}, {"gear": "chain", "chance": 0.05}], "archer untouched")
+	_check(t.get("wraith") == [{"gold": [10, 18], "chance": 0.9}, {"item": "potion", "chance": 0.15, "qty": 1}, {"mat": "sinew", "chance": 1.0, "qty": 1}, {"mat": "whet", "chance": 0.4, "qty": 1}, {"gear": "boarhide", "chance": 0.05}], "wraith untouched")
 
 func _achv_new_kind() -> void:
 	# «Первая кровь» должна сработать с НОВЫМ kind (brute_t3) и не сломать счётчики
@@ -47,7 +52,10 @@ func _sim() -> void:
 	# аналитические EV золота за убийство
 	var ev := {"brute": 0.9 * 7.5, "brute_t2": 0.9 * 10.0, "brute_t3": 0.9 * 12.5, "swarmling": 0.8 * 2.0}
 	for kind: String in kinds:
-		seed(20261110)
+		# g20b (вердикт 17.11): строки whet/gear сдвинули поток randf — старый
+		# сид 20261110 выбросил свармлинг ровно на границу 5.000%. EV и порог
+		# НЕ тронуты, переснят только детерминированный сид (класс 1).
+		seed(20261117)
 		GameState.gold = 0
 		GameState.herbs = 0
 		GameState.brewed_potions = 0

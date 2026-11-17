@@ -481,10 +481,17 @@ class CaveChest:
 			return
 		used = true
 		GameState.has_amulet = true
+		# g20b: амулет — теперь и экипируемый оберег (слот relic), владеем сразу.
+		GameState.ensure_gear("amulet")
 		GameState.chest_mark_used(uid)  # «Клад» + восстановление состояния (схема T2)
 		Achv.on_chest_opened()
 		GameState.recalc_max_hp()  # +4 к макс. HP входит в формулу класса
 		GameState.heal(4)          # урон +1 — через производный damage (has_amulet)
+		# g20b (вердикт 17.11 §4): алтарный сундук пещеры добирает СРЕДНИЙ сет —
+		# меч северян + кольчуга (редкость «редкий») и точильные камни.
+		for i in 2:
+			GameState.add_material("whet")
+		Loot.grant_gear_set(GameState, ["nordsword", "chain"])
 		GameState.stats_changed.emit()
 		GameState.quest_changed.emit()
 		zone.open_chest()  # тайл 12: сундук остаётся открытым и после перезахода

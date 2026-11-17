@@ -224,6 +224,11 @@ func _build() -> void:
 	list_vb.add_child(_section_label("Витрина:"))
 	for vstock in GearData.VENDOR_STOCK.values():
 		for id in (vstock as Array):
+			# g20b: одна позиция может жить у двух торговцев (кожа — у Гриима и
+			# Геральда, кольчуга — у Гриима и Драна): кнопка одна, видимость
+			# решает _apply_vendor по текущему прилавку.
+			if buy_btns.has(String(id)):
+				continue
 			var btn := Button.new()
 			btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			btn.pressed.connect(_on_buy.bind(String(id)))
@@ -376,7 +381,7 @@ func _apply_vendor() -> void:
 	head_lbl.text = String(GearData.VENDOR_HEAD.get(_vendor, "Кузница Гриима"))
 	for id in buy_btns:
 		var it := GearData.item(String(id))
-		(buy_btns[id] as Button).visible = String(it.get("vendor", "smith")) == _vendor
+		(buy_btns[id] as Button).visible = _sells(it, String(id))
 	var forge := _vendor == "smith"
 	craft_head.visible = forge
 	craft_btn.visible = forge
@@ -388,6 +393,25 @@ func _apply_vendor() -> void:
 		var abtn: Button = altar_btns.get(String((x as Dictionary).get("id", "")), null)
 		if abtn != null:
 			abtn.visible = forge
+
+## g20b: продаёт ли текущий прилавок эту позицию. Базовый канал прежний
+## ("vendor": одна голова); новинка — "vendors": массив голов (кожа у Гриима
+## и Геральда, кольчуга у Гриима и Драна) + гейт VENDOR_REQ: «трофейная»
+## позиция Драна открывается после сделки (квест слаймов закрыт, slime_quest>=2).
+func _sells(it: Dictionary, id: String) -> bool:
+	var ok := false
+	if it.has("vendors"):
+		ok = _vendor in (it["vendors"] as Array)
+	else:
+		ok = String(it.get("vendor", "smith")) == _vendor
+	if not ok:
+		return false
+	var vreq: Variant = GearData.VENDOR_REQ.get(_vendor, {})
+	if typeof(vreq) == TYPE_DICTIONARY:
+		match String((vreq as Dictionary).get(id, "")):
+			"slime_deal":
+				return GameState.slime_quest >= 2
+	return true
 
 ## t29 B-02 (реестр t28): под ЧУЖИМ окном (диалог/смерть) лавка по контракту
 ## «окно работает» не должна перехватывать мышь, но раньше полноэкранный dim
@@ -503,6 +527,11 @@ func _on_buy(id: String) -> void:
 	if not GameState.gear.has(slot):
 		push_warning("Shop: неизвестный слот предмета: %s" % id)
 		return
+	if not _sells(it, id):
+		# g20b: гейт витрины проверяется и здесь — не только глазами: прямой
+		# вызов (QA/солянка событий) не покупает «неоткрытую» позицию.
+		GameAudio.sfx("ui_deny")
+		return
 	var equipped := GearData.equipped_id(GameState, slot) == id
 	if equipped:
 		GameAudio.sfx("ui_deny")
@@ -516,6 +545,7 @@ func _on_buy(id: String) -> void:
 	# (equip_item чистит флаг на ""), затем положить новую вещь.
 	GameState.equip_item(slot, "")
 	GameState.equip_item(slot, id)
+	GameState.ensure_gear(id)  # g20b: купленное — в сумку (слот ссылается на неё)
 	GameState.stats_changed.emit()  # armor-слот equip_item не эмитит — HUD сам обновим
 	Sfx.play("coin")  # t31: тёплый монетный «дзынь» вместо ui_confirm
 	GameState.toast.emit("Куплено: %s. Надето!" % String(it.get("name", id)))
@@ -610,6 +640,7 @@ func _on_sell(slot: String) -> void:
 		GameState.toast.emit("Продавать нечего.")
 		return
 	GameState.equip_item(slot, "")
+	GameState.owned_gear.erase(gid)  # g20b: выкуплено начисто — в сумке дубли нет
 	GameState.add_gold(price)
 	GameState.stats_changed.emit()
 	GameAudio.sfx("belt")

@@ -363,6 +363,12 @@ class AshenChest:
 		GameState.chest_mark_used(uid)  # «Клад» считается и этим сундуком (схема T2)
 		Loot.chest_reward(GameState)
 		Loot._give_item(GameState, "potion", 1)  # гарантированная награда-экипировка
+		# g20b (вердикт 17.11 §4 «деревня → пещера → аршина»): сундук Пепелища —
+		# ВЕРХНИЙ сет: Клыко-клинок + Шкура вепря (очень редкие) + три точильных
+		# камня. Выдаётся один раз: флаг ashen.chest + chests_used (схема T2).
+		for i in 3:
+			GameState.add_material("whet")
+		Loot.grant_gear_set(GameState, ["fangblade", "boarhide"])
 		Achv.on_chest_opened()
 		GameState.quest_changed.emit()          # автосейв: флаг осядет в сохранении
 		open()  # c34 (вердикт «Сундук пепелища ок»): вместо queue_free — открытый кадр v2

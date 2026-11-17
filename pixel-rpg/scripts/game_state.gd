@@ -29,7 +29,8 @@ const BREWED_CAP := 2           # запас варёных зелий (креп
 const STRONG_POTION_HEAL := 6   # HP за крепкое зелье (обычное травяное — 3)
 const MAT_NAMES := {"suhotsvet": "Сухоцвет", "zhim": "Жим",
 	"smola": "Смола",  # g13 (Г1.3): «Смола» — материал факела, покупается у Драна
-	"hide": "Шкура слизня", "sinew": "Волчья жила"}  # g20a: материалы всегдашнего дропа
+	"hide": "Шкура слизня", "sinew": "Волчья жила",  # g20a: материалы всегдашнего дропа
+	"whet": "Точильный камень"}  # g20b (вердикт 17.11 п.4): валюта заточки, частый дроп
 
 var max_hp := 10
 var hp := 10
@@ -60,7 +61,7 @@ var slime_kills := 0
 var slime_kills_circle := 0
 ## Алхимия: материалы с врагов (id -> кол-во, см. MAT_NAMES) и заряды варёных зелий.
 ## g20a: стопки до MAT_CAP; hide/sinew — всегдашний дроп мобов (INVENTORY.md §2).
-var materials := {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0}
+var materials := {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0, "whet": 0}
 var brewed_potions := 0
 ## Факелы (g13/Г1.3). Счётчик-расходник: факел из лавки Драна и факел, сплетённый
 ## Гриимом, — один предмет ("torch" в GearData.ITEMS), один add_torch() на оба
@@ -102,8 +103,16 @@ var input_locked := false
 ## Хранилище здесь; реестр предметов (id -> слот/цена/статы) — scripts/gear_data.gd
 ## (фича экономики), справочник квестов — scripts/quests_data.gd (фича квестов).
 var gold := 0
-## Снаряжение: слот ("weapon"/"armor") -> item id, "" — пусто.
-var gear := {"weapon": "", "armor": ""}
+## Снаряжение: слот ("weapon"/"armor"/"relic") -> item id, "" — пусто.
+## g20b (вердикт 17.11 «давай оружие, броня + оберег»): третий слот relic.
+var gear := {"weapon": "", "armor": "", "relic": ""}
+## Сумка снаряжения (g20b): список id ЭКИПИРУЕМОГО, которым владеет герой
+## (включая надетое — слоты gear ссылаются в него же). Предмет уникален,
+## стопок нет. Пустой id/чужой id в сумму не попадает (ensure_gear).
+var owned_gear: Array = []
+## Степень заточки по id оружия (g20b, вердикт п.4): id -> 0..5; шьётся
+## к оружию, живёт в сейве, при снятии не теряется.
+var sharpen := {}
 ## Универсальные событийные флаги (квесты, диалоги, лавочник): id -> bool/int/string.
 var flags := {}
 
@@ -252,6 +261,24 @@ func equip_item(slot: String, item_id: String) -> String:
 		has_sword = (item_id == "sword")
 		stats_changed.emit()
 	return prev
+
+## g20b: положить экипируемый предмет в сумку (уникально; только реальные
+## weapon/armor/relic из реестра). true — предмет добавлен.
+func ensure_gear(id: String) -> bool:
+	if id == "" or owned_gear.has(id):
+		return false
+	var sl := String(GearData.item(id).get("slot", ""))
+	if sl != "weapon" and sl != "armor" and sl != "relic":
+		push_warning("ensure_gear: не экипируемый id: %s" % id)
+		return false
+	owned_gear.append(id)
+	quest_changed.emit()  # автосейв: обновленная сумка — часть сейва v4
+	return true
+
+## g20b: снять с слота в сумку (владение остаётся — предмет не исчезает).
+func unequip_slot(slot: String) -> void:
+	if gear.has(slot) and String(gear[slot]) != "":
+		equip_item(slot, "")
 
 func get_flag(id: String, def: Variant = false) -> Variant:
 	return flags.get(id, def)
@@ -443,6 +470,9 @@ func to_dict() -> Dictionary:
 		"inv": {
 			"herb": herbs, "brewed": brewed_potions, "torch": torches,
 			"mat": materials.duplicate(),
+			# g20b: сумка снаряжения и степени заточки — внутри того же v4-
+			# контейнера (аддитивно: старые v4 без этих ключей грузятся пустыми)
+			"bag": owned_gear.duplicate(), "sharpen": sharpen.duplicate(),
 		},
 		"campfires_used": campfires_used.duplicate(),
 		"chests_used": chests_used.duplicate(),
@@ -490,7 +520,7 @@ func from_dict(d: Dictionary) -> void:
 	# сейва клампится (99 трав в забеге нереалистичны; потери нулевые на практике)
 	herbs = clampi(_num(herb_v, 0), 0, MAT_CAP)
 	# привалы и алхимия: СТАРЫЕ сейвы без этих полей => пустой рюкзак, костры целы
-	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0}
+	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0, "whet": 0}
 	# v4: материалы в inv.mat; v≤3: top-level "materials" (hide/sinew там
 	# заведомо нет — нули)
 	var md: Variant = inv_d.get("mat", {}) if has_inv else d.get("materials", {})
@@ -501,6 +531,26 @@ func from_dict(d: Dictionary) -> void:
 	brewed_potions = clampi(_num(br_v, 0), 0, BREWED_CAP)
 	var torch_v: Variant = inv_d.get("torch", 0) if has_inv else d.get("torches", 0)
 	torches = clampi(_num(torch_v, 0), 0, MAT_CAP)  # старый сейв без поля — ноль факелов
+	# --- g20b: сумка снаряжения и заточка (аддитивно к v4; v≤3 — пусто,
+	# надетое из gear добавится ниже, старый амулет — из has_amulet) ---
+	owned_gear = []
+	var bag_v: Variant = inv_d.get("bag", [])
+	if typeof(bag_v) == TYPE_ARRAY:
+		for gid in bag_v:
+			if typeof(gid) == TYPE_STRING and not owned_gear.has(String(gid)) \
+					and owned_gear.size() < 12:  # physically: 6 free bag cells + slots
+				var gsl := String(GearData.item(String(gid)).get("slot", ""))
+				if gsl == "weapon" or gsl == "armor" or gsl == "relic":
+					owned_gear.append(String(gid))
+	# ensure_gear НЕ используем: он эмитит автосейв на каждый предмет, лоад
+	# обязан быть без сайв-побочки (паттерн всех полей from_dict).
+	sharpen = {}
+	var shv: Variant = inv_d.get("sharpen", {})
+	if typeof(shv) == TYPE_DICTIONARY:
+		for wid in shv:
+			var wids := String(wid)
+			if String(GearData.item(wids).get("slot", "")) == "weapon":
+				sharpen[wids] = clampi(_num(shv[wid], 0), 0, GearData.SHARPEN_MAX)
 	var cu: Variant = d.get("campfires_used", {})
 	# M4 (QA): каппим как сундуки (64) с varning — раньше кап был только у
 	# chests_used и молча резал данные, а campfires_used не валидировался вовсе.
@@ -525,7 +575,7 @@ func from_dict(d: Dictionary) -> void:
 				chest_mark_used(String(cid))
 	# --- v2: золото/шестерня/флаги (старые сейвы => чистые значения) ---
 	gold = maxi(0, _num(d.get("gold", 0), 0))
-	gear = {"weapon": "", "armor": ""}
+	gear = {"weapon": "", "armor": "", "relic": ""}
 	var gd: Variant = d.get("gear", {})
 	if typeof(gd) == TYPE_DICTIONARY:
 		for slot in gear:
@@ -538,6 +588,16 @@ func from_dict(d: Dictionary) -> void:
 	# ("has_sword":true + weapon:"axe" — «призрачный меч») не переживают лоад;
 	# прежняя M2-обратная синхронизация покрывается этой же строкой.
 	has_sword = String(gear["weapon"]) == "sword"
+	# g20b: инвариант сумки — НАДЕТОЕ всегда во владении. Старые сейвы (v≤3)
+	# не знали bag: меч из лавки/сундука и ВЕЧНЫЙ Амулет Леса (has_amulet —
+	# сюжетный флаг, переживает забег) доезжают в сумку миграцией при лоаде.
+	for slot in gear:
+		var eid := String(gear[slot])
+		if eid != "" and not owned_gear.has(eid) \
+				and String(GearData.item(eid).get("slot", "")) == slot:
+			owned_gear.append(eid)
+	if has_amulet and not owned_gear.has("amulet") and owned_gear.size() < 12:
+		owned_gear.append("amulet")
 	flags = {}
 	var fd: Variant = d.get("flags", {})
 	# CAP-128: load-лимит на число ключей flags. С деревом талантов сюда
@@ -743,7 +803,7 @@ func _wipe_circle() -> void:
 	door_opened = false
 	chests_used = []
 	campfires_used = {}
-	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0}  # структура сохраняем: add_material сверяет has()
+	materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0, "whet": 0}  # структура сохраняем: add_material сверяет has()
 	brewed_potions = 0
 	torches = 0  # g13: факелы — нажитое круга, сгорает вместе с кругом (как травы)
 	# травы — подвальный инвентарь деревенского круга («Сухоцвет впрок»
@@ -808,8 +868,12 @@ func start_new_run() -> void:
 	level = 1
 	xp = 0
 	xp_next = 20
-	gear = {"weapon": "", "armor": ""}
+	gear = {"weapon": "", "armor": "", "relic": ""}
 	has_sword = false
+	# g20b: нажитое в забеге сгорает целиком — сумка и заточка тоже (вечный
+	# Амулет Леса вернётся миграцией has_amulet при следующем лоаде).
+	owned_gear = []
+	sharpen = {}
 	# Производные статы — по канону пересчёта: вечные амулет (has_amulet) и
 	# «Благословение» алтаря (meta.bless) остаются в силе на 1-м уровне.
 	recalc_max_hp()
@@ -839,8 +903,10 @@ func start_fresh_game() -> void:
 	level = 1
 	xp = 0
 	xp_next = 20
-	gear = {"weapon": "", "armor": ""}
+	gear = {"weapon": "", "armor": "", "relic": ""}
 	has_sword = false
+	owned_gear = []   # g20b: та же логика, что в start_new_run
+	sharpen = {}
 	class_id = ""
 	recalc_max_hp()
 	recalc_max_mana()

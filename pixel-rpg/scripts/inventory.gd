@@ -18,7 +18,10 @@ extends CanvasLayer
 ## под НАШИМ локом скилл-клавиши 1–4 и зелье (Q) проводятся в world.gd
 ## сквозь окно (там же — страховка от ложного разлока); движение, атака и
 ## остальные клавиши мира заморожены, как в лавке.
-## Экипировка (справа от сетки) — поставка Б (t63): колонка зарезервирована.
+## остальное — через world-страховку); экипация — клик по вещи в сумке или
+## по слоту (вердикт §2: «надеть/снять кликом»), заточка — кнопка под слотом
+## оружия (вердикт §4); подсветка редкости — цветной кант клетки (вердикт
+## 16.11 22:56): синий редкий, фиолетовый очень редкий, оранжевый легендарный.
 
 static var I: Inventory = null
 
@@ -34,6 +37,18 @@ var grid: GridContainer
 var hint_lbl: Label
 var close_btn: Button
 var cells: Array = []           # {btn: Button, cnt: Label, kind: Dictionary}
+# --- g20b: экипировка (правая колонка) + сумка снаряжения (под сеткой) ---
+const SLOT_ORDER := ["weapon", "armor", "relic"]
+const SLOT_NAMES := {"weapon": "Оружие", "armor": "Броня", "relic": "Оберег"}
+const BAG_CELLS := 12           # 6×2 — как сетка расходников (физических
+                                # экипируемых вещей в реестре ровно 10, кап 12)
+var bag_grid: GridContainer
+var bag_cells: Array = []       # {btn: Button, mark: Label} — id в bag_ids
+var bag_ids: Array = []         # порядок id, обновляется в refresh
+var slot_btns := {}             # slot -> Button
+var sharpen_btn: Button
+var hero_img: TextureRect
+var _rarity_styles := {}        # кэш StyleBoxFlat по (normal, rarity)
 var ui_frame_tex: Texture2D = null
 var _holds_lock := false        # input_locked сейчас принадлежит окну
 var _mouse_pass := false        # мышь принадлежит чужому окну (окно пропускает)
@@ -49,10 +64,12 @@ static func grid_kinds() -> Array:
 		{"icon": "root", "name": "Сухоцвет", "mat": "suhotsvet"},
 		{"icon": "herb", "name": "Жим", "mat": "zhim"},
 		{"icon": "resin", "name": "Смола", "mat": "smola"},
+		# g20b: амулет уехал из сетки в экипировку (слот «Оберег» + сумка
+		# снаряжения), ряд занял точильный камень — валюта заточки.
+		{"icon": "whet", "name": "Точильный камень", "mat": "whet"},
 		{"icon": "hide", "name": "Шкура слизня", "mat": "hide"},
 		{"icon": "sinew", "name": "Волчья жила", "mat": "sinew"},
 		{"icon": "key", "name": "Ключ пещеры", "quest": "key"},
-		{"icon": "amulet", "name": "Амулет Леса", "quest": "amulet"},
 	]
 
 ## Количество для строки сетки (единственные источники истины).
@@ -68,8 +85,6 @@ static func count_of(k: Dictionary) -> int:
 			return GameState.torches
 		"key":
 			return 1 if GameState.has_key else 0
-		"amulet":
-			return 1 if GameState.has_amulet else 0
 	return 0
 
 func _enter_tree() -> void:
@@ -144,13 +159,18 @@ func _build() -> void:
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 8)
 	vb.add_child(hb)
-	# СЛЕВА — сетка 6×2 (вердикт: «слева сетка 6x2 (12 ячеек)»)
+	# СЛЕВА — сетка 6×2 расходников (вердикт: «слева сетка 6x2 (12 ячеек)»)
+	# + под ней сумка снаряжения 6×2 (g20b: вещи, которыми владеем; надетое
+	# помечен — вердикт §2 «экипированное видно»).
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 2)
+	hb.add_child(left)
 	grid = GridContainer.new()
 	grid.name = "InvGrid"
 	grid.columns = COLS
 	grid.add_theme_constant_override("h_separation", 2)
 	grid.add_theme_constant_override("v_separation", 2)
-	hb.add_child(grid)
+	left.add_child(grid)
 	for i in COLS * ROWS:
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(26, 28)
@@ -171,12 +191,78 @@ func _build() -> void:
 		cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		btn.add_child(cnt)
 		cells.append({"btn": btn, "cnt": cnt})
-	# СПРАВА — колонка-заглушка под героя/экипировку (поставка Б, t63)
+	# --- g20b: сумка снаряжения (6×2): владение вещью + метка «надето» ---
+	var bag_head := Label.new()
+	bag_head.name = "BagHead"
+	bag_head.text = "Сумка снаряжения:"
+	bag_head.add_theme_font_size_override("font_size", 9)
+	bag_head.add_theme_color_override("font_color", Color(1, 0.84, 0.45))
+	left.add_child(bag_head)
+	bag_grid = GridContainer.new()
+	bag_grid.name = "GearBag"
+	bag_grid.columns = COLS
+	bag_grid.add_theme_constant_override("h_separation", 2)
+	bag_grid.add_theme_constant_override("v_separation", 2)
+	left.add_child(bag_grid)
+	for i in BAG_CELLS:
+		var bbtn := Button.new()
+		bbtn.custom_minimum_size = Vector2(26, 28)
+		bbtn.add_theme_stylebox_override("normal", _cell_style(true))
+		bbtn.add_theme_stylebox_override("hover", _cell_style(false))
+		bbtn.add_theme_stylebox_override("pressed", _cell_style(false))
+		bbtn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		bbtn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		bbtn.pressed.connect(_on_bag_pressed.bind(i))
+		bag_grid.add_child(bbtn)
+		var mark := Label.new()
+		mark.add_theme_font_size_override("font_size", 8)
+		mark.add_theme_color_override("font_color", Color(0.55, 1.0, 0.55))
+		mark.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		mark.add_theme_constant_override("outline_size", 3)
+		mark.position = Vector2(15, 15)
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bbtn.add_child(mark)
+		bag_cells.append({"btn": bbtn, "mark": mark})
+	# СПРАВА — силуэт героя и три слоты экипировки (вердикт §2: «справа от
+	# сетки — герой и слоты Оружие/Броня/Оберег, клик надевает/снимает»).
 	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 4)
+	right.name = "GearColumn"
+	right.add_theme_constant_override("separation", 3)
 	hb.add_child(right)
+	hero_img = TextureRect.new()
+	hero_img.name = "HeroSil"
+	hero_img.texture = icon_tex("hero")
+	hero_img.custom_minimum_size = Vector2(56, 42)
+	hero_img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	hero_img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hero_img.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	hero_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right.add_child(hero_img)
+	for slot in SLOT_ORDER:
+		var cap := Label.new()
+		cap.name = "Cap_" + slot
+		cap.text = String(SLOT_NAMES[slot])
+		cap.add_theme_font_size_override("font_size", 8)
+		cap.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
+		right.add_child(cap)
+		var sbtn := Button.new()
+		sbtn.name = "Slot_" + slot
+		sbtn.custom_minimum_size = Vector2(56, 28)
+		sbtn.add_theme_stylebox_override("normal", _cell_style(true))
+		sbtn.add_theme_stylebox_override("hover", _cell_style(false))
+		sbtn.add_theme_stylebox_override("pressed", _cell_style(false))
+		sbtn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		sbtn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sbtn.pressed.connect(_on_slot_pressed.bind(String(slot)))
+		right.add_child(sbtn)
+		slot_btns[String(slot)] = sbtn
+	sharpen_btn = Button.new()
+	sharpen_btn.name = "SharpenBtn"
+	sharpen_btn.custom_minimum_size = Vector2(56, 0)
+	sharpen_btn.pressed.connect(_on_sharpen_pressed)
+	right.add_child(sharpen_btn)
 	hint_lbl = Label.new()
-	hint_lbl.text = "Клик по зелью — использовать.\nОружие, броня и оберег\nвстанут сюда в следующей\nпоставке."
+	hint_lbl.text = "Клик по зелью — использовать.\nВещь из сумки — надеть,\nклик по слоту — снять."
 	hint_lbl.add_theme_font_size_override("font_size", 8)
 	hint_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
 	hint_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -364,6 +450,91 @@ func _on_cell_pressed(i: int) -> void:
 	else:
 		GameAudio.sfx("ui_click")
 
+# --- g20b: экипировка (надеть/снять/заточить) ---
+
+## Порядок сумки — канон реестра ITEMS (не порядок приобретения): сумка не
+## «прыгает» при дропе, пины ссылаются на стабильные индексы.
+static func gear_view_ids() -> Array:
+	var out: Array = []
+	for id in GearData.ITEMS:
+		if GameState.owned_gear.has(String(id)):
+			out.append(String(id))
+	return out
+
+static func _is_equipped(id: String) -> bool:
+	var sl := String(GearData.item(id).get("slot", ""))
+	return sl != "" and GearData.equipped_id(GameState, sl) == id
+
+## Честная строка предмета (вердикт §3: «формула видна: „Урон 8 + 4“»).
+## Для НАДЕТОГО оружия «часть» считается реальной разницей формулы — в неё
+## честное число включает и заточку; для вещи в сумке — номинал реестра.
+func item_tip(id: String) -> String:
+	var it := GearData.item(id)
+	var nm := String(it.get("name", id))
+	var rn := GearData.rarity_name(id)
+	if rn != "":
+		nm += " (%s)" % rn
+	match String(it.get("slot", "")):
+		"weapon":
+			var t := GearData.sharpen_tier_of(GameState, id)
+			var tail := ""
+			if t > 0:
+				tail = ". Заточка %d/%d (+%d%%)" % [t, GearData.SHARPEN_MAX, GearData.sharpen_pct(t)]
+			if _is_equipped(id):
+				var part := GearData.weapon_part(GameState)
+				return "%s: Урон %d + %d%s" % [nm, GameState.damage - part, part, tail]
+			if it.has("dmg_bonus"):
+				return "%s: Урон +%d%s" % [nm, int(it["dmg_bonus"]), tail]
+			return "%s: Урон ×%.1f%s" % [nm, float(it.get("dmg_mult", 1.0)), tail]
+		"armor":
+			return "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
+		"relic":
+			return "Амулет Леса: подсветка и +1 урон. Работает и без слота."
+	return nm
+
+## Клик по вещи в сумке: надеть (или снять, если уже надето — вердикт §2).
+func _on_bag_pressed(i: int) -> void:
+	if _external_lock():
+		return
+	if i < 0 or i >= bag_ids.size():
+		GameAudio.sfx("ui_click")
+		return
+	var id := String(bag_ids[i])
+	var slot := String(GearData.item(id).get("slot", ""))
+	if slot == "":
+		return
+	if _is_equipped(id):
+		GameState.unequip_slot(slot)
+		GameAudio.sfx("ui_click")
+	else:
+		GameState.equip_item(slot, id)
+		GameState.stats_changed.emit()  # armor/relic equip_item не эмитит (паттерн Shop)
+		GameAudio.sfx("belt")
+	refresh()
+
+## Клик по слоту: снять в сумку; пустой слот — только отказ-подсказка.
+func _on_slot_pressed(slot: String) -> void:
+	if _external_lock():
+		return
+	var cur := GearData.equipped_id(GameState, slot)
+	if cur == "":
+		GameAudio.sfx("ui_deny")
+		GameState.toast.emit("%s: пусто. Клик по вещи в сумке наденет её." % String(SLOT_NAMES[slot]))
+	else:
+		GameState.unequip_slot(slot)
+		GameAudio.sfx("ui_click")
+	refresh()
+
+## «Точить» (вердикт п.4): ступень +5/+7/+10/+12/+15% за 1..5 камней, без
+## рандума и без потери прогресса; камни списывает sharpen_weapon (отказ —
+## собственный тост с нехваткой).
+func _on_sharpen_pressed() -> void:
+	if _external_lock():
+		return
+	if GearData.sharpen_weapon(GameState):
+		GameAudio.sfx("ui_confirm")
+	refresh()
+
 # --- наполнение сетки ---
 
 ## Перерисовать 12 ячеек по источникам истины. Пустая стопка = пустая клетка
@@ -391,3 +562,73 @@ func refresh() -> void:
 		btn.icon = icon_tex(String(k["icon"]))
 		btn.tooltip_text = String(k["name"]) + ": " + str(n)
 		cnt.text = str(n)
+	_refresh_gear()
+
+## g20b: сумка снаряжения + слоты + кнопка заточки. Пустая клетка сумки —
+## просто пустая; надетое помечено галочкой (вердикт §2 «экипированное видно»).
+func _refresh_gear() -> void:
+	if bag_grid == null:
+		return
+	bag_ids = gear_view_ids()
+	for i in bag_cells.size():
+		var cell: Dictionary = bag_cells[i]
+		var bbtn: Button = cell["btn"]
+		var mark: Label = cell["mark"]
+		if i >= bag_ids.size():
+			bbtn.icon = null
+			bbtn.tooltip_text = ""
+			mark.text = ""
+			bbtn.add_theme_stylebox_override("normal", _cell_style(true))
+			continue
+		var id := String(bag_ids[i])
+		bbtn.icon = icon_tex(id)
+		var eq := _is_equipped(id)
+		mark.text = "✓" if eq else ""
+		bbtn.tooltip_text = item_tip(id) + ("\nНадето — клик снимет." if eq else "\nКлик наденет.")
+		bbtn.add_theme_stylebox_override("normal",
+				_rarity_style(true, GearData.rarity_of(id)))
+	for slot in SLOT_ORDER:
+		var sbtn: Button = slot_btns[slot]
+		var cur := GearData.equipped_id(GameState, slot)
+		if cur == "":
+			sbtn.icon = null
+			sbtn.tooltip_text = "%s: пусто. Клик по вещи в сумке наденет её." % String(SLOT_NAMES[slot])
+			sbtn.add_theme_stylebox_override("normal", _rarity_style(true, ""))
+		else:
+			sbtn.icon = icon_tex(cur)
+			sbtn.tooltip_text = item_tip(cur) + "\nКлик снимет в сумку."
+			sbtn.add_theme_stylebox_override("normal",
+					_rarity_style(true, GearData.rarity_of(cur)))
+	# Кнопка заточки: активна на НАДЕТОМ оружии, камни хватает, ступень < 5.
+	var wid := GearData.equipped_id(GameState, "weapon")
+	var valid := wid != "" and String(GearData.item(wid).get("slot", "")) == "weapon"
+	var t := GearData.sharpen_tier_of(GameState, wid)
+	if not valid:
+		sharpen_btn.text = "Точить: нечего"
+		sharpen_btn.disabled = true
+		sharpen_btn.tooltip_text = "Затачивается надетое оружие."
+	elif t >= GearData.SHARPEN_MAX:
+		sharpen_btn.text = "Заточка %d/%d (+%d%%)" % [t, GearData.SHARPEN_MAX, GearData.sharpen_pct(t)]
+		sharpen_btn.disabled = true
+		sharpen_btn.tooltip_text = "Дальше некуда."
+	else:
+		var cost := GearData.sharpen_cost(t)
+		var have := GameState.mat_count("whet")
+		sharpen_btn.text = "Точить — %d кам." % cost
+		sharpen_btn.disabled = have < cost
+		sharpen_btn.tooltip_text = "Ступень %d: +%d%% к урону (всего станет +%d%%). Без рандума и потери. Камни: %d/%d." % [
+			t + 1, GearData.SHARPEN_STEP_PCT[t], GearData.sharpen_pct(t + 1), have, cost]
+
+## Кант клетки по редкости (вердикт 16.11 22:56): обычный — прежний кожаный
+## кант; редкий/очень редкий/легендарный — цветная рамка в 2 px. Кэш по
+## (normal, rarity): StyleBox создаётся один раз на пару, не на кадр.
+func _rarity_style(normal: bool, rarity: String) -> StyleBoxFlat:
+	var key := ("%d|%s" % [1 if normal else 0, rarity])
+	if _rarity_styles.has(key):
+		return _rarity_styles[key]
+	var sb := _cell_style(normal)
+	if rarity != "" and GearData.RARITY_COLORS.has(rarity):
+		sb.border_color = GearData.RARITY_COLORS[rarity]
+		sb.set_border_width_all(2)
+	_rarity_styles[key] = sb
+	return sb

@@ -415,9 +415,12 @@ func _run() -> void:
 	_chk("t11_header", header0 != null and header0.text == "Очки: 5", "заголовок: «%s»" % (header0.text if header0 != null else "<нет>"))
 	var wet: Button = null
 	for b in btns:
-		if String(b.text).contains("Точильный"):
+		# g20b (вердикт 17.11): узел переименован «Точильный камень» -> «Уход за
+		# клинком» (имя занял предмет-валюта заточки); id/цифры прежние.
+		# Класс 1: факт изменил вердикт, не регрессия.
+		if String(b.text).contains("Уход за клинком"):
 			wet = b
-	_chk("t11_wet_found", wet != null, "кнопка «Точильный камень» найдена: %s" % (wet.text if wet != null else ""))
+	_chk("t11_wet_found", wet != null, "кнопка «Уход за клинком» найдена: %s" % (wet.text if wet != null else ""))
 	GameState.input_locked = true
 	if wet != null:
 		wet.pressed.emit()

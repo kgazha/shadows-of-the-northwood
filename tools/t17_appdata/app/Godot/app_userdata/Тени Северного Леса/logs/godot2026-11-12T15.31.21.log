@@ -1,0 +1,40 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+OpenGL API 3.3.0 - Build 27.20.100.8681 - Compatibility - Using Device: Intel - Intel(R) UHD Graphics 630
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+SNAP village_slime err=0 size=(1280, 720)
+SNAP village_wide err=0 size=(1280, 720)
+SNAP forest_archer err=0 size=(1280, 720)
+SNAP forest_swarm err=0 size=(1280, 720)
+T17 park=(8, 10) zoom=2.5 screen=(272.0, -9264.0)
+T17 park=(8, 10) zoom=1.5 screen=(400.0, -9040.0)
+T17 park=(22, 17) zoom=2.5 screen=(464.0, -8944.0)
+T17 park=(24, 20) zoom=2.0 screen=(464.0, -8944.0)
+T17 park=cave_hero zoom=1.5 screen=(464.0, -8944.0)
+SNAP cave_brutes err=0 size=(1280, 720)
+T17 park=grom screen=(320.0, 180.0)
+SNAP cave_grom err=0 size=(1280, 720)
+T17 park=witch screen=(300.0, 180.0)
+SNAP ashen_witch err=0 size=(1280, 720)
+SNAP ashen_tinted err=0 size=(1280, 720)
+DRAWN hero tex_h=1460.0 scale=0.02192 drawn=32.000 foot=5.000 pos_y=-11.000
+DRAWN slime tex_h=528.0 scale=0.04167 drawn=22.000 foot=7.063 pos_y=-3.938
+DRAWN slime2 tex_h=528.0 scale=0.04167 drawn=22.000 foot=7.063 pos_y=-3.938
+DRAWN rat tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN rat2 tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN rat3 tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN archer tex_h=979.0 scale=0.02451 drawn=24.000 foot=8.500 pos_y=-3.500
+DRAWN rat tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN rat2 tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN rat3 tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN archer tex_h=979.0 scale=0.02451 drawn=24.000 foot=8.500 pos_y=-3.500
+DRAWN brute_t1 tex_h=872.0 scale=0.03326 drawn=29.000 foot=8.502 pos_y=-5.998
+DRAWN brute_t2 tex_h=872.0 scale=0.04014 drawn=35.000 foot=10.260 pos_y=-7.240
+DRAWN brute_t3 tex_h=872.0 scale=0.04817 drawn=42.000 foot=12.313 pos_y=-8.688
+DRAWN grom tex_h=773.0 scale=0.06727 drawn=52.000 foot=15.244 pos_y=-10.756
+DRAWN witch tex_h=974.0 scale=0.05236 drawn=51.000 foot=13.914 pos_y=-11.586
+DRAWN archer_ashen tex_h=979.0 scale=0.02451 drawn=24.000 foot=8.500 pos_y=-3.500
+DRAWN rat_ashen tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+DRAWN rat_ashen2 tex_h=356.0 scale=0.06742 drawn=24.000 foot=7.500 pos_y=-4.500
+T17 post SHOTS DONE

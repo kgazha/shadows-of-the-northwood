@@ -1,0 +1,8 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+SCRIPT ERROR: Invalid call. Nonexistent function 'has_glyph' in base 'FontFile'.
+   at: _ready (res://t27_font_check.gd:19)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://t27_font_check.gd:19)

@@ -5,6 +5,14 @@ extends RefCounted
 ## Вызывается из хуков в slime.gd / brute.gd / interactable.gd — см. отчёт
 ## «ИНТЕГРАЦИОННЫЕ ЗАПРОСЫ»; файлы движка экономики не меняет.
 
+## g20b TEST-ONLY: если >= 0, каждый бросок таблицы на смерть моба берётся
+## отсюда вместо randf() — детерминированная проверка 5%-дропа снаряжения
+## (qa_gear) без тысячи убийств. Игра никогда не выставляет: по умолчанию -1.
+static var test_roll: float = -1.0
+
+static func _roll() -> float:
+	return test_roll if test_roll >= 0.0 else randf()
+
 ## Смерть моба: kind — строка таблицы GearData.LOOT ("slime"/"brute"/"boss").
 ## world_pos + world (опц.) — точка для искр золота на месте трупа; без world
 ## эффект просто пропускается (headless-QA, бо́сс после queue_free и т. п.).
@@ -23,7 +31,7 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 	for e in table:
 		if typeof(e) != TYPE_DICTIONARY:
 			continue
-		if randf() > float(e.get("chance", 0.0)):
+		if _roll() > float(e.get("chance", 0.0)):
 			continue
 		if e.has("gold"):
 			gold += _roll_gold(e["gold"])
@@ -32,6 +40,9 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 		elif e.has("mat"):
 			# g20a: материал в стопку инвентаря (шкура/жила — «всегдашний» дроп)
 			_give_mat(GameState, String(e.get("mat", "")), maxi(1, int(e.get("qty", 1))))
+		elif e.has("gear"):
+			# g20b (вердикт §4): редкий дроп снаряжения (5%) — в сумку GameState
+			_give_gear(GameState, String(e.get("gear", "")), world_pos, world)
 	# NG+ §1.3: золото × ng_gold_mult(волна) — на ИТОГ ролла, формула в game_state.gd
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).
@@ -86,6 +97,36 @@ static func _give_mat(gs: Node, mid: String, qty: int) -> void:
 		gs.toast.emit("Инвентарь полон — %s потерян" % GameState.mat_name(mid))
 	else:
 		gs.toast.emit("Трофей: %s (%d/%d)." % [GameState.mat_name(mid), gs.mat_count(mid), GameState.MAT_CAP])
+
+## g20b: редкий дроп снаряжения (5% строка таблицы). Предмет уникален:
+## повторный дроп той же вещи — бездна молчания (дублей сумка не плодит).
+## Цветная рамка редкости в мире — короткий glint над точкой смерти.
+static func _give_gear(gs: Node, id: String, world_pos: Vector2 = Vector2.ZERO, world: Node2D = null) -> void:
+	if id == "" or not GearData.has_item(id):
+		push_warning("Loot: неизвестный gear id: %s" % id)
+		return
+	if not gs.ensure_gear(id):
+		return
+	var it := GearData.item(id)
+	var rn := GearData.rarity_name(id)
+	GameAudio.sfx("potion")
+	gs.toast.emit("Трофей: %s%s!" % [String(it.get("name", id)), (" — " + rn) if rn != "" else ""])
+	if world != null and GearData.rarity_of(id) != "":
+		Fx.gear_glint(world_pos, world, GearData.rarity_color(id))
+
+## g20b (вердикт §4 «гарантированные наборы»): выдача сундучного сета
+## снаряжения (деревня — краткий меч+кожа, пещера — северяне+кольчуга,
+## Пепелище — клыко-клинок+шкура вепря). Один сундук открывается один раз,
+## значит и сет один раз (used/chests_used — канон T2).
+static func grant_gear_set(gs: Node, ids: Array) -> void:
+	var got: Array = []
+	for gid in ids:
+		var id := String(gid)
+		if gs.ensure_gear(id):
+			got.append(String(GearData.item(id).get("name", id)))
+	if not got.is_empty():
+		GameAudio.sfx("coin")
+		gs.toast.emit("В сундуке снаряжение: %s!" % ", ".join(PackedStringArray(got)))
 
 ## Выдача special-предмета: "herb" — трава (Q-зелье), "potion" — заряд
 ## крепкого зелья (до BREWED_CAP, излишек — травами). Свободного инвентаря

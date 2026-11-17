@@ -122,9 +122,11 @@ func _journal_checks() -> void:
 	var found := ""
 	for raw_b in btns2:
 		var b := raw_b as Button
-		if b.text.begins_with("Точильный камень"):
+		# g20b (вердикт 17.11): переименование узла «Точильный камень» ->
+		# «Уход за клинком» (id/ранги прежние). Класс 1 — вердиктное имя.
+		if b.text.begins_with("Уход за клинком"):
 			found = b.text
-	_chk("j4_rank_after_spend", found == "Точильный камень 1/2", "кнопка после траты: '%s'" % found)
+	_chk("j4_rank_after_spend", found == "Уход за клинком 1/2", "кнопка после траты: '%s'" % found)
 	# измерение колонок: вложенность видна только при layout (скрытый journal не считается)
 	j._root.visible = true
 	await _frames(2)

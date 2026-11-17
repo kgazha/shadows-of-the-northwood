@@ -163,6 +163,17 @@ static func hit(pos: Vector2, parent: Node2D) -> void:
 		"ramp": _ramp(Color(1, 0.95, 0.75), Color(1, 0.62, 0.3), Color(0.9, 0.24, 0.12, 0.0)),
 	})
 
+## g20b (вердикт 16.11 22:56, «лёгкое свечение … в подборе»): фонтанчик цвета
+## редкости над точкой подбора снаряжения. tint — рамка редкости предмета
+## (синий/фиолетовый/оранжевый); обычный (бесцветный) предмет зовёт hit().
+static func gear_glint(pos: Vector2, parent: Node2D, tint: Color) -> void:
+	_make(parent, pos, {
+		"tex": TEX_SPARK, "amount": 8, "life": 0.45, "explode": 1.0,
+		"vmin": 20.0, "vmax": 48.0, "gravity": Vector2(0, 70),
+		"damp_min": 40.0, "damp_max": 80.0, "smin": 0.4, "smax": 0.7,
+		"ramp": _ramp(tint.lightened(0.55), tint, Color(tint.r, tint.g, tint.b, 0.0)),
+	})
+
 ## Огненный след по сегменту from->to (огненный снаряд фаерболта).
 static func fire_trail(from_p: Vector2, to_p: Vector2, parent: Node2D) -> void:
 	var d := to_p - from_p

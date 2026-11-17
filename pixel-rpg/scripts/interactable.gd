@@ -113,6 +113,14 @@ func try_interact() -> void:
 		# Источник-пин T14 не тронут: литерал randi_range(32, 42) в файле жив.
 		GameState.chest_mark_used(_uid())  # «сундук открыт» в сейв (фикс T2)
 		Loot.chest_reward(GameState)  # золото/зелье (loot.gd)
+		# g20b (вердикт 17.11 §4 «гарантированные наборы»): деревенский сундук
+		# главы 1 добирает СТАРТОВЫЙ сет — краткий меч + кожа + пара точильных
+		# камней. Золото BALANCE-строки 4 (+15) не тронуто; сундук одноразовый
+		# (used/chests_used), значит и сет строго один раз на сейв-жизнь.
+		if area == "village":
+			for i in 2:
+				GameState.add_material("whet")
+			Loot.grant_gear_set(GameState, ["shortsword", "leather"])
 		if area != "village":
 			var purse := randi_range(32, 42)
 			GameState.add_gold(purse)
@@ -120,7 +128,7 @@ func try_interact() -> void:
 			GameState.toast.emit("В сундуке — кошель: ещё +%d зол.! Меч ищите у кузнеца." % purse)
 		GameState.quest_changed.emit()  # автосейв: состояние сундука и золото
 		Achv.on_chest_opened()  # ачивка «Клад» (achv.gd)
-		if FirstHint.I != null: FirstHint.I.show_hint("chest", "В сундуках — золото и расходники. Оружие — у кузнеца.")
+		if FirstHint.I != null: FirstHint.I.show_hint("chest", "В сундуках — золото, расходники и снаряжение. Оружие — и у кузнеца тоже.")
 		spr.texture = _atlas(14)
 		world.near.erase(self)
 

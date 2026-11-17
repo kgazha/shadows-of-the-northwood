@@ -1,0 +1,46 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+PROBE_OK zone_Village_exists 
+PROBE_OK zone_Village_filter=LINEAR got=2
+PROBE_OK zone_Village_child_inherits_LINEAR node=@TileMapLayer@19
+PROBE_OK zone_Cave_exists 
+PROBE_OK zone_Cave_filter=LINEAR got=2
+PROBE_OK zone_Cave_child_inherits_LINEAR node=@Node2D@585
+PROBE_OK zone_Ashen_exists 
+PROBE_OK zone_Ashen_filter=LINEAR got=2
+PROBE_OK zone_Ashen_child_inherits_LINEAR node=@Node2D@1096
+PROBE_OK player_filter=LINEAR got=2
+PROBE_OK hint_effective=NEAREST got=1
+PROBE_OK hud_canvas_layers_found=8 
+PROBE_NUM hud_linear_count=7
+PROBE_HUDLIN /root/Vlg3Probe/Main/@CanvasLayer@2234/@PanelContainer@2258/@HBoxContainer@2256/@Control@2254/@PanelContainer@2250/@TextureRect@2249
+PROBE_HUDLIN /root/Vlg3Probe/Main/@CanvasLayer@2234/@PanelContainer@2284/@HBoxContainer@2259/@Control@2265/@TextureRect@2260
+PROBE_HUDLIN /root/Vlg3Probe/Main/@CanvasLayer@2234/@PanelContainer@2284/@HBoxContainer@2259/@Control@2271/@TextureRect@2266
+PROBE_HUDLIN /root/Vlg3Probe/Main/@CanvasLayer@2234/@PanelContainer@2284/@HBoxContainer@2259/@Control@2277/@TextureRect@2272
+PROBE_HUDLIN /root/Vlg3Probe/Main/@CanvasLayer@2234/@PanelContainer@2284/@HBoxContainer@2259/@Control@2283/@TextureRect@2278
+PROBE_HUDLIN /root/Vlg3Probe/Main/@CanvasLayer@2332/@Control@2333/@PanelContainer@2348/PaperEdge
+PROBE_HUDLIN /root/Vlg3Probe/Main/@Node@13/MinimapLayer/@Control@14/@TextureRect@16
+PROBE_OK village_walls_exists 
+PROBE_NUM walls_colliders=463
+PROBE_NUM world_colliders=1881
+PROBE_NUM grove_canopy_children=15
+PROBE_OK grove_canopy_intact 
+PROBE_DBG cell=35,5 char=r nearw=true nearr=false
+PROBE_DBG cell=35,8 char=r nearw=true nearr=false
+PROBE_OK village_props_z=5 got=5
+PROBE_NUM props_sprites=6 props_bad=0
+PROBE_OK props_count=6 got=6
+PROBE_OK props_all_linear_textured 
+PROBE_PROP pos=(144.0, 68.0) tex=97x92 flip=false vis=true
+PROBE_PROP pos=(568.0, 85.0) tex=32x26 flip=true vis=true
+PROBE_PROP pos=(568.0, 133.0) tex=23x26 flip=false vis=true
+PROBE_PROP pos=(168.0, 181.0) tex=22x26 flip=false vis=true
+PROBE_PROP pos=(376.0, 245.0) tex=22x26 flip=true vis=true
+PROBE_PROP pos=(296.0, 213.0) tex=26x26 flip=false vis=true
+PROBE_OK cf_prop_base_at_226 y=213.000000
+PROBE_OK cf_prop_hidden_when_used 
+PROBE_OK cf_prop_shown_when_unused 
+PROBE_OK cf_prop_at_296 
+PROBE_PF pass=21 fail=0
