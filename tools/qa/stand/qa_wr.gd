@@ -10,6 +10,9 @@ extends Node
 ##       НЕ сквозь стены, freeze_t 0.7 с / босс 0.35, 1x удар; без цели — не тратится;
 ##   execute — цель умерла от казни => +3 HP (heal, кламп по max_hp) + тост
 ##       «+3 HP»; не-добивание — 1.5x без хила;
+##   g24b (вердикт 18.11) — рывок, упёршийся на месте (< BOAR_MIN_MOVE px) и
+##       не ударивший, возвращает КД слота (тост «Рывок заблокирован»); сдвиг
+##       у стены или удар — откат штатно (пины B7.1–B7.4);
 ##   регресс: вихрь 1.5x по площади и pierce-выстрел лучника не тронуты.
 ## xp_next завышен — level-up/heal_full не искажают hp-ассерты.
 ## Запуск: godot --headless --fixed-fps 60 --path pixel-rpg res://qa_wr.tscn
@@ -41,6 +44,7 @@ func _ready() -> void:
 	await _frame()
 	sect_a()
 	await sect_b()
+	await sect_b24b()
 	await sect_c()
 	await sect_d()
 	sect_e_text_wiring()
@@ -293,7 +297,91 @@ func sect_b() -> void:
 		"cd=%f" % hero.skill_cd[2])
 	free_world()
 
+# --- B7: g24b (вердикт пользователя 18.11) — блокированный рывок не сжигает откат ---
+
+func sect_b24b() -> void:
+	print("--- B7: g24b — упор на месте возвращает КД слота; сдвиг/удар — штатно ---")
+	# B7.1: «пенёк» (стена) вплотную перед героем, цель за ним: лететь некуда —
+	# приземление в точке старта: КД=0, цель цела (ни урона, ни стана), тост
+	# «Рывок заблокирован», скилл снова готов (повторный каст валиден).
+	reset_warrior()
+	new_world()
+	hero.global_position = Vector2.ZERO
+	add_wall(Vector2(9, 0), Vector2(16, 80))   # «пенёк»: x∈[1..17] — прямо перед носом
+	var s = spawn_slime(Vector2(40, 0))
+	s.freeze_t = 5.0                            # не кусает героя в полёте (чистый дэш)
+	var hp0 := int(s.hp)
+	var ok: bool = hero.cast_skill(2)
+	ck("B7.1 cast=true (цель в радиусе — каст состоялся)", ok)
+	ck("B7.1 на старте cd=7.0 (плата берётся до полёта — канон)",
+		absf(float(hero.skill_cd[2]) - 7.0) < 0.001, "cd=%f" % hero.skill_cd[2])
+	await _frame(12)
+	ck("B7.1 герой не сдвинулся (заблокирован на месте)",
+		hero.global_position.distance_to(Vector2.ZERO) < 9.0, "pos=%s" % str(hero.global_position))
+	ck("B7.1 КД возвращён: cd=0", absf(float(hero.skill_cd[2])) < 0.001, "cd=%f" % hero.skill_cd[2])
+	ck("B7.1 урона нет", int(s.hp) == hp0, "hp=%d" % s.hp)
+	ck("B7.1 стана нет (freeze — только предзаморозка стенда)",
+		float(s.freeze_t) > 4.0, "freeze=%f" % s.freeze_t)
+	ck("B7.1 тост «Рывок заблокирован»", any_toast("Рывок заблокирован"))
+	ck("B7.1 «Стена помешала рывку» НЕ звучит (это другой случай)", not any_toast("Стена помешала"))
+	ok = hero.cast_skill(2)
+	ck("B7.1 скилл не сожжён: повторный каст=true и снова в кд",
+		ok and float(hero.skill_cd[2]) > 6.5, "cd=%f" % hero.skill_cd[2])
+	free_world()
+	# B7.2: свободный коридор (цель 70 px, стен нет): сдвиг + удар — КД полный.
+	reset_warrior()
+	new_world()
+	hero.global_position = Vector2.ZERO
+	var s2 = spawn_slime(Vector2(70, 0))
+	s2.freeze_t = 5.0
+	var hp2 := int(s2.hp)
+	ok = hero.cast_skill(2)
+	await _frame(12)
+	ck("B7.2 рывок дошёл и ударил (цель получила урон)", int(s2.hp) < hp2, "hp=%d" % s2.hp)
+	ck("B7.2 реальный сдвиг (x>=40)", hero.global_position.x >= 40.0,
+		"x=%.1f" % hero.global_position.x)
+	ck("B7.2 КД полный: 6.5<cd<=7 (удар состоялся — откат штатен)",
+		float(hero.skill_cd[2]) > 6.5 and float(hero.skill_cd[2]) <= 7.0, "cd=%f" % hero.skill_cd[2])
+	ck("B7.2 тоста про блокировку нет", not any_toast("заблокирован") and not any_toast("Стена"))
+	free_world()
+	# B7.3: приземление у стены СО СДВИГОМ (герой проехал ~26 px до стенки,
+	# скольжения нет, удара нет): КД полный, «Стена помешала рывку» — прежний
+	# канон w3fix не регресснул (сдвиг >= BOAR_MIN_MOVE платёж честный).
+	reset_warrior()
+	new_world()
+	hero.global_position = Vector2.ZERO
+	var s3 = spawn_slime(Vector2(60, 0))
+	s3.freeze_t = 5.0
+	add_wall(Vector2(35, 0), Vector2(8, 80))    # x∈[31..39]: встать в (26,0)
+	var hp3 := int(s3.hp)
+	ok = hero.cast_skill(2)
+	await _frame(12)
+	ck("B7.3 герой встал у стены со сдвигом (9<=x<31)",
+		hero.global_position.x >= 9.0 and hero.global_position.x < 31.0,
+		"x=%.1f" % hero.global_position.x)
+	ck("B7.3 удара не было", int(s3.hp) == hp3)
+	ck("B7.3 КД полный: 6.5<cd<=7 (сдвиг был — откат штатен)",
+		float(hero.skill_cd[2]) > 6.5 and float(hero.skill_cd[2]) <= 7.0, "cd=%f" % hero.skill_cd[2])
+	ck("B7.3 тост «Стена помешала рывку», а не «заблокирован»",
+		any_toast("Стена помешала") and not any_toast("заблокирован"))
+	free_world()
+	# B7.4: цель погибла в полёте ПОСЛЕ реального перелёта — КД остаётся (B6),
+	# но упор на месте + гибель цели рядом — КД назад (тот же закон «не сдвинулся
+	# и не ударил»). Проверка вторая: стена вплотную, цель 8 px — умирает в полёте.
+	reset_warrior()
+	new_world()
+	hero.global_position = Vector2.ZERO
+	add_wall(Vector2(9, 0), Vector2(16, 80))
+	var s4 = spawn_slime(Vector2(8, 0))   # вплотную, за стеной не умещается — рядом
+	ok = hero.cast_skill(2)
+	s4.hurt(999, Vector2.ZERO)            # гибель в полёте (дэш никуда не летел)
+	await _frame(12)
+	ck("B7.4 упор на месте + цель погибла в полёте: cd=0 (закон единый)",
+		absf(float(hero.skill_cd[2])) < 0.001, "cd=%f" % hero.skill_cd[2])
+	free_world()
+
 # --- C: execute-хил ---
+
 
 func sect_c() -> void:
 	print("--- C: казнь-килл => +3 HP с клампом; не-килл => без хила ---")
@@ -392,3 +480,7 @@ func sect_e_text_wiring() -> void:
 		pl.contains("BOAR_DASH_TIME") and pl.contains("_boar_land"))
 	ck("E6 player.gd: фаза полёта залочает обычный ход (блок до WASD)",
 		pl.contains("if boar_t > 0.0:") and pl.find("if boar_t > 0.0:") < pl.find("WASD-ход"))
+	# --- g24b (вердикт 18.11): рывок при блоке не сжигает перезарядку ---
+	ck("E7 g24b: player.gd — порог BOAR_MIN_MOVE, возврат КД и тост «Рывок заблокирован»",
+		pl.contains("BOAR_MIN_MOVE") and pl.contains("_boar_refund_blocked") \
+		and pl.contains("Рывок заблокирован"))
