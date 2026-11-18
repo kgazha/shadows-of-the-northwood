@@ -1661,14 +1661,22 @@ func _inv_halo() -> void:
 				bush_dim += 1
 	chk(bush >= 3 and bush == bush_dim,
 		"halo/g22: подлесок в ядре светлеет до 0.9 (в ядре %d, светлеют %d; база: 0/9)" % [bush, bush_dim])
-	# ствольные полосы (g22 пул): деревья зарегистрированы в пуле по числу крон,
-	# у героя полосы активны и никогда не димятся (в реестры дима не входят)
+	# ствольные полосы (g22 пул): в пуле зарегистрированы ГЛУХИЕ деревья ('t');
+	# g24a (t5 P0-1): проходимые 'T'-кроны в пул НЕ входят — полоса ствола читается
+	# «сюда не войти» и на проходимом дереве запрещена. Полосы у героя активны и
+	# никогда не димятся (в реестры дима не входят)
 	var pool: Node = null
 	if w.get("forest_v1") != null:
 		pool = (w.forest_v1 as Node2D).get_node_or_null("TrunkPool")
-	chk(pool != null and int(pool.trees.size()) == int(w._ys_canopies.size()),
-		"halo/g22: пул стволов: деревьев зарегистрировано %d == крон %d" % [
-			(int(pool.trees.size()) if pool != null else -1), w._ys_canopies.size()])
+	var t_solid := 0
+	for yy in H:
+		for xx in String(grid[yy]).length():
+			if String(String(grid[yy])[xx]) == "t":
+				t_solid += 1
+	chk(pool != null and int(pool.trees.size()) == t_solid \
+			and t_solid < int(w._ys_canopies.size()),
+			"halo/g24a: пул стволов = глухие деревья %d (крон всего %d, T-проходимые в пул не входят)" % [
+				t_solid, w._ys_canopies.size()])
 	var active := 0
 	var pool_ok := pool != null
 	if pool_ok:
@@ -1682,14 +1690,20 @@ func _inv_halo() -> void:
 				pool_ok = false
 	chk(pool_ok and active > 0,
 		"halo/g22: у героя %d активных полос, все непрозрачны и в радиусе пула" % active)
-	# корневые маты глухих просветов: реестр == независимая формула
+	# корневые маты глухих просветов: реестр == независимая формула.
+	# g24a (t5 M4): формула расширена половинными ковриками стыка t|T-крона —
+	# коврик кладётся только на глухую клетку, проходимая земля не закрашивается.
 	var expected := 0
+	var ca := preload("res://scripts/cave_art.gd")
 	for y in H:
 		var row := String(grid[y])
 		for x in row.length() - 1:
 			var a2 := String(row[x])
 			var b2 := String(row[x + 1])
 			if (a2 == "t" or a2 == "r") and (b2 == "t" or b2 == "r") and (a2 == "t" or b2 == "t"):
+				expected += 1
+			elif (a2 == "t" and b2 == "T" and float(ca.frac(x + 1, y, 17)) < 0.68) \
+					or (a2 == "T" and float(ca.frac(x, y, 17)) < 0.68 and b2 == "t"):
 				expected += 1
 	var mats: Array = w.get("_g22_gap_mats") if w.get("_g22_gap_mats") != null else []
 	chk(expected > 0 and mats.size() == expected,
@@ -1698,7 +1712,16 @@ func _inv_halo() -> void:
 	for m in mats:
 		var mx := int(m["x"])
 		var my := int(m["y"])
-		if not _blocked(mx, my) or not _blocked(mx + 1, my):
+		var half_i := int(m.get("half", 0))
+		if half_i == 1:
+			# g24a: половинный коврик t|T — закрашена ТОЛЬКО левая (глухая)
+			# клетка; правая — проходимый 'T'-просвет, его арта не касается.
+			if not _blocked(mx, my) or _blocked(mx + 1, my):
+				mats_ok = false
+		elif half_i == 2:
+			if _blocked(mx, my) or not _blocked(mx + 1, my):
+				mats_ok = false
+		elif not _blocked(mx, my) or not _blocked(mx + 1, my):
 			mats_ok = false
 	chk(mats_ok, "roots/g22: ни один мат не стоит на проходимой клетке (проходы не закрашены)")
 	# физика не тронута: глухая пара (27..28,16) остаётся глухой, тропа (22,16)

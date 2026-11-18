@@ -76,6 +76,7 @@ func _sway_row() -> Array:
 	var out: Array = []
 	out.append_array(FP.sway_triplet("PINE_T1", "3.0H", FP.build_pine_t1))
 	out.append_array(FP.sway_triplet("OAK_T", "3.0H fit", FP.build_oak_t))
+	out.append_array(FP.sway_triplet("OAK_TP", "3.0H walk", FP.build_oak_tp))
 	out.append_array(FP.sway_triplet("BUSH", "0.7H", FP.build_bush))
 	out.append_array(FP.sway_triplet("BUSH2", "0.6H", FP.build_bush2))
 	return out

@@ -39,32 +39,41 @@ const SWAY_T := 0.5  # с, как на утверждённом листе (fore
 ## Обрезка нижней кромки trim (пиксели ниже стопы кадра) — стопный якорь §4.
 const FOOT_CUT := {"BUSH": 1, "BUSH2": 1}
 
-## Зеркало data/forest_regions.json (qa _t44 сверяет побайтово).
+## Зеркало data/forest_regions.json (qa _t44 сверяет побайтово). g24a (t6):
+## + PINE_T2P/OAK_TP/OAK_TP_B/OAK_TP_C (проходимые наклонные деревья — только
+## 'T'-просветы) и STONE_MW/STONES_FW (MASS-валуны, приземный силуэт до краёв
+## коллайдера). Порядок/координаты — ре-байк sheet_forest_v1.gd bake.
 const REGIONS := {
 	"PINE_T1": Rect2(0, 0, 29, 48),
 	"PINE_T2": Rect2(31, 0, 21, 34),
+	"PINE_T2P": Rect2(100, 0, 20, 34),
 	"OAK_T": Rect2(54, 0, 44, 43),
-	"BUSH": Rect2(100, 0, 13, 10),
-	"BUSH2": Rect2(115, 0, 11, 7),
-	"STUMP_F": Rect2(128, 0, 11, 8),
-	"STUMP_F2": Rect2(141, 0, 8, 6),
-	"STONES_F": Rect2(0, 50, 14, 9),
-	"STONE_M": Rect2(16, 50, 9, 6),
-	"SHROOM1": Rect2(27, 50, 7, 6),
-	"SHROOM2": Rect2(36, 50, 10, 6),
-	"FERN": Rect2(48, 50, 13, 8),
-	"FERN2": Rect2(63, 50, 7, 6),
-	"PINE_T1_B": Rect2(72, 50, 29, 48),
-	"PINE_T1_C": Rect2(103, 50, 29, 48),
-	"OAK_T_B": Rect2(0, 100, 44, 43),
-	"OAK_T_C": Rect2(46, 100, 43, 43),
-	"BUSH_B": Rect2(91, 100, 13, 10),
-	"BUSH_C": Rect2(106, 100, 12, 10),
-	"BUSH2_B": Rect2(120, 100, 11, 7),
-	"BUSH2_C": Rect2(133, 100, 10, 7),
+	"OAK_TP": Rect2(0, 50, 44, 43),
+	"BUSH": Rect2(46, 50, 13, 10),
+	"BUSH2": Rect2(61, 50, 11, 7),
+	"STUMP_F": Rect2(74, 50, 11, 8),
+	"STUMP_F2": Rect2(87, 50, 8, 6),
+	"STONES_F": Rect2(97, 50, 14, 9),
+	"STONE_M": Rect2(113, 50, 9, 6),
+	"STONE_MW": Rect2(124, 50, 16, 12),
+	"STONES_FW": Rect2(142, 50, 16, 12),
+	"SHROOM1": Rect2(0, 95, 7, 6),
+	"SHROOM2": Rect2(9, 95, 10, 6),
+	"FERN": Rect2(21, 95, 13, 8),
+	"FERN2": Rect2(36, 95, 7, 6),
+	"PINE_T1_B": Rect2(45, 95, 29, 48),
+	"PINE_T1_C": Rect2(76, 95, 29, 48),
+	"OAK_T_B": Rect2(107, 95, 44, 43),
+	"OAK_T_C": Rect2(0, 145, 43, 43),
+	"OAK_TP_B": Rect2(45, 145, 44, 43),
+	"OAK_TP_C": Rect2(91, 145, 43, 43),
+	"BUSH_B": Rect2(136, 145, 13, 10),
+	"BUSH_C": Rect2(0, 190, 12, 10),
+	"BUSH2_B": Rect2(14, 190, 11, 7),
+	"BUSH2_C": Rect2(27, 190, 10, 7),
 }
 ## Ключи с качающимися кадрами (B/C); A — базовый кадр без суффикса.
-const SWAY_KEYS := {"PINE_T1": true, "OAK_T": true, "BUSH": true, "BUSH2": true}
+const SWAY_KEYS := {"PINE_T1": true, "OAK_T": true, "OAK_TP": true, "BUSH": true, "BUSH2": true}
 
 ## g22 (t68, вердикт 17.11 «почти полная прозрачность вокруг персонажа»):
 ## ствол = нижние 8 px кадра дерева. Крона в ореоле/под нависанием димится
@@ -80,32 +89,66 @@ const SWAY_KEYS := {"PINE_T1": true, "OAK_T": true, "BUSH": true, "BUSH2": true}
 const TRUNK_STRIP_H := 8
 const TRUNK_POOL_CAP := 300
 const TRUNK_PULL_R := 165.0
-## g22 читаемость глухих просветов (диагноз t67: 52/52 упоров выглядят проходом):
-## там, где две СОСЕДНИЕ по горизонтали блокирующие клетки (t/r) и хотя бы одна
-## — дерево, визуальная 10-px щель между стволами закрывается детерминированным
-## «ковриком корней» из тёмных тонов того же материала (BARK[2]/BARK[3],
-## PixelPalette — новых цветов ноль). Физика не меняется: паттерн рисует строго
-## внутри пары глухих клеток; проходы между группами (проходимые клетки) не
-## закрашиваются никогда — правило построено на соседстве глухих. Маты рисуются
-## ПО ОДНОМУ CanvasItem на ряд (RootBoard, _draw по строке, статичен) —
-## сотни квадов не плодят элементов сцены; z ряда = стопный z границы (V-01),
-## с однострочными деревьями вничью мат строго в бесствольных колонках —
-## перекрытия нет.
-const ROOT_MAT_W := 10
-const ROOT_MAT_H := 6
+## g22 читаемость глухих просветов (диагноз t67: 52/52 упоров выглядят проходом),
+## g24a (t6) доводка: там, где две СОСЕДНИЕ по горизонтали блокирующие клетки
+## (t/r) и хотя бы одна — дерево, визуальный просвет между стволами закрывается
+## детерминированным «ковриком корней» из тёмных тонов того же материала
+## (BARK[2]/BARK[3], PixelPalette — новых цветов ноль). Коврик 14×8 закрывает
+## ВСЮ измеряемую приземную полосу 8..15 пары (g22-коврик 10×6 оставлял
+## волосы-щели w3..13 над верхним краем — диагноз t5 P1). Пары р+р закрывает
+## не коврик, а MASS-основание валунов (STONE_MW/STONES_FW рисуются до краёв
+## коллайдера — P0-2). Физика не меняется: паттерн рисует строго внутри пары
+## глухих клеток; проходы между группами (проходимые клетки) не закрашиваются
+## никогда — правило построено на соседстве глухих. Маты рисуются ПО ОДНОМУ
+## CanvasItem на ряд (RootBoard, _draw по строке, статичен) — сотни квадов не
+## плодят элементов сцены; z ряда = стопный z границы (V-01), с однострочными
+## деревьями вничью мат строго в бесствольных колонках — перекрытия нет.
+const ROOT_MAT_W := 14
+const ROOT_MAT_H := 8
 const ROOT_MATS := [
-	["..11..11..",
-	 ".12211221.",
-	 "1222222221",
-	 "1222222221",
-	 "1222222221",
-	 ".11111111."],
-	[".11....11.",
-	 "1221..1221",
-	 "1222222221",
-	 "2222222222",
-	 "1222222221",
-	 ".11111111."],
+	["11111111111111",
+	 "12222222222221",
+	 "12122222221121",
+	 "12222111122221",
+	 "12111222222121",
+	 "12222222222221",
+	 "12212222222121",
+	 "11111111111111"],
+	["11111111111111",
+	 "12222222222221",
+	 "12211222211221",
+	 "12222211222221",
+	 "12122222222121",
+	 "12222111122221",
+	 "12222222222221",
+	 "11111111111111"],
+]
+
+## g24a (t5 M2/M4): «корневой пол» MASS-клетки дерева — 16×8 под всю приземную
+## полосу глухой клетки-массы (коллайдер 16×16 => земля под деревом мертва,
+## невидимых заблокированных px и волосков-щелей между юбками соседних крон
+## оставаться не должно: тот же закон, что wide-основание валуна P0-2, только
+## для дерева). Рисуется ДО арты ряда (z доски = линия ряда - 1): стволы и
+## юбки остаются поверх, корневой узор виден ровно в пустых ячейках земли.
+## Только BARK[2]/BARK[3] — новых цветов ноль, детермин (хэш клетки).
+const ROOT_FLOOR_W := 16
+const ROOT_FLOORS := [
+	["1111111111111111",
+	 "1222222222222221",
+	 "1212222112211221",
+	 "1222111221122221",
+	 "1211222221221221",
+	 "1222221122221121",
+	 "1221222212212221",
+	 "1111111111111111"],
+	["1111111111111111",
+	 "1222222222222221",
+	 "1221122222112221",
+	 "1222221112222121",
+	 "1212222222122221",
+	 "1222211222211121",
+	 "1222122212222221",
+	 "1111111111111111"],
 ]
 
 
@@ -186,13 +229,19 @@ static func build(world) -> Node2D:
 			if ch == "t":
 				#blocking дерево: 62% полная ель, иначе средняя (хэш клетки)
 				var key := "PINE_T1" if CaveArt.frac(x, y, 11) < 0.62 else "PINE_T2"
-				_tree(world, layer, sway_layer, atlas, key, x, y, foot, pool)
+				_tree(world, layer, sway_layer, atlas, key, x, y, foot, pool, true)
 			elif ch == "T":
-				# проходимое дерево-просвет: 68% крона, иначе подлесок/поляна
+				# проходимое дерево-просвет: 68% крона, иначе подлесок/поляна.
+				# g24a (t5 P0-1 «двойники»): кроновые клетки рисуют ПРОХОДИМЫЕ
+				# варианты (OAK_TP/PINE_T2P) — наклонный ствол у края клетки и
+				# видимый проход у основания; побайтово совпадающих кадров с
+				# глухими «t» не существует по построению. В пул полос стволов
+				# (pool_ok=false) не регистрируются: полоса = знак «сюда не
+				# войти», проходимому дереву она запрещена.
 				var f := CaveArt.frac(x, y, 17)
 				if f < 0.68:
-					var key2 := "OAK_T" if CaveArt.frac(x, y, 23) < 0.55 else "PINE_T2"
-					_tree(world, layer, sway_layer, atlas, key2, x, y, foot, pool)
+					var key2 := "OAK_TP" if CaveArt.frac(x, y, 23) < 0.55 else "PINE_T2P"
+					_tree(world, layer, sway_layer, atlas, key2, x, y, foot, pool, false)
 				else:
 					var u := CaveArt.frac(x, y, 29)
 					var dk := ""
@@ -218,13 +267,25 @@ static func build(world) -> Node2D:
 								"phase": absi(CaveArt.hash_xy(x, y)) % 3,
 							})
 			elif ch == "r":
-				# валун: камушки леса (консервативный сеточный коллайдер как был)
-				var rk := "STONE_M" if CaveArt.frac(x, y, 51) < 0.6 else "STONES_F"
+				# валун: камушки леса (консервативный сеточный коллайдер как был).
+				# g24a (t5 P0-2): MASS-клетка (правило массы t58 — есть глухой
+				# сосед по стороне, коллайдер 16×16) получает wide-основание
+				# STONE_MW/STONES_FW: приземная полоса клетки 6..15 закрыта
+				# камнем до краёв коллайдера — невидимых заблокированных px 0,
+				# шов соседних валунов закрыт осыпью. Одиночный «r» (силуэт
+				# t54 11×10) остаётся мелким камнем: арта не шире коллайдера.
+				var rk: String
+				if world._block_mass(x, y):
+					rk = "STONE_MW" if CaveArt.frac(x, y, 51) < 0.6 else "STONES_FW"
+				else:
+					rk = "STONE_M" if CaveArt.frac(x, y, 51) < 0.6 else "STONES_F"
 				var rspr := _spr(layer, atlas, rk, foot)
 				world._ys_prop(rspr)
-	# g22 (t68): коврики корней в 10-px просветах глухих пар — по CanvasItem
+	# g22 (t68) + g24a (t6): коврики корней в просветах глухих пар — по CanvasItem
 	# на ряд (RootBoard). Правило детерминированное и консервативное: оба
-	# соседа по горизонтали блокирующие (t/r) и хотя бы один — дерево ('t').
+	# соседа по горизонтали блокирующие (t/r) и хотя бы один — дерево ('t');
+	# ковриком 14×8 закрыта вся приземная полоса 8..15 шва (t5 P1: старые 10×6
+	# оставляли волосы-щели сверху). Пары р+р закрывает MASS-основание валунов.
 	# Проходимые клетки (включая 'T'-просветы) в пару не попадают => настоящие
 	# проходы не закрашиваются. Вариант/зеркало паттерна — хэш клетки (randi
 	# нет).
@@ -235,9 +296,20 @@ static func build(world) -> Node2D:
 		for x in row.length() - 1:
 			var a := String(row[x])
 			var b := String(row[x + 1])
-			if not _grid_solid(a) or not _grid_solid(b):
-				continue
-			if a != "t" and b != "t":
+			var half := 0
+			if _grid_solid(a) and _grid_solid(b):
+				if a != "t" and b != "t":
+					continue
+			# g24a (t5 M4 ZERO «нарисованный просвет без физики»): стык глухого
+			# 't'-дерева и проходимого 'T'-КРОНЫ (не подлеска) рисует волосок
+			# щели на глухой стороне — центр героя туда не входит (коллайдер
+			# ствола), но глаз читает «проход». Половинный коврик (8×8) кладётся
+			# ТОЛЬКО на глухую клетку: проходимая земля 'T' не закрашивается.
+			elif a == "t" and b == "T" and CaveArt.frac(x + 1, y, 17) < 0.68:
+				half = 1
+			elif a == "T" and b == "t" and CaveArt.frac(x, y, 17) < 0.68:
+				half = 2
+			else:
 				continue
 			var h := absi(CaveArt.hash_xy(x, y))
 			var bd: RootBoard = boards.get(y, null)
@@ -245,28 +317,56 @@ static func build(world) -> Node2D:
 				bd = RootBoard.new()
 				bd.name = "Roots_r%d" % y
 				bd.z_as_relative = false
-				bd.z_index = int(round(fposmod(float((y + 1) * 16), 4800.0)))
+				bd.z_index = int(round(fposmod(float((y + 1) * 16), 4800.0))) - 1
 				layer.add_child(bd)
 				boards[y] = bd
-			bd.items.append({
-				"tex": root_tex[(h % 2) * 2 + ((h >> 8) % 2)],
+			var item := {
+				"tex": root_tex[(h % 2) * 2 + ((0 if half > 0 else (h >> 8) % 2))],
 				"pos": Vector2(float(x + 1) * 16.0, float(y + 1) * 16.0 - float(ROOT_MAT_H) * 0.5),
+			}
+			if half > 0:
+				item["half"] = half
+			bd.items.append(item)
+			world._g22_gap_mats.append({"x": x, "y": y, "half": half})
+	# g24a (t5 M2/M4): корневые полы MASS-клеток деревьев — см. ROOT_FLOORS.
+	# Только масса (коллайдер 16×16): одиночные «t» с силуэтной физикой не
+	# трогаем — между их «ног» проходит герой, и земля там живая.
+	for y in world.map_rows.size():
+		var row := String(world.map_rows[y])
+		for x in row.length():
+			if String(row[x]) != "t":
+				continue
+			if not world._block_mass(x, y):
+				continue
+			var bd2: RootBoard = boards.get(y, null)
+			if bd2 == null:
+				bd2 = RootBoard.new()
+				bd2.name = "Roots_r%d" % y
+				bd2.z_as_relative = false
+				bd2.z_index = int(round(fposmod(float((y + 1) * 16), 4800.0))) - 1
+				layer.add_child(bd2)
+				boards[y] = bd2
+			var hf := absi(CaveArt.hash_xy(x, y))
+			bd2.items.append({
+				"tex": root_tex[4 + (hf % 2)],
+				"pos": Vector2(float(x) * 16.0 + 8.0, float(y + 1) * 16.0 - float(ROOT_MAT_H) * 0.5),
 			})
-			world._g22_gap_mats.append({"x": x, "y": y})
 	layer.add_child(pool)
 	return layer
 
 
 static func _tree(world, layer: Node2D, sway_layer, atlas: Texture2D, key: String,
-		x: int, y: int, foot: Vector2, pool = null) -> void:
+		x: int, y: int, foot: Vector2, pool = null, in_pool: bool = true) -> void:
 	var spr := _spr(layer, atlas, key, foot)
 	world._ys_prop(spr)
 	world._ys_canopies.append(spr)
-	# g22 (t68): дерево регистрируется в пуле полос стволов (полоса-спрайт
+	# g22 (t68): ГЛУХОЕ дерево регистрируется в пуле полос стволов (полоса-спрайт
 	# появляется только у героя — см. TrunkPool). svay-деревья несут фазу, чтобы
 	# полоса брала ровно тот же кадр A/B/C, что кроны (ствол в кадре сдвинут
 	# вместе с ним — картинка покадрово идентична «целому» дереву).
-	if pool != null:
+	# g24a (t5 P0-1): in_pool=false для проходимых 'T'-деревьев — полоса ствола
+	# читается как «сюда не войти» и на проходимом дереве запрещена.
+	if pool != null and in_pool:
 		var e := {
 			"x": foot.x, "y": foot.y - float(TRUNK_STRIP_H) * 0.5,
 			"z": spr.z_index, "ph": -1,
@@ -367,20 +467,43 @@ static func _root_textures() -> Array:
 		var mir := im.duplicate()
 		mir.flip_x()
 		_root_texs.append(ImageTexture.create_from_image(mir))
+	for fl in ROOT_FLOORS:
+		var im := Image.create(ROOT_FLOOR_W, ROOT_MAT_H, false, Image.FORMAT_RGBA8)
+		im.fill(Color(0, 0, 0, 0))
+		for ry in ROOT_MAT_H:
+			var line := String(fl[ry])
+			for rx in ROOT_FLOOR_W:
+				var c := String(line[rx])
+				if tones.has(c):
+					im.set_pixel(rx, ry, tones[c])
+		_root_texs.append(ImageTexture.create_from_image(im))
 	return _root_texs
 
 
 class RootBoard:
 	extends Node2D
 	## g22: все коврики корней одного ряда — одним CanvasItem (_draw статичен,
-	## перерисовки нет). zboard = стопный z границы ряда (V-01).
+	## перерисовки нет). g24a: z = стопная z границы ряда МИНУС 1 — коврики и
+	## корневые полы рису ПОД артой своего ряда (стволы/юбки/камни поверх,
+	## узор виден только в пустых ячейках земли), над полом и вне ореола дима.
+	## item["half"]=1/2 — половинный коврик 8×8 ровно на глухую сторону
+	## стыка t|T (левее/правее границы); цельные коврики глухих пар — без поля;
+	## полы MASS-клеток — текстура 16×8 без поля half.
 	var items: Array = []
 
 	func _draw() -> void:
 		for it in items:
 			var t: Texture2D = it["tex"]
 			var p: Vector2 = it["pos"]
-			draw_texture(t, p - Vector2(float(t.get_width()) * 0.5, float(t.get_height()) * 0.5))
+			var half := int(it.get("half", 0))
+			if half == 1:
+				draw_texture_rect_region(t, Rect2(p.x - 8.0, p.y - 4.0, 8.0, 8.0),
+						Rect2(Vector2.ZERO, Vector2(8.0, 8.0)))
+			elif half == 2:
+				draw_texture_rect_region(t, Rect2(p.x, p.y - 4.0, 8.0, 8.0),
+						Rect2(Vector2(float(t.get_width()) - 8.0, 0.0), Vector2(8.0, 8.0)))
+			else:
+				draw_texture(t, p - Vector2(float(t.get_width()) * 0.5, float(t.get_height()) * 0.5))
 
 
 class TrunkPool:

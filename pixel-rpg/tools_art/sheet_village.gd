@@ -407,13 +407,29 @@ func _build_sign() -> Image:
 	_px(img, 6, 28, C("BARK", P.T_DARK))
 	_px(img, 6, 35, C("BARK", P.T_DARK))
 	_px(img, 5, 31, C("BARK", P.T_DARK))
-	# земля у основания
-	_rect(img, 4, 42, 8, 42, C("PATH", P.T_MID))
-	_rect(img, 3, 43, 9, 43, C("PATH", P.T_MID))
-	_rect(img, 2, 44, 10, 44, C("PATH", P.T_DARK))
-	_px(img, 1, 43, C("GRASS", P.T_LIGHT))
-	_px(img, 11, 43, C("GRASS", P.T_LIGHT))
-	_px(img, 2, 42, C("GRASS", P.T_MID))
+	# земля у основания. g24a (t5 «указатель», M2/M6): арт 13×45 при коллайдере
+	# 6×5 — приземная полоса рисовалась шире коллайдера, а сам коллайдер (rows
+	# 9..13, центр клетки +3) висел над пустотой: 16 невидимых заблокированных
+	# px. Основание = деревянный сруб вокруг вкопанной части столба: ровно
+	# columns 5..10 rows 9..13 клетки (sprite cols 4..9, rows 38..42) — арта
+	# покрывает коллайдер, за его пределы в приземной полосе не лезет.
+	_rect(img, 4, 37, 9, 37, C("WOOD", P.T_LIGHT))
+	_rect(img, 4, 38, 9, 41, C("WOOD", P.T_MID))
+	_px(img, 5, 38, C("WOOD", P.T_DARK))
+	_px(img, 7, 38, C("WOOD", P.T_DARK))
+	_px(img, 5, 39, C("WOOD", P.T_DARK))
+	_px(img, 7, 39, C("WOOD", P.T_DARK))
+	_px(img, 5, 40, C("WOOD", P.T_DARK))
+	_px(img, 7, 40, C("WOOD", P.T_DARK))
+	_px(img, 5, 41, C("WOOD", P.T_DARK))
+	_px(img, 7, 41, C("WOOD", P.T_DARK))
+	_px(img, 9, 39, C("WOOD", P.T_DARK))
+	_px(img, 4, 42, C("PATH", P.T_MID))
+	_rect(img, 5, 42, 9, 42, C("PATH", P.T_MID))
+	_rect(img, 5, 43, 10, 43, C("PATH", P.T_MID))
+	_rect(img, 5, 44, 10, 44, C("PATH", P.T_DARK))
+	_px(img, 10, 42, C("GRASS", P.T_LIGHT))
+	_px(img, 3, 41, C("GRASS", P.T_MID))
 	return img
 
 

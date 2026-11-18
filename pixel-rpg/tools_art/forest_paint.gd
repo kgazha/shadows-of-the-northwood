@@ -307,6 +307,204 @@ static func build_oak_t(sway: int = 0) -> Image:
 	CP.canon_pass(img)
 	return img
 
+## g24a (t6, диагноз t5 P0-1 «двойники»): сдвиг строк [y0..y1] на dx px
+## (детерминированно, без randi): пиксели уходят в прозрачность, новых цветов
+## ноль. Используется для «наклонного» проходимого дерева: крона та же, ствол
+## уходит в сторону, у основания виден честный проход.
+static func _shift_rows(img: Image, y0: int, y1: int, dx: int) -> void:
+	if dx == 0:
+		return
+	var w := img.get_width()
+	var src: Image = img.duplicate()
+	for y in range(y0, y1 + 1):
+		for x in w:
+			var sx: int = x - dx
+			var col := Color(0, 0, 0, 0) if sx < 0 or sx >= w else src.get_pixel(sx, y)
+			img.set_pixel(x, y, col)
+
+## Проходимая ель 22×34 (только 'T'-просветы, g24a). Тот же рубило и ярусы,
+## что PINE_T2, но ствол с 26-й rows уходит влево (-2/-4/-6 ступенями) и у
+## земли прижимается к левому краю клетки: посредине виден проход >=10 px.
+## Пиксель-близнецом глухого PINE_T2 быть не может (ствольные rows различны).
+## В пуле полос стволов (TrunkPool) НЕ регистрируется — полоса = «сюда не
+## войти», проходимому дереву она запрещена.
+static func build_pine_t2p(sway: int = 0) -> Image:
+	var img := _pine_core([[16, 27, 10], [7, 18, 8], [0, 9, 5]], 22, 11, 26, 8)
+	_shift_rows(img, 26, 27, -2)
+	_shift_rows(img, 28, 29, -4)
+	_shift_rows(img, 30, 33, -6)
+	# «сухой» правый угол нижнего яруса над проходом — свет читается как просека
+	for y in [25, 26, 27]:
+		for x in range(17 + (27 - y), 22):
+			if x < 22:
+				img.set_pixel(x, y, Color(0, 0, 0, 0))
+	# травинки у основания прохода («здесь идём»)
+	_px(img, 16, 33, C("GRASS", P.T_LIGHT))
+	_px(img, 17, 32, C("GRASS", P.T_MID))
+	_px(img, 14, 33, C("GRASS", P.T_MID))
+	_sway_rows(img, 28, sway)
+	CP.canon_pass(img)
+	return img
+
+## Проходимый дуб 45×44 (только 'T', g24a). Крона и ствол OAK_T до 34-й rows;
+## ниже ствол наклонён влево (-2/-3/-5) и корнями прижимается к левому краю
+## клетки: справа у земли проход >=8 px. Полосу стволов не получает.
+static func build_oak_tp(sway: int = 0) -> Image:
+	var img := im(45, 44)
+	for y in range(26, 34):
+		_px(img, 20, y, C("BARK", P.T_LIGHT))
+		for x in range(21, 24):
+			_px(img, x, y, C("BARK", P.T_MID))
+		_px(img, 24, y, C("BARK", P.T_DARK))
+	_px(img, 22, 30, C("BARK", P.T_DARK))
+	# нижняя часть ствола: рисуем на месте, затем наклон влево
+	for y in range(34, 44):
+		_px(img, 20, y, C("BARK", P.T_LIGHT))
+		for x in range(21, 24):
+			_px(img, x, y, C("BARK", P.T_MID))
+		_px(img, 24, y, C("BARK", P.T_DARK))
+	_px(img, 21, 37, C("BARK", P.T_DARK))
+	_px(img, 22, 41, C("BARK", P.T_DARK))
+	_rect(img, 18, 41, 19, 43, C("BARK", P.T_MID))
+	_rect(img, 25, 41, 26, 43, C("BARK", P.T_DARK))
+	_px(img, 17, 43, C("BARK", P.T_DARK))
+	_px(img, 27, 43, C("BARK", P.T_DARK))
+	_shift_rows(img, 34, 35, -2)
+	_shift_rows(img, 36, 37, -3)
+	_shift_rows(img, 38, 43, -5)
+	var lobes := [
+		[11, 13, 8.0, 7.0], [22, 9, 10.0, 8.0], [34, 13, 8.0, 7.0],
+		[8, 20, 7.0, 6.5], [37, 20, 7.0, 6.5], [22, 18, 13.5, 12.0],
+		[15, 22, 8.5, 7.0], [29, 22, 8.5, 7.0],
+	]
+	for y in range(0, 32):
+		for x in range(0, 45):
+			for lb in lobes:
+				var nx := float(x - int(lb[0])) / float(lb[2])
+				var ny := float(y - int(lb[1])) / float(lb[3])
+				if nx * nx + ny * ny <= 1.0:
+					var col := C("LEAF", P.T_MID)
+					var hv := hp(x, y)
+					if (y <= 7 and x <= 22 and hv < 0.32) or (hv < 0.08 and y < 16):
+						col = C("LEAF", P.T_LIGHT)
+					elif hv < 0.10 and y >= 24:
+						col = C("LEAF", P.T_DARK)
+					img.set_pixel(x, y, col)
+					break
+	img.set_pixel(5, 18, Color(0, 0, 0, 0))
+	img.set_pixel(40, 14, Color(0, 0, 0, 0))
+	img.set_pixel(24, 29, Color(0, 0, 0, 0))
+	img.set_pixel(16, 27, Color(0, 0, 0, 0))
+	_px(img, 32, 42, C("GRASS", P.T_LIGHT))
+	_px(img, 33, 42, C("GRASS", P.T_MID))
+	_px(img, 30, 43, C("GRASS", P.T_LIGHT))
+	_sway_rows(img, 33, sway)
+	CP.canon_pass(img)
+	return img
+
+## g24a (диагноз t5 P0-2 «пеньки-валуны»): MASS-валуны. Глухая клетка «r»
+## (есть блокирующий сосед по стороне — правило массы t58, физика не меняется:
+## коллайдер 16×16 как был) получает приземный силуэт ДО КРАЁВ коллайдера:
+## 16×12 камень, rows 2..11 (клеточные 6..15 — измеряемая приземная полоса)
+## закрыты непрозрачно на всю ширину — невидимой заблокированной полосы 0 px;
+## шов соседних валунов закрыт основанием (осыпью). Одиночные «r» (силуэт
+## t54 11×10) остаются мелкими STONE_M/STONES_F — арта шире коллайдера нет.
+static func build_stone_mw() -> Image:
+	## Одинокий MASS-валун 16×12: купол + тело во всю клетку, осыпь по углам.
+	var img := im(16, 12)
+	# купол (rows 0..1) — верхушка камня
+	for x in range(4, 12):
+		_px(img, x, 0, C("STONE", P.T_MID))
+	for x in range(2, 14):
+		var h := hp(x + 7, 3)
+		_px(img, x, 1, C("STONE", P.T_LIGHT) if x < 7 and h < 0.6 else C("STONE", P.T_MID))
+	# тело rows 2..10: базовый MID
+	for y in range(2, 11):
+		for x in 16:
+			_px(img, x, y, C("STONE", P.T_MID))
+	# верхняя кромка: СЗ-подсветка слева, тень справа
+	for x in 16:
+		var h2 := hp(x + 23, 2)
+		if x >= 3 and x <= 9:
+			_px(img, x, 2, C("STONE", P.T_LIGHT) if h2 < 0.7 else C("STONE", P.T_MID))
+		elif x >= 11:
+			_px(img, x, 2, C("STONE", P.T_DARK))
+		else:
+			_px(img, x, 2, C("STONE", P.T_DARK) if h2 < 0.5 else C("STONE", P.T_MID))
+	# тело: световое пятно СЗ, трещина, теневой бок
+	for y in range(3, 9):
+		for x in range(10, 16):
+			if hp(x + 3, y + 41) < 0.85:
+				_px(img, x, y, C("STONE", P.T_DARK))
+	for y in [3, 4]:
+		for x in range(3, 8):
+			_px(img, x, y, C("STONE", P.T_LIGHT))
+	_px(img, 4, 5, C("STONE", P.T_LIGHT))
+	_px(img, 8, 4, C("STONE", P.T_DARK))
+	_px(img, 9, 5, C("STONE", P.T_DARK))
+	_px(img, 9, 6, C("STONE", P.T_DARK))
+	_px(img, 10, 7, C("STONE", P.T_DARK))
+	_px(img, 6, 7, C("STONE", P.T_DARK))
+	_px(img, 5, 8, C("STONE", P.T_DARK))
+	# мох (лесная влага) — СЗ-кромка и юго-восточное основание
+	_px(img, 2, 3, C("GRASS", P.T_MID))
+	_px(img, 2, 4, C("GRASS", P.T_LIGHT))
+	_px(img, 3, 4, C("GRASS", P.T_MID))
+	_px(img, 13, 8, C("GRASS", P.T_MID))
+	_px(img, 14, 9, C("GRASS", P.T_LIGHT))
+	# нижняя тень + осыпь
+	for x in 16:
+		_px(img, x, 10, C("STONE", P.T_DARK) if hp(x + 61, 11) < 0.72 else C("STONE", P.T_MID))
+	_px(img, 0, 9, C("STONE", P.T_DARK))
+	_px(img, 15, 6, C("STONE", P.T_DARK))
+	# foot — OUTLINE
+	for x in 16:
+		_px(img, x, 11, C("STONE", P.T_OUTLINE))
+	return img
+
+static func build_stones_fw() -> Image:
+	## Семейка MASS-камней 16×12: два валуна + осыпь между и по углам.
+	var img := im(16, 12)
+	# купола: левый крупный (cols 1..9), правый поменьше (cols 10..15)
+	for x in range(3, 8):
+		_px(img, x, 0, C("STONE", P.T_MID))
+	for x in range(1, 10):
+		_px(img, x, 1, C("STONE", P.T_LIGHT) if x < 5 else C("STONE", P.T_MID))
+	for x in range(11, 15):
+		_px(img, x, 2, C("STONE", P.T_MID))
+	# тело rows 2..10 целиком
+	for y in range(2, 11):
+		for x in 16:
+			_px(img, x, y, C("STONE", P.T_MID))
+	# левый камень: светлее (СЗ), правый — темнее на полтона
+	for y in range(2, 11):
+		for x in range(10, 16):
+			_px(img, x, y, C("STONE", P.T_DARK) if (y >= 3 or x >= 13) else C("STONE", P.T_MID))
+	for y in [2, 3]:
+		for x in range(2, 7):
+			if hp(x + 13, y + 5) < 0.75:
+				_px(img, x, y, C("STONE", P.T_LIGHT))
+	# шов между камнями + трещины
+	for y in range(3, 9):
+		_px(img, 9, y, C("STONE", P.T_DARK))
+	_px(img, 5, 5, C("STONE", P.T_DARK))
+	_px(img, 6, 6, C("STONE", P.T_DARK))
+	_px(img, 12, 7, C("STONE", P.T_DARK))
+	_px(img, 13, 6, C("STONE", P.T_DARK))
+	# осыпь bottom rows: мелкий камень/гравий по всей ширине
+	for x in 16:
+		var h := hp(x + 101, 13)
+		_px(img, x, 9, C("STONE", P.T_DARK) if h < 0.6 else C("STONE", P.T_MID))
+		_px(img, x, 10, C("STONE", P.T_DARK))
+	# мох
+	_px(img, 1, 4, C("GRASS", P.T_MID))
+	_px(img, 1, 5, C("GRASS", P.T_LIGHT))
+	_px(img, 12, 4, C("GRASS", P.T_MID))
+	# foot — OUTLINE
+	for x in 16:
+		_px(img, x, 11, C("STONE", P.T_OUTLINE))
+	return img
+
 # ============================================================ КУСТЫ (prop, 3 фазы свая)
 
 static func build_bush(sway: int = 0) -> Image:
@@ -530,12 +728,16 @@ static func prop_set_canon() -> Array:
 	out.append({"name": "PINE_T1", "canon": "3.0H", "img": build_pine_t1(0)})
 	out.append({"name": "PINE_T2", "canon": "2.1H", "img": build_pine_t2(0)})
 	out.append({"name": "OAK_T", "canon": "3.0H fit", "img": build_oak_t(0)})
+	out.append({"name": "PINE_T2P", "canon": "2.1H walk", "img": build_pine_t2p(0)})
+	out.append({"name": "OAK_TP", "canon": "3.0H walk", "img": build_oak_tp(0)})
 	out.append({"name": "BUSH", "canon": "0.7H", "img": build_bush(0)})
 	out.append({"name": "BUSH2", "canon": "0.6H", "img": build_bush2(0)})
 	out.append({"name": "STUMP_F", "canon": "0.55H", "img": build_stump_f()})
 	out.append({"name": "STUMP_F2", "canon": "0.4H", "img": build_stump_f2()})
 	out.append({"name": "STONES_F", "canon": "0.75H", "img": build_stones_f()})
 	out.append({"name": "STONE_M", "canon": "0.5H", "img": build_stone_m()})
+	out.append({"name": "STONE_MW", "canon": "0.75H mass", "img": build_stone_mw()})
+	out.append({"name": "STONES_FW", "canon": "0.75H mass", "img": build_stones_fw()})
 	out.append({"name": "SHROOM1", "canon": "0.4H", "img": build_shroom1()})
 	out.append({"name": "SHROOM2", "canon": "0.5H", "img": build_shroom2()})
 	out.append({"name": "FERN", "canon": "0.6H", "img": build_fern()})
@@ -566,6 +768,7 @@ static func bake_list() -> Array:
 	for s in prop_set_canon():
 		out.append(s)
 	for g in [["PINE_T1", "3.0H", build_pine_t1], ["OAK_T", "3.0H fit", build_oak_t],
+			["OAK_TP", "3.0H walk", build_oak_tp],
 			["BUSH", "0.7H", build_bush], ["BUSH2", "0.6H", build_bush2]]:
 		out.append({"name": String(g[0]) + "_B", "canon": String(g[1]), "img": (g[2] as Callable).call(-1)})
 		out.append({"name": String(g[0]) + "_C", "canon": String(g[1]), "img": (g[2] as Callable).call(1)})
