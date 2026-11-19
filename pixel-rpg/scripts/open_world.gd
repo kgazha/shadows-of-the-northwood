@@ -410,8 +410,10 @@ static func worldmap_map(run_seed: int) -> Dictionary:
 			var row := String(grid[y])
 			row[x] = "-"
 			grid[y] = row
-	# ворота кольца: сквозной вырез стены y=57..59 (x=47..48) — зеркало F5-листа
-	for y in range(WM_H - 3, WM_H):
+	# ворота кольца: коридор y=57..58 (x=47..48) — ТУПИК, ряд 59 (последний)
+	# НЕ режем: кольцо снизу глухо (W-P0-1, фикс 19.11: сквозной вырез до ряда 59
+	# давал walk-out за край в ZoneVoid — под створом не было коллайдера).
+	for y in range(WM_H - 3, WM_H - 1):
 		for x in range(WM_GATE_X, WM_GATE_X + 2):
 			var grow := String(grid[y])
 			grow[x] = "-"
@@ -457,7 +459,7 @@ static func worldmap_map(run_seed: int) -> Dictionary:
 	row2[WM_ARCH_CELL.x] = "a"
 	grid[WM_ARCH_CELL.y] = row2
 	var gates: Array = []
-	for y in range(WM_H - 3, WM_H):
+	for y in range(WM_H - 3, WM_H - 1):  # W-P0-1: тупик 57..58, ряд 59 глух
 		gates.append([WM_GATE_X, y])
 		gates.append([WM_GATE_X + 1, y])
 	var belts := {}

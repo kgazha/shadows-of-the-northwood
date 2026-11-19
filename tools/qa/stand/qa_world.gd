@@ -24,15 +24,17 @@ const SEEDS := 16                  # тяжёлая геометрия (BFS+hole
                                    # золотые пины — свои 5 (GOLDEN_N)
 const GOLDEN_N := 5
 
-# GOLDEN-WM-PIN(18.11): FNV-1a 64 composition(run_seed) = канон мира целиком
-# (worldmap + 6 локаций + пояса). Пересъёмка датированная при изменении
-# генератора — с указанием причины (как GOLDEN-CAVE-PIN в qa_pg).
+# GOLDEN-WM-PIN(19.11, причина: «W-P0-1 fix» — южные ворота мира перестали
+# прорезать ряд 59, кольцо снизу замкнуто; ряд 18.11: 8645…/4246…/6360…/8408…/-4502…):
+# FNV-1a 64 composition(run_seed) = канон мира целиком (worldmap + 6 локаций + пояса).
+# Пересъёмка датированная при изменении генератора — с указанием причины
+# (как GOLDEN-CAVE-PIN в qa_pg).
 const GOLDEN_COMP_PINS := [
-	8645563714549313204,   # seed 97531
-	4246592621410206818,   # seed 105450
-	636046775202909632,    # seed 113369
-	8408279689633718116,   # seed 121288
-	-4502010423316954430,  # seed 129207
+	-3144181420589087209,  # seed 97531
+	1295891944235987713,   # seed 105450
+	9108852878537949803,   # seed 113369
+	-1282044995112029049,  # seed 121288
+	-8037476502682230815,  # seed 129207
 ]
 # Двойной пин таблицы порталов (стенд независим от OpenWorld.PORTAL_CELLS):
 # клетка -> ожидаемый пояс (BALANCE.md «Мир v1» строки 11–14).
@@ -209,13 +211,18 @@ func w1_generator(ow: Variant) -> void:
 	chk(cells_ok, "W1.6 порталы на константных проходимых клетках (p)")
 	chk(bfs_ok, "W1.7 BFS ×%d сидов: 6 порталов+арка; в локациях портал/сундук" % SEEDS)
 	chk(holes_ok, "W1.8 closed-run проходы >=2 клетки (7 карт ×%d сидов)" % SEEDS)
-	# W1.9 ворота мира сквозные: клетки gate проходимы и ведут наружу spawn
+	# W1.9 ворота кольца — тупиковый коридор (W-P0-1, 19.11): клетки x=47..48
+	# y=57..58 проходимы (коридор к арке), ПОСЛЕДНИЙ ряд 59 глух — кольцо замкнуто.
 	var gate_ok := true
-	for gy in range(ow.WM_H - 3, ow.WM_H):
+	for gy in range(ow.WM_H - 3, ow.WM_H - 1):
 		for gx in range(ow.WM_GATE_X, ow.WM_GATE_X + 2):
 			if not ow.walkable((wm0["grid"] as Array), gx, gy):
 				gate_ok = false
-	chk(gate_ok, "W1.9 сквозные ворота кольца (x=47..48, y=57..59)")
+	for gx in range(ow.WM_GATE_X, ow.WM_GATE_X + 2):
+		if ow.walkable((wm0["grid"] as Array), gx, ow.WM_H - 1):
+			gate_ok = false
+			print("  W1.9: клетка (%d,%d) проходима — кольцо размкнуто (walk-out!)" % [gx, ow.WM_H - 1])
+	chk(gate_ok, "W1.9 ворота: коридор x=47..48 y=57..58, ряд 59 глух (W-P0-1)")
 
 # --- W2 пояса -----------------------------------------------------------------
 
@@ -498,8 +505,9 @@ func w5_edges() -> void:
 	if OWg == null:
 		chk(false, "W5 нет OpenWorld")
 		return
-	# W5.1 геометрия: глухое кольцо по периметру 7 карт × сиды. Нижняя стена
-	# карты мира допускает единственную сквозную пару — ворота x=47..48 (W1.9).
+	# W5.1 геометрия: глухое кольцо по периметру 7 карт × сиды. С 19.11 (W-P0-1)
+	# ИСКЛЮЧЕНИЕ ДЛЯ ВОРОТ СНЯТО — нижняя стена карты мира глуха целиком; именно
+	# это исключение слепило проверку и пропустило walk-out за край.
 	var ring_ok := true
 	for s in _seeds():
 		var wm: Dictionary = _wm(s)
@@ -509,8 +517,7 @@ func w5_edges() -> void:
 		for cidx in w0:
 			if not (String(g[0])[cidx] in OWg.SOLID):
 				ring_ok = false
-			var last := String(g[h - 1])[cidx]
-			if not (last in OWg.SOLID) and not (cidx >= OWg.WM_GATE_X and cidx <= OWg.WM_GATE_X + 1):
+			if not (String(g[h - 1])[cidx] in OWg.SOLID):
 				ring_ok = false
 		for ry in h:
 			var row := String(g[ry])
@@ -527,7 +534,7 @@ func w5_edges() -> void:
 				var lrow := String(lg[ry])
 				if not (String(lrow)[0] in OWg.SOLID) or not (String(lrow)[lw - 1] in OWg.SOLID):
 					ring_ok = false
-	chk(ring_ok, "W5.1 глухое кольцо: периметр 7 карт ×%d сидов (кроме ворот)" % SEEDS)
+	chk(ring_ok, "W5.1 глухое кольцо: периметр 7 карт ×%d сидов, БЕЗ исключений (W-P0-1)" % SEEDS)
 	# W5.2 guard резюме: точки ЗА краем каждого из 8 этажей отклоняются world
 	# (ни одна не станет позицией респауна/резюме — «выходов за край ноль»)
 	var guard_ok := true
