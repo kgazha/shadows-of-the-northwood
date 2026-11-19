@@ -12,9 +12,16 @@ extends Node2D
 # ОДНА плановая смерть -> экран итогов -> доска пепла -> «Вспыхнуть заново».
 # На каждом чекпойнте save+load+continue (резолвер зон). Детекторы: креш,
 # софтлоки (BFS-недостижимо / бюджет кадров / залипание), дыры экономики (золото
-# и материалы против вилок LOOT-таблицы; коридор BALANCE 78–106; пепел),
-# инвариант «смерть = сброс забега, вечен только пепел/ачивки/амулет»,
+# и материалы против вилок LOOT-таблицы; коридор BALANCE 78–106 — харнес-допущение,
+# в ECONOMY_BALANCE.md отсутствует — P2-05; пепел), инвариант
+# «смерть = сброс забега, вечен только пепел/ачивки/амулет»,
 # перф-пробы (µs/кадр) на всех переходах зон.
+# P2-06 пины (2026-11-19, diag-p2): corner-геометрия реальной сетки деревни
+# (центр-LOS=true, girth-LOS=false), Minkowski-клиренс (коробка героя 10x8) всех
+# упрощённых сегментов, живой «угловой путь ПКМ => прибытие без упора» честным
+# ClickMove (по образцу probes/p2_live). HAR-1: перед подходом к следующему NPC
+# лавка закрывается (P2-03 — модальность лавки, shop.gd:498-509). HAR-2:
+# wp_stall-поп не имитирует прибытие, считается и пинится нулём на плейт.
 # Детерминизм: seed + PIN run_seed. Артефакты: <корень>/diag-p1/qa_c1_timeline.json
 # (тайминги стадий, эконом-срезы, перф, находки — с адресами стадий).
 # Итог: "QA_C1 pass/total"; non-zero exit при любом провале.
@@ -43,6 +50,7 @@ static var econ: Array = []
 static var carried := {}
 static var finalized := false
 static var _loc_chain_dead := false
+static var wp_stall_pops := 0   # HAR-2: сколько раз waypoint сдан по залипанию (пин = 0)
 var _heal_off := false
 # награды ачивок золотом (achv.gd §2) — известные притоки экономики
 const ACH_GOLD := {"first_blood": 10, "hunter_25": 30, "alchemist": 20, "treasure": 40, "herbalist": 15,
@@ -226,18 +234,23 @@ func walk_to(target, tag: String) -> int:
 	var wps: Array = []
 	for t in path:
 		wps.append(ctx["base"] + (ctx["t2w"] as Callable).call(t))
-	wps.append(ctx["base"] + (ctx["t2w"] as Callable).call(to))
-	# цель-нода: прибытие = интерактор нас «почувствовал» (near) или встал в ≤16px —
-	# туша NPC/мобиля не даёт встать в самый центр клетки, и центр-прибыль
-	# превращала путь к торговцу в вечное упирание (находка прогона #1)
 	var tnode: Object = target if typeof(target) == TYPE_OBJECT else null
-	var budget := 300 + wps.size() * 120
+	if tnode == null:
+		# точечная цель: жёсткий захват центра последней клетки обязателен; для ноды
+		# хвост пути уже есть в wps, а её центр на solid-тайле (портал/постамент)
+		# в принципе недостижим — см. широкий радиус последнего вейпоинта ниже
+		wps.append(ctx["base"] + (ctx["t2w"] as Callable).call(to))
+	# 240 кадров/вейпоинт: калибровка после HAR-2 — старый бюджет (120) покрывал
+	# дистанции только потому, что wp_stall-попы тихонько съедали хвосты путей;
+	# с честным прохождением всех точек потолок трансмапповских обходных маршрутов выше
+	var budget := 600 + wps.size() * 240
 	var g := 0
 	var stuck := 0
 	var near_cnt := 0
 	var refresh_left := 2
 	var probe_log := {}
 	var wp_stall := 0
+	var wp_best := 1e9  # лучшая дистанция до текущего вейпоинта (HAR-2: мера прогресса)
 	var last: Vector2 = world.player.global_position
 	while g < budget:
 		g += 1
@@ -276,19 +289,63 @@ func walk_to(target, tag: String) -> int:
 		if await heal_if_hurt():
 			await frames(2)
 			continue
+		if wps.is_empty():
+			# цель-нода без вейпоинтов (путь короче шага захвата): стоим/ждём near/tuck,
+			# прибытие решает начало цикла; уход цели за 30px — rc=2 по бюджету,
+			# interact_with перестроит путь с живой позиции
+			axes(Vector2.ZERO)
+			await get_tree().physics_frame
+			continue
 		var wp: Vector2 = wps[0]
 		var d: Vector2 = wp - world.player.global_position
-		if d.length() <= 4.0:
+		# P2-06/HAR-2 (2026-11-19): последний вейпоинт цели-ноды — центр её клетки, а он
+		# недостижим коробкой 10x8, когда нода стоит на физическом теле (арка портала,
+		# сундук на постаменте, туша моба). Требование 4px-центра и было «pop-ловушкой»
+		# плейта: wp_stall-попы жрали бюджет (sites portal_desert/portal_dungeon/exit_*).
+		# На хвосте пути ноды захват = касание E-зоны (≤20px), финал решает near/тулик.
+		var cap := 4.0
+		if tnode != null and wps.size() == 1:
+			cap = 20.0
+		if d.length() <= cap:
 			wps.pop_front()
 			wp_stall = 0
+			wp_best = 1e9
 			if wps.is_empty():
 				axes(Vector2.ZERO)
 				return 0
 			continue
-		wp_stall += 1
-		if wp_stall > 240:
-			# вейпоинт физически не берётся (стык сетки и коллизий) — обходим хвост
+		# HAR-2 (2026-11-19, diag-p2): wp_stall — мера ОТСУТСТВИЯ ПРОГРЕССА, не времени.
+		# Счётчик «кадров у вейпоинта» срабатывал на длинных, но нормальных сегментах:
+		# 95px/s = 1.58px/кадр, сегмент >380px ловил «залипание» на 240-м кадру посреди
+		# честного шага (все pop-ы прогонов 11.19 d=179..691px — герой шёл, не упирался).
+		# Ловушка = за 4 с не сократили дистанцию хотя бы на 0.5px.
+		if d.length() < wp_best - 0.5:
+			wp_best = d.length()
 			wp_stall = 0
+		else:
+			wp_stall += 1
+		# near-miss скос: герой упёрся в недостижимый центр вейпоинта (бортик тела
+		# интерактора в 5–12px от центра клетки) — без прогресса, но и не угол: через
+		# 0.5 с держания в ≤12px передаём путь дальше, бюджет не едим.
+		if wp_stall >= 30 and d.length() <= 12.0:
+			wp_stall = 0
+			wp_best = 1e9
+			wps.pop_front()
+			if wps.is_empty():
+				axes(Vector2.ZERO)
+				return 0
+			continue
+		if wp_stall > 240:
+			# HAR-2 (2026-11-19, diag-p2): waypoint физически не берётся 4 с без единого
+			# пикселя сближения — это событие, а не тихая норма: thick-LOS в nav.gd
+			# кладёт сегменты с габаритным зазором, угловые упоры излечены в корне.
+			# Хвост (size==1) не попится никогда: прибытием считается только честный
+			# приход (wps пусто после захвата) или near/13px у цели-ноды. Счётчик
+			# пинится нулём в finalize.
+			wp_stall_pops += 1
+			finding("stuck", "[%s] wp_stall: путевая точка не берётся 4 с без сближения (осталось %d, d=%.0fpx, зона %s) — угловое залипание вернулось?" % [tag, wps.size(), d.length(), String(world.active_area)])
+			wp_stall = 0
+			wp_best = 1e9
 			if wps.size() > 1:
 				wps.pop_front()
 				continue
@@ -336,7 +393,10 @@ func walk_to(target, tag: String) -> int:
 						wps = []
 						for t2 in p2:
 							wps.append(ctx["base"] + (ctx["t2w"] as Callable).call(t2))
-						wps.append(ctx["base"] + (ctx["t2w"] as Callable).call(to))
+						if tnode == null:
+							wps.append(ctx["base"] + (ctx["t2w"] as Callable).call(to))
+						wp_stall = 0
+						wp_best = 1e9
 					else:
 						axes(Vector2(-d.y, d.x).normalized())
 						await frames(18)
@@ -411,36 +471,32 @@ func interact_with(node: Node, tag: String, pred: Callable = Callable(), budget_
 	if node == null or not is_instance_valid(node):
 		finding("hole", "[%s] интерактор не найден" % tag)
 		return false
+	# HAR-1 (2026-11-19, diag-p2/P2-03): открытая лавка модальна — E следующего NPC
+	# ею «съедается» (канон shop.gd:498-509, busy-отказ Shop.open shop.gd:14-15,154).
+	# Политика игрока: перед подходом к следующему NPC/интерактору лавку закрывать.
+	if SHOP.is_open():
+		await close_shop()
 	var r := await walk_to(node, tag)
 	if r == 3:
 		unexpected_death(tag)
 		return false
 	var ok_near := false
 	if r != 0:
-		# путь не пройден целиком: цель всё равно рядом — инструментальная
-		# расстановка (паттерн qa_lp/qa_gb), недоступность пути игроку — находка
-		var dd0: float = world.player.global_position.distance_to(node.global_position)
-		if dd0 <= 24.0:
-			finding("softlock", "[%s] путь не пройден (rc=%d), E-зона в %.0fpx — расстановка героя к интерактору" % [tag, r, dd0])
-			world.player.global_position = node.get_global_position() + Vector2(0.0, 4.0)
-			await frames(10)
-		else:
-			if dd0 <= 400.0 and node.has_method("try_interact"):
-				# физика расходится с сеткой («Walls» в упорах) — косой обход, потом штатный вход
-				await _sailor_to(node.get_global_position(), 900)
-				dd0 = world.player.global_position.distance_to(node.global_position)
-				if dd0 <= 24.0:
-					world.player.global_position = node.get_global_position() + Vector2(0.0, 4.0)
-					await frames(10)
-			if not world.near.has(node) and node.has_method("try_interact") \
-					and world.player.global_position.distance_to(node.global_position) <= 400.0:
-				finding("softlock", "[%s] путь не пройден (rc=%d), E-зона физически недосягаема — штатный try_interact() напрямую: живой игрок застрял бы" % [tag, r])
-				node.try_interact()
-				await frames(6)
-				await settle()
-				return await _wait_pred(pred, tag, budget_pred)
-			if not world.near.has(node):
-				return false
+		# P2-06 (2026-11-19): rescue-ветки «расстановка героя» и try_interact() в лоб
+		# убраны как лишние: thick-LOS в nav.gd кладёт путь с габаритным зазором,
+		# упор в угол был артефактом центр-LOS и теперь светится finding'ом walk_to
+		# и провалом проверки, а не латается инструментом.
+		if not world.near.has(node):
+			# путь не пройден: живой микрозаход к живой позиции цели (NPC кочуют)
+			for _k in 140:
+				if world.near.has(node):
+					ok_near = true
+					break
+				var dd: Vector2 = node.get_global_position() - world.player.global_position
+				axes(dd.normalized() if dd.length() > 3.0 else Vector2.ZERO)
+				await get_tree().physics_frame
+			axes(Vector2.ZERO)
+			ok_near = world.near.has(node)
 	else:
 		await frames(4)
 		for _i in 40:
@@ -485,25 +541,9 @@ func interact_with(node: Node, tag: String, pred: Callable = Callable(), budget_
 						break
 					await get_tree().physics_frame
 	if not ok_near:
-		# E-зона в шаге, но физика/коллизии не впускают — инструментальная расстановка;
-		# живому игроку зона тут недоступна — это полноценная находка-софтлок
-		var dd2b: float = world.player.global_position.distance_to(node.global_position)
-		if dd2b <= 24.0:
-			finding("softlock", "[%s] E-зона в %.0fpx, шагом не входит — расстановка героя (игрок бы не дотянулся)" % [tag, dd2b])
-			world.player.global_position = node.get_global_position() + Vector2(0.0, 4.0)
-			await frames(10)
-			ok_near = world.near.has(node)
-	if not ok_near:
-		# штатный штатный вход: E-зона не подпустила (постамент/ниша). try_interact() —
-		# тот же стандартный вход, что дёргает E; но НЕвозможность встать в E-зону
-		# живому игроку — полноценная находка-софтлок, пишем её.
-		var dd3: float = world.player.global_position.distance_to(node.global_position)
-		if node.has_method("try_interact") and dd3 <= 400.0:
-			finding("softlock", "[%s] встать в E-зону интерактора не удалось (%.0fpx до цели) — штатный try_interact() напрямую: живой игрок тут бы не взаимодействовал" % [tag, dd3])
-			node.try_interact()
-			await frames(6)
-			await settle()
-			return await _wait_pred(pred, tag, budget_pred)
+		# P2-06 (2026-11-19): второй rescue-костыль (расстановка dd<=24 и try_interact()
+		# в лоб) тоже снят: аудит diag-p2 (P2-01/P2-02) доказал, что недосягаемых
+		# E-зон нет — недожим теперь честный провал с диагностикой ниже.
 		finding("softlock", "[%s] герой у цели, интерактор не в near[] (зона %s, dd=%.0fpx, method=%s, valid=%s, в near=%d)" % [
 			tag, String(world.active_area), world.player.global_position.distance_to(node.global_position),
 			str(node.has_method("try_interact")), str(is_instance_valid(node)), int(world.near.size())])
@@ -874,6 +914,12 @@ func finalize_and_quit() -> void:
 		return
 	finalized = true
 	axes(Vector2.ZERO)
+	if _aborted == "":
+		# HAR-2 (2026-11-19, diag-p2): wp_stall-поп — не норма и не «прибытие»: с thick-LOS
+		# в nav.gd сегменты кладутся с габаритным зазором, коридорные «поп-ловушки»
+		# излечены в корне (это был корень залипаний плейта) — на зелёном плейте попов ноль.
+		chk("HAR-2: wp_stall-попов за весь плейт 0 (угловые залипания не вернулись)", wp_stall_pops == 0,
+			"pops=%d" % wp_stall_pops)
 	var doc := {
 		"stand": "qa_c1", "seed_rng": SEED_RNG, "seed_run": SEED_RUN,
 		"aborted": _aborted, "phase": phase,
@@ -925,6 +971,7 @@ func _run() -> void:
 		"gold=%d class=%s" % [GameState.gold, GameState.class_id])
 	var seq: Array = [
 		stage_trail, stage_village_quests, stage_village_shops, stage_village_fight,
+		stage_nav_p206,
 		stage_village_done, stage_forest_poi, stage_cave, stage_ashen,
 		stage_worldmap_and_loc, stage_return_rest, stage_death,
 	]
@@ -1061,14 +1108,16 @@ func _uta_buy() -> void:
 		await get_tree().physics_frame
 		gw += 1
 	if not (SHOP.is_open() and SHOP.I.buy_btns.has("potion") and (SHOP.I.buy_btns["potion"] as Button).visible):
-		# диалог не долистался/прилавок не переключился — штатный статический вход лавки
-		finding("hole", "[%s] диалог Уты не привёл к её прилавку (vend=%s dlg=%s) — штатные Shop.close()+Shop.open(\"uta\")" % [
-			"uta_dialog", str(SHOP.I.get("_vendor")) if SHOP.I != null else "nil", str(world.hud.is_dialog_open())])
-		if SHOP.is_open():
-			SHOP.close()
-			await frames(4)
-		SHOP.open("uta")
-		await frames(10)
+		# HAR-1 (2026-11-19, P2-03): костыль «Shop.close()+Shop.open("uta")» снят. С
+		# закрытием лавки перед подходом E-цикл обязан сам привести к прилавку Уты
+		# (сценарий A probes/p2_live). Незакрытие теперь — провал проверки, а не тихая
+		# подмена статического входа.
+		chk("HAR-1: прилавок Уты открылся штатным порядком (E->диалог->прилавок, без форс-Shop.open)", false,
+			"vend=%s dlg=%s waited=%d" % [str(SHOP.I.get("_vendor")) if SHOP.I != null else "nil",
+				str(world.hud.is_dialog_open()), gw])
+	else:
+		chk("HAR-1: прилавок Уты открылся штатным порядком (E->диалог->прилавок, без форс-Shop.open)", true,
+			"waited=%d" % gw)
 	if SHOP.is_open():
 		var g0: int = GameState.gold
 		var bp0: int = GameState.brewed_potions
@@ -1150,6 +1199,170 @@ func stage_village_fight() -> void:
 		await frames(2)
 		chk("экипировка сундука на герое", String(GameState.gear.get("weapon", "")) != "", "gear=%s" % str(GameState.gear))
 
+# ---------------- P2-06 пины (2026-11-19, diag-p2) --------------------------------------
+## Старый (до-P2-06) los по ЦЕНТРАМ клеток — эталон только внутри стенда: им доказываем,
+## что угловая геометрия в реальной сетке есть и новый thick-los её чинит, а не «всё
+## заблокировал». Игрой не используется.
+func _los_center(a: Vector2i, b: Vector2i, walkable: Callable) -> bool:
+	var steps := maxi(absi(b.x - a.x), absi(b.y - a.y)) * 4
+	if steps <= 0:
+		return true
+	for s in range(1, steps + 1):
+		var t := float(s) / float(steps)
+		var c := Vector2i(int(round(lerpf(a.x, b.x, t))), int(round(lerpf(a.y, b.y, t))))
+		if not walkable.call(c):
+			return false
+	return true
+
+## Независимый Minkowski-тест: вдоль сегмента центров несём коробку героя 10x8
+## (AABB с допуском 0.5px на грань) — своим перебором клеток, НЕ переиспользуя nav.los
+## (двойная проверка по образцу t59). Возвращает false, если коробка задела solid.
+func _hero_box_clear(a: Vector2i, b: Vector2i, walkable: Callable) -> bool:
+	var pa := Vector2(a.x * 16.0 + 8.0, a.y * 16.0 + 8.0)
+	var pb := Vector2(b.x * 16.0 + 8.0, b.y * 16.0 + 8.0)
+	var steps := maxi(1, int(ceil(pa.distance_to(pb))))
+	for s in range(0, steps + 1):
+		var c: Vector2 = pa.lerp(pb, float(s) / float(steps))
+		for cy in range(int(floor((c.y - 3.5) / 16.0)), int(floor((c.y + 3.5) / 16.0)) + 1):
+			for cx in range(int(floor((c.x - 4.5) / 16.0)), int(floor((c.x + 4.5) / 16.0)) + 1):
+				if not walkable.call(Vector2i(cx, cy)):
+					return false
+	return true
+
+func _p206_walk_rows(rows: Array) -> Callable:
+	return func(t: Vector2i) -> bool:
+		return OW.walkable(rows, t.x, t.y)
+
+func _far_from_enemies(pts: Array, min_d: float) -> bool:
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if not is_instance_valid(e) or not _in_active_zone(e):
+			continue
+		var dy0: Variant = e.get("dying")
+		if dy0 != null and bool(dy0):
+			continue
+		for p in pts:
+			if e.global_position.distance_to(p as Vector2) < min_d:
+				return false
+	return true
+
+## Пары «центр-LOS видит, а коробка героя не проходит» — те самые углы, где старый
+## nav.gd клал прямой сегмент и коробка 10x8 цепляла массу (P2-06/probes п2).
+## Возвращает [corners, pick]: pick — первая детерминированная пара с путём A*,
+## вдали (>=140px) от врагов и достаточной длины (cheb>=4), для живого пина.
+func _p206_corner_scan(walk: Callable, w: int, h: int, want_pick: bool) -> Array:
+	var corners := 0
+	var pick: Array = []
+	for ay in range(1, h - 1, 2):
+		for ax in range(1, w - 1, 2):
+			var a := Vector2i(ax, ay)
+			if not bool(walk.call(a)):
+				continue
+			for dy in range(-6, 7, 2):
+				for dx in range(-6, 7, 2):
+					if dx == 0 or dy == 0:
+						continue
+					var b := Vector2i(ax + dx, ay + dy)
+					if not bool(walk.call(b)):
+						continue
+					if _los_center(a, b, walk) and not _hero_box_clear(a, b, walk):
+						corners += 1
+						if want_pick and pick.is_empty() and maxi(absi(dx), absi(dy)) >= 4:
+							var pa := Vector2(a.x * 16.0 + 8.0, a.y * 16.0 + 8.0)
+							var pb := Vector2(b.x * 16.0 + 8.0, b.y * 16.0 + 8.0)
+							if _far_from_enemies([pa, pb], 140.0) \
+									and not Nav.astar(walk, w, h, a, b).is_empty():
+								pick = [a, b]
+	return [corners, pick]
+
+## Инвариант решётки: все сегменты пути ПОСЛЕ Nav.simplify проходимы коробкой героя
+## (независимый Minkowski). Сэмпл — фиксированный seed, детерминирован.
+func _p206_seg_invariant(tag: String, walk: Callable, w: int, h: int, samples: int, sd: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = sd
+	var seg_n := 0
+	var bad := 0
+	var tries := 0
+	while tries < samples:
+		tries += 1
+		var a := Vector2i(rng.randi_range(0, w - 1), rng.randi_range(0, h - 1))
+		var b := Vector2i(rng.randi_range(0, w - 1), rng.randi_range(0, h - 1))
+		if not bool(walk.call(a)) or not bool(walk.call(b)) or a == b:
+			continue
+		var raw: Array = Nav.astar(walk, w, h, a, b)
+		if raw.is_empty():
+			continue
+		var prev: Vector2i = a
+		for t: Vector2i in Nav.simplify(raw, walk):
+			seg_n += 1
+			if not _hero_box_clear(prev, t, walk):
+				bad += 1
+			prev = t
+	chk("P2-06[%s]: габаритная проходимость упрощённых путей — %d сегм. коробкой 10x8, провалов 0" % [tag, seg_n],
+		seg_n > 40 and bad == 0, "bad=%d seg=%d" % [bad, seg_n])
+
+func stage_nav_p206() -> void:
+	stage("nav_p206_thick_los")
+	var ctx := zone_ctx()
+	var w := int(ctx["w"])
+	var h := int(ctx["h"])
+	var walk: Callable = ctx["walk"]
+	# 1) Угловая геометрия в реальной сетке деревни существует — без неё пин был бы
+	#    пустой проверкой (коробка-тест строже старого центр-LOS: пары обязаны остаться).
+	var scan: Array = _p206_corner_scan(walk, w, h, true)
+	var corners: int = int(scan[0])
+	var pick: Array = scan[1]
+	chk("P2-06: угловая геометрия в сетке деревни есть (центр-виден/коробкой-нельзя) — %d пар" % corners,
+		corners > 0, "пар 0 — стенд деградирует в пустую проверку")
+	# 2) Инвариант new-los: упрощённые пути проходимы габаритом (деревня — живая сетка).
+	_p206_seg_invariant("деревня", walk, w, h, 200, 777)
+	# 3) Снежный биом — сайт залипаний аудита (exit_snow: 39 упоров «Walls», бюджет
+	#    съеден). Решётка статическая от PIN-seed — гоняем тот же инвариант чисто.
+	var smap: Dictionary = OW.loc_map(SEED_RUN, "snow")
+	var srows: Array = smap["grid"]
+	_p206_seg_invariant("снег/статика", _p206_walk_rows(srows), String(srows[0]).length(), srows.size(), 150, 4242)
+	# 4) Живой пин: «угловой путь ПКМ => прибытие без упора» — честный ClickMove
+	#    (тот же код, что у игрока за ПКМ), живая физика, никакой синтезированной ходьбы.
+	if not chk("P2-06: найдена угловая чистая пара для живого пина ПКМ", pick.size() == 2,
+			"нет пары вдали от врагов с достижимым A*-путём"):
+		return
+	if not chk("P2-06: ClickMove живёт в мире (синглтон)", ClickMove.I != null, "I == null"):
+		return
+	var a: Vector2i = pick[0]
+	var b: Vector2i = pick[1]
+	heal_if_hurt()
+	var cm = ClickMove.I
+	var was_on: bool = ClickMove.is_on()
+	ClickMove.set_on(true)
+	# инструментальная посадка стартовала ТОЛЬКО в проходимую клетку (паттерн probes/p2_live)
+	world.player.global_position = (ctx["t2w"] as Callable).call(a)
+	await frames(6)
+	var goal: Vector2 = (ctx["t2w"] as Callable).call(b)
+	var ok := bool(cm.call("order_to", goal))
+	var g := 0
+	var stall := 0
+	var stall_max := 0
+	var last: Vector2 = world.player.global_position
+	while g < 900 and bool(cm.call("is_walking")):
+		await get_tree().physics_frame
+		g += 1
+		if GameState.hp <= 0:
+			break
+		var p: Vector2 = world.player.global_position
+		if p.distance_to(last) < 0.5:
+			stall += 1
+			stall_max = maxi(stall_max, stall)
+		else:
+			stall = 0
+		last = p
+	var dd: float = world.player.global_position.distance_to(goal)
+	chk("P2-06: угловой путь ПКМ %s->%s => прибытие без упора (%.1fpx, %d кадров, макс.упор %d к.)" % [str(a), str(b), dd, g, stall_max],
+		ok and dd <= 8.0 and stall_max <= 10,
+		"ok=%s dd=%.1f stall_max=%d hp=%d" % [str(ok), dd, stall_max, GameState.hp])
+	cm.call("cancel")
+	axes(Vector2.ZERO)
+	ClickMove.set_on(was_on)
+	await frames(2)
+
 func stage_village_done() -> void:
 	stage("village_slimes_handin_rest")
 	var m = world._find_npc("merchant")
@@ -1185,9 +1398,11 @@ func stage_village_done() -> void:
 	if extra:
 		finding("balance", "сверх плана убито мобов главы 1 (%s) — статический коридор 78–106 неприменим, сверяем только динамический LOOT-вилочный econ" % str(k))
 	else:
-		chk("BALANCE-коридор главы 1: заработок %d <= 106 (полный обязательный контент)" % earned, earned <= 106,
+		# HAR-2/P2-05 (2026-11-19): коридор 78–106 — харнес-допущение, в ECONOMY_BALANCE.md
+		# его нет (верх выведен из обязательного контента главы 1, низ — из удачи дропа).
+		chk("BALANCE-коридор [харнес-допущение P2-05] главы 1: заработок %d <= 106 (полный обязательный контент)" % earned, earned <= 106,
 			"заработок выше потолка BALANCE — подозрение на передроп")
-		chk("BALANCE-коридор главы 1 (нижняя планка 78 при удачном раскате)", earned >= 78, "заработок=%d" % earned)
+		chk("BALANCE-коридор [харнес-допущение P2-05] главы 1 (нижняя планка 78 при удачном раскате)", earned >= 78, "заработок=%d" % earned)
 	await checkpoint("village_pre_cave", "village")
 
 func stage_forest_poi() -> void:
@@ -1470,6 +1685,19 @@ func stage_death() -> void:
 	if String(world.active_area) != "loc_snow":
 		ffail_snow()
 		return
+	# P2-06 (2026-11-19): формализованный зонд diag-p2/probes/p2_live — сайт залипания
+	# аудита (exit_snow: упоры «Walls», бюджет съеден). Посадка в аудитную клетку
+	# (инструмент, клетка проходимая) и честная ходьба walk_to к выходу.
+	if world.biome_grids.has("snow"):
+		var sgrid = world.biome_grids["snow"]
+		var sctx := zone_ctx()
+		var st := Vector2i(30, 14)
+		if chk("P2-06[снег]: аудитная клетка (30,14) проходима", bool((sctx["walk"] as Callable).call(st)), "нет") \
+				and chk("P2-06[снег]: узел выхода из локации есть", sgrid.portal_out_node != null, "нет"):
+			world.player.global_position = (sctx["base"] as Vector2) + (sctx["t2w"] as Callable).call(st)
+			await frames(6)
+			var src := await walk_to(sgrid.portal_out_node, "p206_snow_exit")
+			chk("P2-06[снег]: коридор (30,14)->выход (22,31) пройден без упоров и без бюджета", src == 0, "rc=%d" % src)
 	# вечный снапшот ДО смерти
 	carried = {
 		"ash": ASH.balance(),

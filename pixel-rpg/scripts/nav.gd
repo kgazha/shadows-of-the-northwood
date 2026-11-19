@@ -66,16 +66,27 @@ static func simplify(path: Array, walkable: Callable) -> Array:
 		i = j
 	return out
 
-## Прямая видимость между тайлами: все клетки вдоль линии проходимы.
+## Габарит героя для навигации: полуразмеры коробки 10x8 (player.gd:95) с запасом
+## 1px, в клетках (TILE=16). P2-06 (реестр diag-p2, 19.11.2026): раньше los шёл по
+## ЦЕНТРАМ клеток, упрощённый сегмент мог проходить в <=5px от грани массы — при
+## живом ходе коробка цепляла угол, снос ~6px не добивал до порога перекладки
+## (24px) в click_move, герой упирался до нового приказа.
+const HERO_HALF := Vector2(6.0 / 16.0, 6.0 / 16.0)
+
+## Прямая видимость между тайлами для габарита героя: Minkowski-проверка (аналог
+## t59 для карты, теперь и на сегментах) — в каждом сэмпле линии задеваем только
+## клетки, которых реально НЕ касается коробка HERO_HALF вокруг центра линии.
 static func los(a: Vector2i, b: Vector2i, walkable: Callable) -> bool:
 	var steps := maxi(absi(b.x - a.x), absi(b.y - a.y)) * 4
 	if steps <= 0:
 		return true
 	for s in range(1, steps + 1):
 		var t := float(s) / float(steps)
-		var c := Vector2i(int(round(lerpf(a.x, b.x, t))), int(round(lerpf(a.y, b.y, t))))
-		if not walkable.call(c):
-			return false
+		var c := Vector2(lerpf(float(a.x), float(b.x), t), lerpf(float(a.y), float(b.y), t))
+		for j in range(int(round(c.y - HERO_HALF.y)), int(round(c.y + HERO_HALF.y)) + 1):
+			for i in range(int(round(c.x - HERO_HALF.x)), int(round(c.x + HERO_HALF.x)) + 1):
+				if not walkable.call(Vector2i(i, j)):
+					return false
 	return true
 
 static func _octile(a: Vector2i, b: Vector2i) -> float:

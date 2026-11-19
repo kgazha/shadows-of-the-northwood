@@ -10,13 +10,17 @@ extends Node2D
 ## ПКМ в игре иначе свободен: атака — ЛКМ (action "attack"), взаимодействие — E;
 ## в диалоге/модалке ПКМ принадлежит world.gd (advance) — при input_locked мы
 ## молчим. Отмена пути: реальное WASD/стрелки, ЛКМ, Space; перекладка пути при
-## снесении с тропы > 1.5 тайла; конец пути — полная остановка.
+## снесении с тропы > 1.5 тайла и при «упоре без прогресса» (2 кадра смещения
+## < 1px, страховка P2-06 от 19.11.2026); конец пути — полная остановка.
 
 const CFG_PATH := "user://clickmove_cfg.json"
 const ARRIVE_R := 3.0        # радиус захвата путевой точки, px
 const AXIS_MIN := 0.3        # порог оси нормализованного направления при синтезе
 const REPATHT := 0.5         # сек между проверками сноса с тропы
 const DEV_TILES := 1.5       # на сколько тайлов можно снести — и путь перекладываем
+const STALL_PX := 1.0        # «упор без прогресса»: смещение кадра меньше — не идём
+const STALL_FR := 2          # сколько таких кадров подряд считают упор
+const STALL_RP_MAX := 6      # максимум перекладок подряд без малейшего прогресса
 
 static var I: ClickMove      # синглтон; назначает world.gd (fallback — _enter_tree)
 static var _enabled := true  # кэш user://clickmove_cfg.json
@@ -29,6 +33,9 @@ var _goal := Vector2.ZERO    # точка клика — цель для пер�
 var _seg_a := Vector2.ZERO   # начало проходимого отрезка (мера сноса)
 var _zone_cave := false      # зона на момент приказа: смена зоны (F9) гасит путь
 var _rep_t := 0.0            # таймер перекладки
+var _last_p := Vector2.ZERO  # позиция прошлого кадра — детектор «упора без прогресса»
+var _stuck := 0              # подряд идущих кадров со смещением < STALL_PX
+var _stall_rp := 0           # перекладок подряд без малейшего прогресса (анти-цикл)
 var _held := {"move_left": false, "move_right": false, "move_up": false, "move_down": false}
 var _marker := false         # рисуем маркер цели?
 var _t := 0.0                # время для пульса маркера
@@ -138,6 +145,9 @@ func order_to(p: Vector2) -> bool:
 	_idx = 0
 	_goal = goal
 	_seg_a = from
+	_last_p = from
+	_stuck = 0
+	_stall_rp = 0
 	_zone_cave = GameState.in_cave
 	_rep_t = REPATHT
 	_show_marker(goal)
@@ -182,6 +192,32 @@ func _physics_process(delta: float) -> void:
 		cancel()
 		return
 	var p := pl.global_position
+	# Страховка «упор без прогресса» (2026-11-19, P2-06 реестр diag-p2): thick-LOS
+	# в nav.los строит путь с зазором 6px от масс, но если героя всё же приперло
+	# к углу (отталкивание моба/дверь открылась под ногами) — два кадра подряд
+	# без смещения >=1px при живом пути перекладываем немедленно, не дожидаясь
+	# порога сноса 1.5 тайла. Скорость героя 95px/s = 1.58px/кадр: ложных срабатываний нет.
+	if Engine.time_scale < 0.99:
+		# hit-stop (juice.gd: 2–4 физ. кадра time_scale 0.15 при ударах) — не «упор»:
+		# замедленная симуляция штатна, детектор пропускаем, окно прогресса сдвигаем
+		_last_p = p
+		_stuck = 0
+	else:
+		var moved := _last_p != Vector2.ZERO and p.distance_to(_last_p) >= STALL_PX
+		_last_p = p
+		if moved:
+			_stuck = 0
+			_stall_rp = 0
+		else:
+			_stuck += 1
+			if _stuck >= STALL_FR:
+				_stuck = 0
+				_stall_rp += 1
+				if _stall_rp > STALL_RP_MAX:
+					cancel()  # 12+ кадров полного упора: путь не выполняется — стоп до нового приказа
+					return
+				_repath(p)
+				return
 	while _idx < _path.size():
 		var wp0: Vector2 = _path[_idx]
 		if p.distance_squared_to(wp0) > ARRIVE_R * ARRIVE_R:
@@ -211,6 +247,8 @@ func _repath(p: Vector2) -> void:
 	_path = np
 	_idx = 0
 	_seg_a = p
+	_last_p = p
+	_stuck = 0
 
 ## Синтез нажатий осей: жмём/отпускаем только при смене состояния — состояние
 ## осей ведётся явно (_held), повторные action_press/action_release ни к чему.
@@ -250,6 +288,8 @@ func cancel() -> void:
 	_release_all()
 	_path = []
 	_idx = 0
+	_last_p = Vector2.ZERO
+	_stuck = 0
 	_marker = false
 	visible = false
 	set_physics_process(false)
