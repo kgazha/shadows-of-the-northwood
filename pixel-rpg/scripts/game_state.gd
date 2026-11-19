@@ -97,6 +97,10 @@ var boss_defeated: bool:
 
 var player_pos := Vector2.ZERO
 var pos_valid := false
+## t3 «Мир v1» (сейв v4, аддитивно): активная область героя —
+## "village" | "cave" | "ashen" | "worldmap" | "loc_<биом>". Пустая строка —
+## «ключа нет» (старый сейв): from_dict выводит зону легаси-цепочкой без потерь.
+var area := "village"
 var input_locked := false
 
 # --- v2 (фундамент волны «контент»): золото, шестерня, общие флаги ---
@@ -478,6 +482,7 @@ func to_dict() -> Dictionary:
 		"chests_used": chests_used.duplicate(),
 		"v": 4, "gold": gold, "gear": gear.duplicate(), "flags": flags.duplicate(),
 		"px": player_pos.x, "py": player_pos.y, "pos_valid": pos_valid,
+		"area": area,  # t3 «Мир v1»: явный ключ зоны (аддитивно к v4)
 		"run_seed": run_seed,
 	}
 
@@ -624,6 +629,11 @@ func from_dict(d: Dictionary) -> void:
 			push_warning("flags: больше 128 ключей — остаток отброшен при загрузке")
 	player_pos = Vector2(_numf(d.get("px", 0.0), 0.0), _numf(d.get("py", 0.0), 0.0))
 	pos_valid = _flag(d.get("pos_valid", false), false)
+	# t3 «Мир v1»: зона резюме при загрузке — единым правилом
+	# resolve_resume_zone (ключ area из словаря; поля in_cave/player_pos/
+	# pos_valid уже проставлены выше из того же словаря). Миграция без
+	# потерь; следующий save_game() пишет ключ.
+	area = resolve_resume_zone(_str(d.get("area", ""), ""))
 	# --- v3: сид забега (PROCGEN §2); сейвы v2 без поля => страж −1, живой
 	# сид родит миграция в load_game() (не здесь: from_dict чист) ---
 	run_seed = _num(d.get("run_seed", -1), -1)
@@ -638,6 +648,40 @@ func from_dict(d: Dictionary) -> void:
 	mana = clampi(manav, 0, max_mana) if manav >= 0 else max_mana
 	stats_changed.emit()
 	quest_changed.emit()
+
+## t3 «Мир v1» — ЕДИНАЯ резолюция зоны резюме (из from_dict и из мира).
+## Доказательства до-t3: флаг пещеры и у-этап героя при ВАЛИДНОЙ позиции
+## (этажи зон кратны 4800, см. OpenWorld.LOC_OFFSET_Y). Автосейвы достижений
+## (Achv.grant_ash) и xp пишут сейв посреди фазы: зона живая, позиция ещё не
+## ставилась (pos_valid=false) — до t3 такой сейв резюмился «к входу
+## деревни»; паритет сохраняем: нет позиции — доказательств нет, деревня.
+## Ключ area (аддитивная v4-надстройка) УТОЧНЯЕТ вывод, только когда позиция
+## валидна и физика сказала «деревня» (этажные зоны физика читает сама).
+func resolve_resume_zone(key: String = "") -> String:
+	var phys := "village"
+	if in_cave:
+		phys = "cave"
+	elif pos_valid:
+		var py := player_pos.y
+		if py >= 43200.0:
+			phys = "loc_dungeon"
+		elif py >= 38400.0:
+			phys = "loc_castle"
+		elif py >= 33600.0:
+			phys = "loc_forest"
+		elif py >= 28800.0:
+			phys = "loc_steppe"
+		elif py >= 24000.0:
+			phys = "loc_desert"
+		elif py >= 19200.0:
+			phys = "loc_snow"
+		elif py >= 14400.0:
+			phys = "worldmap"
+		elif py > 9600.0:
+			phys = "ashen"
+	if pos_valid and phys == "village" and key != "":
+		return key
+	return phys
 
 func save_game() -> bool:
 	var f := FileAccess.open("user://save_morkheim.json", FileAccess.WRITE)
@@ -838,6 +882,7 @@ func _wipe_circle() -> void:
 	# позитивный вайп по психологическому правилу док), поэтому:
 	in_cave = false
 	pos_valid = false
+	area = "village"  # t3 «Мир v1»: новый забег начинается в деревне (тот же сброс)
 
 ## Смерть = конец забега (CONTRACT_RUNLOOP §1.1–1.5): перезапуск ЭТОГО ЖЕ этажа —
 ## вайп мира как у победы, но волна (сложность) НЕ растёт и герой обнуляется

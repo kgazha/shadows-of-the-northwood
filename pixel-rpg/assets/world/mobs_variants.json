@@ -1,0 +1,125 @@
+{
+	"skins": {
+		"castle/archer": {
+			"file": "mobs_archer_castle_v1.png",
+			"size": [
+				48,
+				64
+			],
+			"src": "res://assets/mobs_archer.png"
+		},
+		"castle/brute": {
+			"file": "mobs_brute_castle_v1.png",
+			"size": [
+				64,
+				32
+			],
+			"src": "res://assets/brute.png"
+		},
+		"desert/brute": {
+			"file": "mobs_brute_desert_v1.png",
+			"size": [
+				64,
+				32
+			],
+			"src": "res://assets/brute.png"
+		},
+		"desert/swarmling": {
+			"file": "mobs_swarmling_desert_v1.png",
+			"size": [
+				48,
+				64
+			],
+			"src": "res://assets/mobs_swarmling.png"
+		},
+		"dungeon/brute": {
+			"file": "mobs_brute_dungeon_v1.png",
+			"size": [
+				64,
+				32
+			],
+			"src": "res://assets/brute.png"
+		},
+		"dungeon/slime": {
+			"file": "mobs_slime_dungeon_v1.png",
+			"size": [
+				32,
+				16
+			],
+			"src": "res://assets/slime.png"
+		},
+		"dungeon/wraith": {
+			"file": "mobs_wraith_dungeon_v1.png",
+			"size": [
+				48,
+				64
+			],
+			"src": "res://assets/mobs_wraith.png"
+		},
+		"forest/brute": {
+			"file": "mobs_brute_forest_v1.png",
+			"size": [
+				64,
+				32
+			],
+			"src": "res://assets/brute.png"
+		},
+		"forest/slime": {
+			"file": "mobs_slime_forest_v1.png",
+			"size": [
+				32,
+				16
+			],
+			"src": "res://assets/slime.png"
+		},
+		"forest/swarmling": {
+			"file": "mobs_swarmling_forest_v1.png",
+			"size": [
+				48,
+				64
+			],
+			"src": "res://assets/mobs_swarmling.png"
+		},
+		"snow/brute": {
+			"file": "mobs_brute_snow_v1.png",
+			"size": [
+				64,
+				32
+			],
+			"src": "res://assets/brute.png"
+		},
+		"snow/slime": {
+			"file": "mobs_slime_snow_v1.png",
+			"size": [
+				32,
+				16
+			],
+			"src": "res://assets/slime.png"
+		},
+		"steppe/archer": {
+			"file": "mobs_archer_steppe_v1.png",
+			"size": [
+				48,
+				64
+			],
+			"src": "res://assets/mobs_archer.png"
+		},
+		"steppe/brute": {
+			"file": "mobs_brute_steppe_v1.png",
+			"size": [
+				64,
+				32
+			],
+			"src": "res://assets/brute.png"
+		},
+		"steppe/slime": {
+			"file": "mobs_slime_steppe_v1.png",
+			"size": [
+				32,
+				16
+			],
+			"src": "res://assets/slime.png"
+		}
+	},
+	"status": "WIRED t3 (18.11) - скины локаций мира"
+}

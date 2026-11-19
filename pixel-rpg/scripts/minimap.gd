@@ -155,19 +155,30 @@ func _process(delta: float) -> void:
 		_poll_t = POLL
 		# мира мог «не стать» (F9/пересборка): подпись зоны — гейт + сами rows
 		# гейт Пепелища — тот же, что в world.gd: y героя > ASHEN_OFFSET.y
+		# t3 «Мир v1»: единый источник зоны — world.active_area (village/cave/
+		# ashen/worldmap/loc_<биом>). Фолбэк-цепочка по y — для сборок/стендов
+		# без ключа (as is с t64, qa_mm-совместимо).
 		var cave := bool(GameState.in_cave)
-		var zone := "village"
-		var ao: Variant = world.get("ASHEN_OFFSET")
-		var pl = world.player
-		if cave:
-			zone = "cave"
-		elif pl != null and is_instance_valid(pl) and ao is Vector2 and pl.global_position.y > (ao as Vector2).y:
-			zone = "ashen"
+		var zone := String(world.get("active_area"))
+		if zone == "":
+			zone = "village"
+			var ao: Variant = world.get("ASHEN_OFFSET")
+			var pl = world.player
+			if cave:
+				zone = "cave"
+			elif pl != null and is_instance_valid(pl) and ao is Vector2 and pl.global_position.y > (ao as Vector2).y:
+				zone = "ashen"
+		elif zone != "village" and zone != "cave" and zone != "ashen" \
+				and zone != "worldmap" and not zone.begins_with("loc_"):
+			zone = "village"  # незнакомое значение — безопасная деревня
 		var az = world.get("ashen_grid")   # слабая ссылка: null в сборках без Пепелища
-		var prefix := "a" if zone == "ashen" else ("c" if cave else "v")
+		var prefix := "a" if zone == "ashen" else ("c" if zone == "cave" else ("v" if zone == "village" else zone))
 		var rows_s: String
 		if zone == "ashen" and az != null and is_instance_valid(az) and az.get("map_rows") != null:
 			rows_s = str(az.map_rows)
+		elif zone == "worldmap" or zone.begins_with("loc_"):
+			var zg = _world_grid(zone)
+			rows_s = str(zg.map_rows) if zg != null else ""
 		else:
 			rows_s = str(world.map_rows)
 		var sig := prefix + "|" + rows_s
@@ -187,7 +198,17 @@ func _rebuild_grid() -> void:
 	var rows: Array
 	var w := 0
 	var h := 0
-	if _zone == "ashen":
+	if _zone == "worldmap" or String(_zone).begins_with("loc_"):
+		# t3 «Мир v1»: карта мира и локации — свои rows/размеры (тот же приём,
+		# что у Пепелища: сетку отдаёт сама зона).
+		var zg = _world_grid(_zone)
+		if zg == null or not is_instance_valid(zg) or zg.get("map_rows") == null:
+			_zone_seen = false
+			return
+		rows = zg.map_rows
+		h = int(zg.map_h)
+		w = int(zg.map_w)
+	elif _zone == "ashen":
 		var az = world.ashen_grid
 		if az == null or not is_instance_valid(az) or az.get("map_rows") == null:
 			_zone_seen = false
@@ -225,6 +246,10 @@ func _rebuild_grid() -> void:
 ## ashen_grid.cell_walkable (закрытая дверь и взятый сундук уже учтены самими
 ## методами).
 func _cell_walkable(rows: Array, w: int, t: Vector2i) -> bool:
+	if _zone == "worldmap" or String(_zone).begins_with("loc_"):
+		# t3: проходимость зон Мира — у самой зоны (скала/массы уже в SOLID)
+		var zg = _world_grid(_zone)
+		return zg != null and zg.cell_walkable(t)
 	if _zone == "ashen":
 		return world.ashen_grid.cell_walkable(t)
 	if _zone == "cave":
@@ -244,6 +269,33 @@ func _cell_walkable(rows: Array, w: int, t: Vector2i) -> bool:
 func _rebuild_pois() -> void:
 	_pois.clear()
 	var ts := float(world.TILE)
+	if _zone == "worldmap":
+		# t3: шесть порталов земель + обратная арка — портал-блипы
+		var wg = world.get("worldmap_grid")
+		if wg == null or not is_instance_valid(wg):
+			return
+		var pnodes: Variant = wg.get("portal_nodes")
+		if pnodes is Dictionary:
+			for z in (pnodes as Dictionary):
+				var pn = (pnodes as Dictionary)[z]
+				if pn != null and is_instance_valid(pn):
+					_pois.append({"t": _tile_of((pn as Node2D).global_position, _zone_base(), ts), "c": C_PORTAL, "s": 3})
+		var an = wg.get("arch_node")
+		if an != null and is_instance_valid(an):
+			_pois.append({"t": _tile_of((an as Node2D).global_position, _zone_base(), ts), "c": C_PORTAL, "s": 3})
+		return
+	if String(_zone).begins_with("loc_"):
+		# t3: портал выхода + сундук локации (вскрытый — без блипа, как у Пепелища)
+		var gz = _world_grid(_zone)
+		if gz == null or not is_instance_valid(gz):
+			return
+		var pn = gz.get("portal_out_node")
+		if pn != null and is_instance_valid(pn):
+			_pois.append({"t": _tile_of((pn as Node2D).global_position, _zone_base(), ts), "c": C_PORTAL, "s": 3})
+		var cn = gz.get("chest_node")
+		if cn != null and is_instance_valid(cn) and cn.get("used") != true:
+			_pois.append({"t": _tile_of((cn as Node2D).global_position, _zone_base(), ts), "c": C_CHEST, "s": 3})
+		return
 	if _zone == "ashen":
 		var az = world.ashen_grid
 		if az == null or not is_instance_valid(az):
@@ -290,9 +342,22 @@ func _rebuild_pois() -> void:
 	if aet is Vector2i:
 		_pois.append({"t": aet, "c": C_PORTAL, "s": 3})
 
+## t3 «Мир v1»: реестр этажей (WM_OFFSET_Y/LOC_OFFSET_Y) — preload вместо
+## class_name: устойчиво к stale global_script_class_cache в headless.
+const OW := preload("res://scripts/open_world.gd")
+
 func _zone_base() -> Vector2:
 	if _zone == "cave":
 		return world.CAVE_OFFSET
+	if _zone == "worldmap":
+		# t3 «Мир v1»: этаж карты мира (OW.WM_OFFSET_Y)
+		return Vector2(0.0, float(OW.WM_OFFSET_Y))
+	if String(_zone).begins_with("loc_"):
+		# t3: этаж локации из реестра OW.LOC_OFFSET_Y
+		var offs: Variant = OW.LOC_OFFSET_Y
+		if offs is Dictionary and (offs as Dictionary).has(String(_zone).substr(4)):
+			return Vector2(0.0, float((offs as Dictionary)[String(_zone).substr(4)]))
+		return Vector2.ZERO
 	if _zone == "ashen":
 		var ao: Variant = world.get("ASHEN_OFFSET")
 		var off := Vector2.ZERO
@@ -300,6 +365,17 @@ func _zone_base() -> Vector2:
 			off = ao
 		return off
 	return Vector2.ZERO
+
+## t3: сетка зоны Мира по имени ("worldmap" | "loc_<биом>"); null — ещё не
+## построена (ленивая зона: блипы/подложка дождутся первого входа).
+func _world_grid(zone: String):
+	if zone == "worldmap":
+		return world.get("worldmap_grid")
+	if zone.begins_with("loc_"):
+		var bg: Variant = world.get("biome_grids")
+		if bg is Dictionary:
+			return (bg as Dictionary).get(zone.substr(4), null)
+	return null
 
 ## Мировые координаты -> тайл зоны (обратный ход world.tile_to_world: +0.5T и +2px).
 func _tile_of(p: Vector2, base: Vector2, ts: float) -> Vector2i:

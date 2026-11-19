@@ -32,6 +32,10 @@ const VISUAL_SCALE := 1.0
 var world: Node2D
 var hp := MAX_HP
 var max_hp := MAX_HP
+## t3 «Мир v1» (локации): kind дропа с поясом и множитель урона — по умолчанию
+## канон ("wraith", ×1).
+var loot_kind := ""
+var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — замирает (и фаза прерывается), синий тинт.
@@ -185,7 +189,7 @@ func _tick_materialize(delta: float, player: CharacterBody2D) -> void:
 	move_and_slide()
 	_push_from_hero()  # только «в теле»: эфирное прошлое тело героя не трогает и не пилит
 	if to_p.length() < HIT_DIST:
-		player.take_damage(2, "wraith")  # t20: kind убийцы для экрана смерти
+		player.take_damage(maxi(1, int(round(2.0 * dmg_mult))), "wraith")  # t20: kind убийцы для экрана смерти
 	if mat_t <= 0.0:
 		_enter_ethereal()
 		dash_cd = DASH_CD_MIN + randf_range(0.0, DASH_CD_JITTER)
@@ -295,6 +299,6 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Achv.count("kill_wraith")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Тенеплёт рассеян! (+15 опыта)")
-		Loot.on_mob_death("wraith", global_position)
+		Loot.on_mob_death(loot_kind if loot_kind != "" else "wraith", global_position)
 		GameState.quest_changed.emit()
 		queue_free()

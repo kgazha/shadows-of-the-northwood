@@ -27,6 +27,9 @@ var world: Node2D
 var hp := BASE_HP
 ## Урон контакта (база + волновой бонус, §1.3).
 var dmg := BASE_DMG
+## t3 «Мир v1»: kind дропа для мобов локаций ("slime@b<N>" — пояс); пусто —
+## канон "slime" (байт-поведение обычных слаймов).
+var loot_kind := ""
 var anim: AnimatedSprite2D
 var wander_t := 0.0
 var dirv := Vector2.ZERO
@@ -193,7 +196,7 @@ func _die() -> void:
 	GameAudio.sfx("coin")  # автораздача опыта — звон монет
 	GameState.toast.emit("Слайм повержен! (+7 опыта)")
 	_roll_mat_drop()
-	Loot.on_mob_death("slime", global_position)
+	Loot.on_mob_death(loot_kind if loot_kind != "" else "slime", global_position)
 	GameState.quest_changed.emit()
 	if GameState.slime_quest == 1 and GameState.slime_kills_circle == 3:
 		GameState.toast.emit("Три готово! Вернись к торговцу за наградой.")

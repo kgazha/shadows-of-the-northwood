@@ -82,6 +82,8 @@ var boss := true           # false — обычный моб (ставит world
 var tier := 3              # актуален только при boss=false
 var hp := BOSS_HP
 var dmg := BOSS_DMG
+## t3 «Мир v1»: kind дропа для брутов локаций ("brute_t<N>@b<B>"); пусто — канон.
+var belt_loot := ""
 var speed := BOSS_SPEED
 var charge_cd := BOSS_CHARGE_CD
 var kill_xp := BOSS_XP
@@ -423,7 +425,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 			GameState.toast.emit("Отпрыск гнили повержен! (+%d опыта)" % kill_xp)
 			_roll_mat_drop()
 		var loot_kind := "boss" if boss else ("brute" if tier == 1 else "brute_t%d" % tier)
-		Loot.on_mob_death(loot_kind, global_position)
+		Loot.on_mob_death(belt_loot if belt_loot != "" else loot_kind, global_position)
 		GameState.quest_changed.emit()
 		queue_free()
 

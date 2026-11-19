@@ -1,0 +1,230 @@
+{
+	"atlas_size": [
+		160,
+		93
+	],
+	"floor_size": [
+		352,
+		16
+	],
+	"floor_slots": {
+		"CAS_EDG_E": 15,
+		"CAS_EDG_S": 14,
+		"CAS_F1": 12,
+		"CAS_F2": 13,
+		"DES_EDG_E": 7,
+		"DES_EDG_S": 6,
+		"DES_F1": 4,
+		"DES_F2": 5,
+		"DUN_EDG_E": 19,
+		"DUN_EDG_S": 18,
+		"DUN_F1": 16,
+		"DUN_F2": 17,
+		"ROAD_F1": 20,
+		"ROAD_F2": 21,
+		"SNOW_EDG_E": 3,
+		"SNOW_EDG_S": 2,
+		"SNOW_F1": 0,
+		"SNOW_F2": 1,
+		"STP_EDG_E": 11,
+		"STP_EDG_S": 10,
+		"STP_F1": 8,
+		"STP_F2": 9
+	},
+	"forest_note": "forest floors/props stay in forest_floor_v1/forest_props_v1 (approved v1)",
+	"props": {
+		"ARCH_NORTH": {
+			"h": 24,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 36,
+			"y": 65
+		},
+		"BANNER": {
+			"h": 18,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 7,
+			"x": 11,
+			"y": 37
+		},
+		"BARREL": {
+			"h": 12,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 9,
+			"x": 0,
+			"y": 37
+		},
+		"BONEPILE": {
+			"h": 7,
+			"off_x": 1,
+			"off_y": 1,
+			"w": 12,
+			"x": 61,
+			"y": 37
+		},
+		"CACTUS": {
+			"h": 25,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 9,
+			"x": 49,
+			"y": 0
+		},
+		"CRATE": {
+			"h": 11,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 11,
+			"x": 141,
+			"y": 0
+		},
+		"DRYBUSH": {
+			"h": 10,
+			"off_x": 2,
+			"off_y": 2,
+			"w": 11,
+			"x": 99,
+			"y": 0
+		},
+		"FUNGUS": {
+			"h": 12,
+			"off_x": 0,
+			"off_y": 2,
+			"w": 11,
+			"x": 48,
+			"y": 37
+		},
+		"ICE_SPIKE": {
+			"h": 17,
+			"off_x": 0,
+			"off_y": 3,
+			"w": 11,
+			"x": 23,
+			"y": 0
+		},
+		"MESA": {
+			"h": 13,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 17,
+			"x": 60,
+			"y": 0
+		},
+		"PILLAR_D": {
+			"h": 25,
+			"off_x": 0,
+			"off_y": 1,
+			"w": 13,
+			"x": 20,
+			"y": 37
+		},
+		"PORTAL_CASTLE": {
+			"h": 26,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 0,
+			"y": 65
+		},
+		"PORTAL_DESERT": {
+			"h": 26,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 93,
+			"y": 37
+		},
+		"PORTAL_DUNGEON": {
+			"h": 26,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 18,
+			"y": 65
+		},
+		"PORTAL_FOREST": {
+			"h": 26,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 129,
+			"y": 37
+		},
+		"PORTAL_SNOW": {
+			"h": 26,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 75,
+			"y": 37
+		},
+		"PORTAL_STEPPE": {
+			"h": 26,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 111,
+			"y": 37
+		},
+		"SKULL": {
+			"h": 9,
+			"off_x": 1,
+			"off_y": 0,
+			"w": 9,
+			"x": 79,
+			"y": 0
+		},
+		"SNOW_PINE": {
+			"h": 35,
+			"off_x": 0,
+			"off_y": 5,
+			"w": 21,
+			"x": 0,
+			"y": 0
+		},
+		"SNOW_ROCK": {
+			"h": 8,
+			"off_x": 1,
+			"off_y": 2,
+			"w": 11,
+			"x": 36,
+			"y": 0
+		},
+		"SPIRE": {
+			"h": 15,
+			"off_x": 0,
+			"off_y": 3,
+			"w": 11,
+			"x": 35,
+			"y": 37
+		},
+		"STEP_ROCK": {
+			"h": 5,
+			"off_x": 1,
+			"off_y": 2,
+			"w": 9,
+			"x": 112,
+			"y": 0
+		},
+		"TALLGRASS": {
+			"h": 12,
+			"off_x": 3,
+			"off_y": 1,
+			"w": 7,
+			"x": 90,
+			"y": 0
+		},
+		"WALL_T": {
+			"h": 30,
+			"off_x": 0,
+			"off_y": 0,
+			"w": 16,
+			"x": 123,
+			"y": 0
+		}
+	},
+	"status": "WIRED t3 (18.11) - игра грузит эти атласы в зонах мира"
+}

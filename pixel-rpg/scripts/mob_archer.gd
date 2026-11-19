@@ -38,6 +38,10 @@ const VISUAL_SCALE := 1.0
 var world: Node2D
 var hp := MAX_HP
 var max_hp := MAX_HP
+## t3 «Мир v1» (локации): kind дропа с поясом ("archer@b<N>") и множитель урона
+## стрел — оба нулевые/единичные по умолчанию (канон байт-цел).
+var loot_kind := ""
+var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не стреляет, синий тинт.
@@ -238,7 +242,7 @@ func _shoot() -> void:
 		dirv = tele_dir
 	var a := Arrow.new()
 	world.add_child(a)
-	a.setup(global_position + dirv * 8.0, dirv, world.player, 2)
+	a.setup(global_position + dirv * 8.0, dirv, world.player, maxi(1, int(round(2.0 * dmg_mult))))
 
 ## Прямая видимость героя: луч до героя блокируют только стены (слой 2).
 func _has_los(player: Node2D) -> bool:
@@ -292,7 +296,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Achv.count("kill_archer")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Лесокров-лучник повержен! (+9 опыта)")
-		Loot.on_mob_death("archer", global_position)
+		Loot.on_mob_death(loot_kind if loot_kind != "" else "archer", global_position)
 		GameState.quest_changed.emit()
 		queue_free()
 

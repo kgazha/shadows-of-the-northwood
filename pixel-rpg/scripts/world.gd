@@ -92,6 +92,13 @@ const ASHEN_ENTRANCE_TILE := Vector2i(45, 20) # «A» — выжженная а�
 ## Ключи зоны для сида забега (CONTRACT_PROCGEN §2) — аргументы ProcGen.seed_zone.
 const CAVE_ZONE_ID := "cave"
 const ASHEN_ZONE_ID := "ashen"
+## t3 «Мир v1» (OPEN_WORLD): северная арка деревни ставится на проходимую
+## клетку 'g' (22,2) — map_village.json НЕ правится (байт-пин t65). Этажи
+## карты мира/локаций — OW.WM_OFFSET_Y / LOC_OFFSET_Y (кратны 4800).
+const WORLD_ARCH_TILE := Vector2i(22, 2)
+## t3: генератор Мира (class_name OpenWorld дублируем preload-ом — устойчиво
+## к stale global_script_class_cache в headless-прогонах, тот же приём, что DZ).
+const OW := preload("res://scripts/open_world.gd")
 ## Костры-привалы (id -> тайл). Ровно один на мир — фидбек игрока: «не более
 ## одного, и то реже» (варка/отдых = осознанная редкость). Одноразовый.
 const CAMPFIRE_SPOTS := {
@@ -120,6 +127,15 @@ const VOID_RAMP := {
 	"village": ["PINE", 3],       # деревня со всех сторон об глухую массу леса (t58)
 	"cave": ["VIOLET", 3],        # CAVE_ROCK == VIOLET (pixel_palette.gd)
 	"ashen": ["ASH_GROUND", 3],   # пепел
+	# t3 «Мир v1»: карта мира — тон скального кольца; локации — тёмный тон
+	# собственного биома (тот же приём, что у деревни/пещеры/Пепелища).
+	"worldmap": ["STONE", 3],
+	"loc_snow": ["BONE", 3],      # снег: кость (самый тёмный холодный тон снежных карт)
+	"loc_desert": ["PATH", 3],    # пустыня: тёмная глина
+	"loc_steppe": ["GRASS", 3],   # степь: тёмная зелень
+	"loc_forest": ["PINE", 3],    # лес: та же масса, что у деревни
+	"loc_castle": ["IRON", 3],    # замок: тёмное железо
+	"loc_dungeon": ["VIOLET", 3], # подземелье: тот же камень, что у пещеры
 }
 const VOID_MARGIN := 512.0        # запас на разрыв окна (stretch=expand показывает шире)
 const VOID_Z := -4096             # гарантированно под тайлмапами и пропами зон
@@ -154,6 +170,13 @@ var ashen_grid    # scripts/ashen_zone.gd (слабо: setup/spawn_world_pos/map
 ## задача T4/T5, здесь поле-приёмник фиксирует сам шов.
 var cave_map: Dictionary = {}
 var ashen_map: Dictionary = {}
+## t3 «Мир v1»: контейнер и сетка карты мира; локации — ленивые словари
+## (биом -> контейнер / сетка) + точки возврата на карте мира.
+var worldmap_zone: Node2D = null
+var worldmap_grid = null                # scripts/worldmap_zone.gd (слабо)
+var biome_zone_cont := {}               # biome -> Node2D-контейнер
+var biome_grids := {}                   # biome -> scripts/biome_zone.gd (слабо)
+var loc_return := {}                    # biome -> Vector2 (отель портала на карте мира)
 var active_area := "village"  # "village" | "cave" | "ashen" — где сейчас герой
 var cam: Camera2D
 var _void_poly: Polygon2D = null    # t64: тёмное «запределье» зоны (см. VOID_RAMP)
@@ -253,6 +276,7 @@ func _ready() -> void:
 	_build_cave_entrance()
 	_build_ashen()
 	_build_ashen_entrance()
+	_build_world_arch()  # t3 «Мир v1»: интерактор арки (сама карта — лениво)
 	atmosphere = load("res://scripts/atmosphere.gd").new()
 	add_child(atmosphere)
 	atmosphere.setup(self)
@@ -995,6 +1019,106 @@ func _build_ashen_entrance() -> void:
 	village_zone.add_child(gate)
 	gate.setup(self, ASHEN_ENTRANCE_TILE)
 
+# --- t3 «Мир v1»: карта мира, локации, арки ---
+
+## Карта мира: контейнер-«этаж» y=14400 + сетка OpenWorld. КАК ЛОКАЦИИ —
+## лениво (первый вход / резюме): ~100 мс генерация на старте мира недопустима
+## (фриг запуска; в QA-харнессах тяжёлый кадр догоняется физикой и съедает
+## idle-тики). Северная арка — лёгкий интерактор в деревне, строится сразу.
+func _ensure_worldmap() -> bool:
+	if worldmap_grid != null:
+		return true
+	worldmap_zone = Node2D.new()
+	worldmap_zone.name = "WorldMap"
+	worldmap_zone.position = Vector2(0.0, OW.WM_OFFSET_Y)
+	worldmap_zone.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(worldmap_zone)
+	var wz = load("res://scripts/worldmap_zone.gd").new()
+	worldmap_zone.add_child(wz)
+	wz.setup(self, OW.worldmap_map(GameState.run_seed))
+	worldmap_grid = wz
+	worldmap_zone.visible = false
+	worldmap_zone.process_mode = Node.PROCESS_MODE_DISABLED
+	return worldmap_grid != null
+
+func _build_world_arch() -> void:
+	var arch := WorldArchNorth.new()
+	village_zone.add_child(arch)
+	arch.setup(self, WORLD_ARCH_TILE)
+
+## Ленивая постройка локации (первый вход / резюме из сейва). Возвращает false,
+## если биом неизвестен или зона не собралась (тогда зона — деревня).
+func _ensure_location(b: String) -> bool:
+	if biome_grids.has(b):
+		return biome_grids[b] != null
+	if not OW.ZONES.has(b):
+		push_warning("Локация: неизвестный биом %s" % b)
+		return false
+	var cont := Node2D.new()
+	cont.name = "Loc_" + b
+	cont.position = Vector2(0.0, float(OW.LOC_OFFSET_Y[b]))
+	cont.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(cont)
+	biome_zone_cont[b] = cont
+	var gz = load("res://scripts/biome_zone.gd").new()
+	cont.add_child(gz)
+	gz.setup(self, OW.loc_map(GameState.run_seed, b))
+	if gz.map_w <= 0:
+		cont.queue_free()
+		biome_zone_cont.erase(b)
+		biome_grids[b] = null
+		return false
+	biome_grids[b] = gz
+	cont.visible = false
+	cont.process_mode = Node.PROCESS_MODE_DISABLED
+	return true
+
+## Наполнение локаций мобами — в biome_zone.gd (_spawn_bestiary): зона спавнит
+## своих мобов сама (паттерн ashen_zone), бестиарий — OpenWorld.BESTIARY,
+## сложность — ТОЛЬКО HP/урон/золото множителем пояса (контракт «Мир v1»;
+## скорость/ИИ/паттерны не трогаем). Палитра — перекрас скином биома
+## (c22-метод, не тонировка).
+
+## Вход на карту мира по E у северной арки. Первый раз — тост+подсказка.
+func enter_worldmap() -> void:
+	_ensure_worldmap()
+	if active_area == "worldmap" or worldmap_grid == null:
+		return
+	var first: bool = str(GameState.flags.get("wm.intro_seen", "")) != "1"
+	transition_to_area("worldmap", func():
+		if first:
+			GameState.set_flag("wm.intro_seen", "1")
+			GameState.toast.emit("Карта мира: за хребтом шесть земель. Дальше от дома — злее звери.")
+			if FirstHint.I != null: FirstHint.I.show_hint("worldmap", "Порталы земель стоят на дорогах. Смерть гасит забег — взвесь риск.")
+		GameState.input_locked = false)
+
+func exit_worldmap() -> void:
+	if active_area != "worldmap":
+		return
+	transition_to_area("village")
+
+## Вход в локацию по E у портала: штатный переход с автосейвом-чекпоинтом
+## при первом открытии (тот же смысл сейв-точки, что у пещеры).
+func enter_location(b: String) -> void:
+	if active_area == "loc_" + b or not _ensure_location(b):
+		return
+	var first: bool = str(GameState.flags.get("wm.open." + b, "")) != "1"
+	transition_to_area("loc_" + b, func():
+		if first:
+			GameState.set_flag("wm.open." + b, "1")
+			var g = biome_grids.get(b, null)
+			var belt_txt := ""
+			if g != null:
+				belt_txt = " Пояс %d от дома — будь осторожен." % int(g.belt)
+			GameState.toast.emit(str(OW.ZONE_NAMES.get(b, "Локация")) + "." + belt_txt)
+			GameState.quest_changed.emit()  # автосейв: флаг открытой земли и чекпоинт
+		GameState.input_locked = false)
+
+func exit_location() -> void:
+	if not String(active_area).begins_with("loc_"):
+		return
+	transition_to_area("worldmap")
+
 func _build_fade() -> void:
 	var cl := CanvasLayer.new()
 	cl.layer = 10
@@ -1398,20 +1522,26 @@ func do_quickload() -> void:
 ## играбельный герой в первые секунды).
 func _place_resumed_player() -> void:
 	var p: Vector2 = GameState.player_pos
+	# t3 «Мир v1»: зона резюме — тем же правилом, что и from_dict (единый
+	# резолвер GameState.resolve_resume_zone): физика при валидной позиции,
+	# ключ area лишь уточняет; без позиции — деревня (легаси-паритет «вышел
+	# к входу»). Прямые вызовы (C25: in_cave=true) работают как до t3.
+	var zone := GameState.resolve_resume_zone(String(GameState.area))
+	if zone == "" or zone == "village":
+		zone = "village"
 	if GameState.pos_valid and _pos_walkable(p):
 		player.global_position = p
 		_snap_camera()  # t64: резюме — не «долёт», а мгновенная посадка камеры
-		if p.y > ASHEN_OFFSET.y:
-			apply_area("ashen", false)  # сейв оставил героя в Пепелище
+		if zone != "village" and zone != active_area:
+			apply_area(zone, false)  # сейв оставил героя в своей зоне
 		return
-	var zone := "village"
-	if GameState.pos_valid and p.y > ASHEN_OFFSET.y:
-		zone = "ashen"  # позитивная подсказка сейва: герой жил в Пепелище
-	elif GameState.in_cave:
-		zone = "cave"
 	if zone == "cave" and dungeon_zone == null:
 		zone = "village"
 	if zone == "ashen" and ashen_grid == null:
+		zone = "village"
+	if zone == "worldmap" and not _ensure_worldmap():
+		zone = "village"
+	if zone.begins_with("loc_") and not _ensure_location(zone.substr(4)):
 		zone = "village"
 	# Вход зоны берём ЯВНО из её спавна, а не телепортом apply_area(true):
 	# последний помнит village/ashen_return_pos — после резюма это мусор прошлого
@@ -1430,6 +1560,14 @@ func _place_resumed_player() -> void:
 			# то же для Пепелища: выходим к портальному камню «A», а не к началу
 			if ashen_return_pos == Vector2.INF:
 				ashen_return_pos = tile_to_world(ASHEN_ENTRANCE_TILE)
+		"worldmap":
+			# t3: резюме на карту мира — за северной аркой (спавн входа)
+			entry = Vector2(0.0, OW.WM_OFFSET_Y) + worldmap_grid.spawn_world_pos()
+		_:
+			# t3: резюме в локацию — с её южной арки (сейв-точки входа)
+			if zone.begins_with("loc_"):
+				var g = biome_grids[zone.substr(4)]
+				entry = Vector2(0.0, float(OW.LOC_OFFSET_Y[zone.substr(4)])) + g.spawn_world_pos()
 	apply_area(zone, false)
 	player.global_position = entry
 	_snap_camera()  # t64 (g18b): «вышел к входу» — камера сразу на арке, старый край не показываем
@@ -1437,6 +1575,15 @@ func _place_resumed_player() -> void:
 
 ## Проходима ли мировая точка в зоне, которой она принадлежит по координате/флагу.
 func _pos_walkable(p: Vector2) -> bool:
+	# t3: верхние «этажи» Мира — карта мира и локации (порядок сверху вниз:
+	# самому верхнему этажу соответствует наибольший не превышающий y офсет).
+	if p.y >= OW.WM_OFFSET_Y:
+		for b in ["dungeon", "castle", "forest", "steppe", "desert", "snow"]:
+			if p.y >= float(OW.LOC_OFFSET_Y[b]):
+				var g = biome_grids.get(b, null)
+				return g != null and g.cell_walkable(_world_to_tile(p, Vector2(0.0, float(OW.LOC_OFFSET_Y[b]))))
+		return worldmap_grid != null and worldmap_grid.cell_walkable(
+			_world_to_tile(p, Vector2(0.0, OW.WM_OFFSET_Y)))
 	if p.y > ASHEN_OFFSET.y:
 		if ashen_grid == null:
 			return false
@@ -1460,16 +1607,33 @@ func apply_zone(to_cave: bool, teleport: bool = true) -> void:
 func apply_area(area: String, teleport: bool = true) -> void:
 	var prev := active_area
 	active_area = area
+	# t3: локация строится при ПЕРВОМ обращении к зоне (лениво) — и при переходе,
+	# и при резюме из сейва, и при лимитах камеры: точка одна здесь.
+	if area.begins_with("loc_"):
+		_ensure_location(area.substr(4))
+	elif area == "worldmap":
+		_ensure_worldmap()
 	# t20 P0-3: зона гибели для экрана смерти — обновляем при каждой смене области.
 	GameState.flags["rs.zone"] = area
 	var to_cave := area == "cave"
 	GameState.in_cave = to_cave
+	GameState.area = area  # t3 «Мир v1»: единственный источник зоны (сейв/миникарта)
 	village_zone.visible = area == "village"
 	cave_zone.visible = to_cave
 	ashen_zone.visible = area == "ashen"
 	village_zone.process_mode = Node.PROCESS_MODE_INHERIT if area == "village" else Node.PROCESS_MODE_DISABLED
 	cave_zone.process_mode = Node.PROCESS_MODE_INHERIT if to_cave else Node.PROCESS_MODE_DISABLED
 	ashen_zone.process_mode = Node.PROCESS_MODE_INHERIT if area == "ashen" else Node.PROCESS_MODE_DISABLED
+	if worldmap_zone != null:
+		worldmap_zone.visible = area == "worldmap"
+		worldmap_zone.process_mode = Node.PROCESS_MODE_INHERIT if area == "worldmap" else Node.PROCESS_MODE_DISABLED
+	for b in biome_zone_cont:
+		var cont: Node2D = biome_zone_cont[b]
+		if not is_instance_valid(cont):
+			continue
+		var on := area == "loc_" + String(b)
+		cont.visible = on
+		cont.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
 	near.clear()
 	# t39: ведьма Пепелища масштабируется под уровень героя (mob_boss2.depth_scale) —
 	# переливаем силу при каждом входе в зону (L1 19hp/1dmg … L6+ канон 48/3).
@@ -1486,8 +1650,27 @@ func apply_area(area: String, teleport: bool = true) -> void:
 			ashen_return_pos = player.global_position
 			if ashen_grid != null:
 				player.global_position = ASHEN_OFFSET + ashen_grid.spawn_world_pos
+		elif area == "worldmap":
+			# t3: вход из деревни — спавн за аркой; возврат из локации — отель
+			# у её портала на карте мира (встаём ровно там, где вошёл).
+			if worldmap_grid != null:
+				var from_loc := prev.begins_with("loc_") and loc_return.has(prev.substr(4))
+				player.global_position = Vector2(0.0, OW.WM_OFFSET_Y) + worldmap_grid.spawn_world_pos() \
+					if not from_loc else loc_return[prev.substr(4)]
+		elif area.begins_with("loc_"):
+			# t3: вход в локацию — с её южной арки; на карте мира запоминаем,
+			# откуда вошли (обратный ход открывает портал у той же точки).
+			var b := area.substr(4)
+			if biome_grids.has(b):
+				if prev == "worldmap":
+					loc_return[b] = player.global_position
+				player.global_position = Vector2(0.0, float(OW.LOC_OFFSET_Y[b])) \
+					+ (biome_grids[b] as Node2D).spawn_world_pos()
 		elif prev == "ashen":
 			player.global_position = ashen_return_pos if ashen_return_pos != Vector2.INF else tile_to_world(spawn_tile)
+		elif prev == "worldmap":
+			# t3: выход из карты мира — к северной арке деревни (её клетка 'g')
+			player.global_position = tile_to_world(WORLD_ARCH_TILE)
 		else:
 			player.global_position = village_return_pos if village_return_pos != Vector2.INF else tile_to_world(spawn_tile)
 	_set_cam_limits(area)
@@ -1497,7 +1680,7 @@ func apply_area(area: String, teleport: bool = true) -> void:
 		atmosphere.zone_changed(to_cave)
 	# музыка по зоне: пещера — своя тема, Пепелище — тот же мрачный трек (новых
 	# ассетов не заводим), выход — лес (кроссфейд внутри GameAudio)
-	GameAudio.music("cave" if to_cave or area == "ashen" else "forest")
+	GameAudio.music("cave" if to_cave or area == "ashen" or area == "loc_dungeon" else "forest")
 
 func _set_cam_limits(area: String) -> void:
 	if area == "cave" and dungeon_zone != null:
@@ -1510,6 +1693,20 @@ func _set_cam_limits(area: String) -> void:
 		cam.limit_top = int(ASHEN_OFFSET.y)
 		cam.limit_right = int(ASHEN_OFFSET.x) + int(ashen_grid.map_w) * TILE
 		cam.limit_bottom = int(ASHEN_OFFSET.y) + int(ashen_grid.map_h) * TILE
+	elif area == "worldmap" and worldmap_grid != null:
+		# t3: карта мира 96×60 (1536×960 px) — риг честный, мир больше вида,
+		# полос не будет ни при каком окне (зона шире 640 и выше 360).
+		cam.limit_left = 0
+		cam.limit_top = int(OW.WM_OFFSET_Y)
+		cam.limit_right = int(worldmap_grid.map_w) * TILE
+		cam.limit_bottom = int(OW.WM_OFFSET_Y) + int(worldmap_grid.map_h) * TILE
+	elif area.begins_with("loc_") and biome_grids.has(area.substr(4)):
+		# t3: локация 44×34 (704×544) — тоже больше вида по обеим осям.
+		var gz = biome_grids[area.substr(4)]
+		cam.limit_left = 0
+		cam.limit_top = int(OW.LOC_OFFSET_Y[area.substr(4)])
+		cam.limit_right = int(gz.map_w) * TILE
+		cam.limit_bottom = int(OW.LOC_OFFSET_Y[area.substr(4)]) + int(gz.map_h) * TILE
 	else:
 		cam.limit_left = 0
 		cam.limit_top = 0
@@ -1856,7 +2053,14 @@ func on_player_death() -> void:
 
 func respawn_player() -> void:
 	player.cancel_orders()
-	if active_area == "ashen" and ashen_grid != null:
+	if active_area == "worldmap" and worldmap_grid != null:
+		# t3: гибель на карте мира — под северной аркой (отход к дому)
+		player.global_position = Vector2(0.0, OW.WM_OFFSET_Y) + worldmap_grid.spawn_world_pos()
+	elif String(active_area).begins_with("loc_") and biome_grids.get(String(active_area).substr(4), null) != null:
+		# t3: гибель в локации — её южная арка (сейв-точка входа)
+		var g = biome_grids[String(active_area).substr(4)]
+		player.global_position = Vector2(0.0, float(OW.LOC_OFFSET_Y[String(active_area).substr(4)])) + g.spawn_world_pos()
+	elif active_area == "ashen" and ashen_grid != null:
 		player.global_position = ASHEN_OFFSET + ashen_grid.spawn_world_pos
 	elif GameState.in_cave and dungeon_zone != null:
 		player.global_position = CAVE_OFFSET + dungeon_zone.spawn_world_pos
@@ -1914,6 +2118,49 @@ class CaveStairs:
 		return "Спуститься в пещеру"
 	func try_interact() -> void:
 		world.enter_cave()
+	func _on_enter(b: Node) -> void:
+		if b.is_in_group("player"):
+			world.near.append(self)
+	func _on_exit(b: Node) -> void:
+		if b.is_in_group("player"):
+			world.near.erase(self)
+
+class WorldArchNorth:
+	extends Area2D
+	## t3 «Мир v1»: северная арка деревни — вход на карту мира по E. Стоит на
+	## проходимой клетке 'g' (22,2) БЕЗ правки map_village.json (байт-пин t65);
+	## проп — кодоген-кадр ARCH_NORTH из world_props_v1.png (стопный z, общий
+	## якорь V-01). Визуально арка стоит на вырезе горного кольца (F5).
+	var world
+	func setup(p_world: Node2D, tile: Vector2i) -> void:
+		world = p_world
+		position = world.tile_to_world(tile)
+		if ResourceLoader.exists("res://assets/world/world_props_v1.png") \
+				and FileAccess.file_exists("res://assets/world/world_regions.json"):
+			var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/world/world_regions.json"))
+			if typeof(parsed) == TYPE_DICTIONARY and (parsed.get("props", {}) as Dictionary).has("ARCH_NORTH"):
+				var r: Dictionary = (parsed["props"] as Dictionary)["ARCH_NORTH"]
+				var at := AtlasTexture.new()
+				at.atlas = load("res://assets/world/world_props_v1.png")
+				at.region = Rect2(int(r["x"]), int(r["y"]), int(r["w"]), int(r["h"]))
+				var spr := Sprite2D.new()
+				spr.texture = at
+				# стопный якорь: низ кадра — низ клетки; узел в центре клетки (+2)
+				spr.position = Vector2(0, 6 - int(r.get("h", 24)) / 2)
+				add_child(spr)
+		var cs := CollisionShape2D.new()
+		var sh := RectangleShape2D.new()
+		sh.size = Vector2(16, 16)
+		cs.shape = sh
+		add_child(cs)
+		collision_layer = 0
+		collision_mask = 1
+		body_entered.connect(_on_enter)
+		body_exited.connect(_on_exit)
+	func get_hint() -> String:
+		return "Северная арка — карта мира"
+	func try_interact() -> void:
+		world.enter_worldmap()
 	func _on_enter(b: Node) -> void:
 		if b.is_in_group("player"):
 			world.near.append(self)

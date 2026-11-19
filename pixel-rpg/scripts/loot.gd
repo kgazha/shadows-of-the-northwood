@@ -5,6 +5,8 @@ extends RefCounted
 ## Вызывается из хуков в slime.gd / brute.gd / interactable.gd — см. отчёт
 ## «ИНТЕГРАЦИОННЫЕ ЗАПРОСЫ»; файлы движка экономики не меняет.
 
+const OW := preload("res://scripts/open_world.gd")  # t3: GOLD_BELT_STEP — реестр поясов
+
 ## g20b TEST-ONLY: если >= 0, каждый бросок таблицы на смерть моба берётся
 ## отсюда вместо randf() — детерминированная проверка 5%-дропа снаряжения
 ## (qa_gear) без тысячи убийств. Игра никогда не выставляет: по умолчанию -1.
@@ -17,6 +19,17 @@ static func _roll() -> float:
 ## world_pos + world (опц.) — точка для искр золота на месте трупа; без world
 ## эффект просто пропускается (headless-QA, бо́сс после queue_free и т. п.).
 static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null) -> void:
+	# t3 «Мир v1»: kind мобов локаций несёт ПОЯСНОЙ суффикс "@b<N>" (зоны по
+	# удалению, OPEN_WORLD/BALANCE строка 24): таблица/ачивки/счётчики — базовые
+	# (суффикс снимается), золото итоговое ×(1+GOLD_BELT_STEP·N). Kind без
+	# суффикса — прежнее поведение байт-в-байт.
+	var belt_b := 0
+	if kind.contains("@"):
+		var parts: PackedStringArray = kind.split("@")
+		kind = String(parts[0])
+		var tag := String(parts[1]) if parts.size() > 1 else ""
+		if tag.begins_with("b") and tag.substr(1).is_valid_int():
+			belt_b = clampi(int(tag.substr(1)), 0, 8)
 	Achv.on_mob_death(kind)  # ачивка «Первая кровь» (§2 #1, achv.gd)
 	# t20 P0-3: счётчик убийств по типам для экрана смерти (rs.k.<kind>).
 	# ДО сверки с таблицей лута: моб умер — засчитываем даже без таблицы
@@ -47,6 +60,10 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).
 	gold = int(round(gold * GameState.ng_gold_mult(GameState.ng_wave())))
+	# t3 «Мир v1»: пояс локации (суффикс "@bN") — золото ×(1+0,15·N), одна точка
+	# истины OpenWorld.GOLD_BELT_STEP; до жадности/талантов (они поверх).
+	if belt_b > 0:
+		gold = int(round(gold * _ow_gold_belt_mult(belt_b)))
 	# Талант «Уголёк в монете» (ember, CONTRACT_TALENTS §3): +15% золота мобов за
 	# ранг — стоит рядом с множителем волны, до жадности и до записи в GameState.
 	gold = int(round(gold * (1.0 + 0.15 * GameState.tal_rank("ember"))))
@@ -79,6 +96,9 @@ static func chest_reward(gs: Node) -> int:
 			gs.herbs += 1
 			gs.toast.emit("Зелья нет — в углу сундука пучок трав.")
 	return gold
+
+static func _ow_gold_belt_mult(b: int) -> float:
+	return 1.0 + OW.GOLD_BELT_STEP * float(b)
 
 ## Монеты из строки таблицы: [min, max] — равномерный бросок, int — сумма.
 static func _roll_gold(v: Variant) -> int:

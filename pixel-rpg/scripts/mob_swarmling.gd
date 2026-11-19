@@ -43,6 +43,10 @@ var swarm_id := "solo"
 var world: Node2D
 var hp := MAX_HP
 var max_hp := MAX_HP
+## t3 «Мир v1» (локации): kind дропа с поясом и множитель урона — по умолчанию
+## канон ("swarmling", ×1).
+var loot_kind := ""
+var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не кусает, синий тинт.
@@ -201,7 +205,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			velocity = Vector2.ZERO  # потеряла из виду — стая сбивается, не летит сквозь камень
 		if d < HIT_DIST and sees:
-			player.take_damage(1, "swarmling")  # t20: kind убийцы для экрана смерти
+			player.take_damage(maxi(1, int(round(1.0 * dmg_mult))), "swarmling")  # t20: kind убийцы для экрана смерти
 			bit_t = 0.25
 	else:
 		wander_t -= delta
@@ -289,7 +293,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Achv.count("kill_swarmling")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Мглокрыс повержен! (+3 опыта)")
-		Loot.on_mob_death("swarmling", global_position)
+		Loot.on_mob_death(loot_kind if loot_kind != "" else "swarmling", global_position)
 		GameState.quest_changed.emit()
 		_on_swarm_death()
 		queue_free()
