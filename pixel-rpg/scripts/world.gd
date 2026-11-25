@@ -342,7 +342,12 @@ func _ready() -> void:
 	add_child(Achv.new())  # достижения+daily (achv.gd); после load_game() — daily видит stamp
 	GameState.ng_plus_started.connect(func() -> void: get_tree().reload_current_scene.call_deferred())
 	if loaded:
+		# t25 (25.11): тот же узкий возврат mini_*-ключа, что в do_quickload
+		# (комментарий с обоснованием — там); рестарт приложения внутри хода, чек W10.9d.
+		var resume_key := String(GameState.area)
 		apply_zone(GameState.in_cave, false)
+		if resume_key.begins_with("mini_"):
+			GameState.area = GameState.resolve_resume_zone(resume_key)
 		_place_resumed_player()  # c37 P0: позиция сейва проходит проверку стены/границ
 		player.apply_class()
 		hud.refresh_skills()
@@ -1662,7 +1667,18 @@ func line_clear(a: Vector2, b: Vector2) -> bool:
 ## всё состояние мира переставляется из сейва идемпотентно (паттерн F9).
 func do_quickload() -> void:
 	if GameState.load_game():
+		# t25 (25.11, находка t22 «сейв внутри хода»): apply_zone(false) затирает
+		# GameState.area деревней ДО чтения ключа, а y-полосы резолвера (≤43200)
+		# не знают этаж хода MINI_Y=48000 — mini_*-ключ гибнет, герой улетает в
+		# loc_dungeon. Возвращаем ключ ИСКЛЮЧИТЕЛЬНО mini_*: они — единственные,
+		# кому физика полосы выразить себя не может (loc_*/worldmap/ashen резолвер
+		# читает из y-позы сам). Шире нельзя: c37 «стена деревни» легально несёт
+		# устаревший area (ashen) при позе-стене деревни — там затирание и есть
+		# контракт (спавн деревни). Геометрия не меняется — ноль перепинов.
+		var resume_key := String(GameState.area)
 		apply_zone(GameState.in_cave, false)
+		if resume_key.begins_with("mini_"):
+			GameState.area = GameState.resolve_resume_zone(resume_key)
 		_place_resumed_player()  # F9 в живой мир с легаси-позицией — тоже под защитой
 		player.apply_class()
 		hud.refresh_skills()

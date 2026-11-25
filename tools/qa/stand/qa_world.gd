@@ -1119,6 +1119,41 @@ func w10_mini() -> void:
 	var cnt1: int = world.find_children("*", "", true, false).size()
 	chk(cnt1 == cnt0 and (world.mini_cont as Dictionary).size() == 1,
 			"W10.8 прогресс-раунды хода×3: утечек нод 0, сцена переиспользуется")
+	# W10.9 (t25, 25.11, находка t22 diag-t22/mini_save_probe): сейв ВНУТРИ хода
+	# обязан резюмироваться в ход — и по F9-пути (do_quickload), и по полному
+	# рестарту сцены (_ready loaded->apply_zone->_place_resumed_player).
+	# До фикса RED: apply_zone затирает GameState.area до чтения ключа резюме.
+	world.enter_mini("forest")
+	await _frames(40)
+	GameState.player_pos = world.player.global_position
+	GameState.pos_valid = true
+	var mini_sv: bool = GameState.save_game()
+	chk(mini_sv and String(GameState.area) == "mini_forest",
+			"W10.9a сейв в ходу записан (area в сейве mini_forest)")
+	world.do_quickload()
+	await _frames(40)
+	chk(String(world.active_area) == "mini_forest" and String(GameState.area) == "mini_forest",
+			"W10.9b quickload возвращает в ход (active/area mini_forest), не в деревню")
+	var mzp: Vector2 = world.player.global_position
+	chk(mzp.distance_to(GameState.player_pos) < 0.5 and mzp.y >= float(MD.MINI_Y),
+			"W10.9c поза = поза сейва на этаже хода (y>=%.0f)" % float(MD.MINI_Y))
+	# W10.9d полный рестарт сцены: новый инстанс main.tscn проходит ровно ветку
+	# _ready(loaded=true) — тот же код, что перезапуск приложения
+	var old_w: Node = world
+	var fresh: Node = load("res://scenes/main.tscn").instantiate()
+	old_w.queue_free()
+	add_child(fresh)
+	await _frames(30)
+	world = fresh
+	chk(world != null and String(world.active_area) == "mini_forest"
+			and world.player.global_position.distance_to(GameState.player_pos) < 0.5
+			and String(GameState.area) == "mini_forest",
+			"W10.9d рестарт сцены резюмирует в ход (area/active/поза)")
+	# соседям — чистый старт: сейв стёрт, мир возвращён в деревню (как до W10)
+	_wipe_save()
+	GameState.pos_valid = false
+	world.apply_area("village")
+	await _frames(10)
 
 # --- W11 микро-подземелья x5 (t20 «Глубина v2 §2б», 25.11) --------------------
 # Лес разобран подробно в W10; здесь — ОБОД каждый открытый MD.BIOMES биом:
