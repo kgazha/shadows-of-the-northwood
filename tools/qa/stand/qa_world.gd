@@ -17,7 +17,12 @@ extends Node2D
 ##  W5 края (t59-якорь): глухое кольцо 7 карт ×16 сидов, guard позиции,
 ##     camera-риг == пиксельный прямоугольник карты — выходов за край ноль;
 ##  W6 гигиена: системный хэш строки запрещён (F3), CJK — ноль, md5-пины
-##     world-атласов и манифеста скинов.
+##     world-атласов и манифеста скинов;
+##  W7 «Среда v1» (t11): кадры среды == лист, водная геометрия, тик-скинер B;
+##  W8 «Туман открытия» (t7, вердикт 25.11): арифметика discovered-поля,
+##     base64-сейв, live-посев у арки, обзор ходьбы, гейт туманных порталов,
+##     reveal при входе в локацию, roundtrip тумана через disk, независимость
+##     геометрии от тумана.
 
 const RUN_SEED := 97531            # мета-сид как в qa_pg: seed_i = RUN_SEED + i*7919
 const SEEDS := 16                  # тяжёлая геометрия (BFS+holes) по 16 сидам;
@@ -114,6 +119,7 @@ func _ready() -> void:
 	await w5_edges()
 	w6_hygiene()
 	w7_env(OWg)
+	await w8_fog(OWg)
 	# и после себя не оставляем: автосейвы чекпойнтов/фикстуры W3 — на диске
 	_wipe_save()
 	GameState.start_fresh_game()
@@ -742,6 +748,185 @@ func _md5_file(path: String) -> String:
 	if not FileAccess.file_exists(path):
 		return ""
 	return FileAccess.get_md5(path)
+
+# --- W8 «Туман открытия» (t7, вердикт пользователя 25.11) ---------------------
+# Модель — fog_of_war.gd (preload без class_name); поток — живой world:
+# посев clearing на входе, тик обзора в world._process, гейт в WorldPortal.
+
+const FOGW := preload("res://scripts/fog_of_war.gd")
+
+func w8_fog(ow) -> void:
+	# W8.1 арифметика поля: диск, край, «открытое не забывается»
+	var f = FOGW.new()
+	chk(f.discovered_count() == 0 and not f.is_discovered(0, 0), "W8.1a свежий туман — поле пустое")
+	chk(f.reveal_disk(Vector2i(48, 30), 2) == 25, "W8.1b диск r=2 ровно 25 клеток")
+	chk(f.reveal_disk(Vector2i(48, 30), 2) == 0, "W8.1c повторный reveal — ноль нового (не забывается)")
+	chk(f.reveal_disk(Vector2i(0, 0), 10) == 121, "W8.1d краевой диск клампится (11x11)")
+	chk(f.is_discovered(-3, -3) and f.is_discovered(96, 60), "W8.1e за полем — «известно»")
+	# W8.2 base64-сейв (компактный: 720 байт поля)
+	var b64: String = f.to_b64()
+	chk(b64.length() == 960, "W8.2a base64 720 байт поля = 960 символов")
+	var f2 = FOGW.new()
+	chk(f2.from_b64(b64) and f2.discovered_count() == f.discovered_count() \
+			and f2.is_discovered(48, 30) and f2.to_b64() == b64,
+			"W8.2b roundtrip discovered по base64 побайтово")
+	var f3 = FOGW.new()
+	chk(not f3.from_b64(Marshalls.raw_to_base64(PackedByteArray([1, 2, 3]))) \
+			and f3.discovered_count() == 0,
+			"W8.2c баш base64 (размер не по поля) — туман с нуля, легаси не ломается")
+	if world == null or ow == null:
+		chk(false, "W8.3 живой world не готов")
+		return
+	# живой поток: вернулись в деревню, модель — к состоянию «новый круг»
+	var waited := 0
+	while String(world.active_area) != "village" and waited < 600:
+		if String(world.active_area) == "worldmap":
+			world.exit_worldmap()
+		elif String(world.active_area).begins_with("loc_"):
+			world.exit_location()
+		await get_tree().process_frame
+		waited += 1
+	GameState.wm_fog = FOGW.new()
+	var toasts: Array = []
+	var glue := func(s): toasts.append(String(s))
+	GameState.toast.connect(glue)
+	# W8.3 посев: только clearing у спавна (47,56), r=ARC_R=10 => x37..57, y46..59
+	world.enter_worldmap()
+	waited = 0
+	while String(world.active_area) != "worldmap" and waited < 300:
+		await get_tree().process_frame
+		waited += 1
+	var wg = world.get("worldmap_grid")
+	var fog = GameState.wm_fog
+	chk(fog != null and fog.discovered_count() == 21 * 14,
+			"W8.3 spawn-clearing 294 клетки (21x14 у южного края), север — туман")
+	chk(fog.is_discovered(48, 58) and fog.is_discovered(47, 56), "W8.3b арка и спавн видимы")
+	var portals_fogged := true
+	for z in PORTAL_CELLS_STAND:
+		var pc: Array = PORTAL_CELLS_STAND[z]
+		if fog.is_discovered(int(pc[0]), int(pc[1])):
+			portals_fogged = false
+	chk(portals_fogged and not fog.is_discovered(0, 0),
+			"W8.3c все шесть порталов и север — в тумане")
+	chk(wg.get("fog_spr") is Sprite2D, "W8.3d туман — Sprite2D-вуаль (ImageTexture, без геометрии)")
+	# W8.4 обзор ходьбы: телепорт в дальнюю проходную клетку — тик обязан
+	# открыть ровно квадрат 21x21. Допустимая клетка (детерминированный скан):
+	#  * cheb > 25 до спавна — диски r=10 непересекаемы, пробы cheb=14 чисты;
+	#  * cheb > 10 до порталов Чащи/Снежника — они останутся туманными для
+	#    W8.5/W8.7 (кольцо Снежника и угол (48,4) — вне диска: y подопытной >= 14).
+	var c := Vector2i.ZERO
+	var found := false
+	for y in range(14, 46):
+		for x in range(14, 82):
+			if not ow.walkable(wg.map_rows, x, y):
+				continue
+			if ow.cheb(Vector2i(x, y), Vector2i(47, 56)) <= 25:
+				continue
+			if ow.cheb(Vector2i(x, y), Vector2i(20, 44)) <= 10 \
+					or ow.cheb(Vector2i(x, y), Vector2i(52, 8)) <= 10:
+				continue
+			c = Vector2i(x, y)
+			found = true
+			break
+		if found:
+			break
+	chk(found, "W8.4a найдена подопытная клетка в туманной дали")
+	if found:
+		var before: int = fog.discovered_count()
+		world.player.global_position = Vector2(0.0, ow.WM_OFFSET_Y) + wg.tile_to_world(c)
+		await _frames(3)
+		var disk_ok := true
+		for dy in range(-10, 11):
+			for dx in range(-10, 11):
+				if not fog.is_discovered(c.x + dx, c.y + dy):
+					disk_ok = false
+		chk(fog.discovered_count() == before + 441 and disk_ok,
+				"W8.4b герой открыл ровно 441 клетку (квадрат r=10, непересечения)")
+		chk(not fog.is_discovered(c.x - 14, c.y) and not fog.is_discovered(c.x, c.y - 14),
+				"W8.4c за радиусом обзора — туман (пробы cheb=14)")
+		# W8.5 туманный портал: E не срабатывает, подсказка «место туманное»
+		var fp = (wg.get("portal_nodes") as Dictionary).get("forest", null)
+		chk(fp != null and wg.portal_fogged("forest"), "W8.5a портал Чащи ещё в тумане")
+		if fp != null:
+			var area_before := String(world.active_area)
+			toasts.clear()
+			chk(String(fp.get_hint()) == "Место туманное", "W8.5b подсказка туманного портала")
+			fp.try_interact()
+			await _frames(2)
+			var denied := false
+			for t in toasts:
+				if String(t).contains("туманное"):
+					denied = true
+			chk(String(world.active_area) == area_before and denied,
+					"W8.5c E в тумане НЕ срабатывает + тост-подсказка")
+			# W8.6 открытая клетка — портал штатно работает; возврат дозволен
+			fog.reveal_disk(Vector2i(20, 44), 0)
+			chk(not wg.portal_fogged("forest") and String(fp.get_hint()) == "Чаща — войти",
+					"W8.6a после reveal подсказка вернулась")
+			# отель = где стояли на карте мира перед входом (loc_return)
+			var hotel: Vector2 = world.player.global_position
+			world.enter_location("forest")
+			waited = 0
+			while String(world.active_area) != "loc_forest" and waited < 300:
+				await get_tree().process_frame
+				waited += 1
+			chk(String(world.active_area) == "loc_forest", "W8.6b вход в открытую локацию штатен")
+			world.exit_location()
+			waited = 0
+			while String(world.active_area) != "worldmap" and waited < 300:
+				await get_tree().process_frame
+				waited += 1
+			chk(String(world.active_area) == "worldmap" \
+					and world.player.global_position.distance_to(hotel) < 2.0,
+					"W8.6c возврат из локации всегда дозволен (отель у портала)")
+			# W8.7 вход в локацию открывает её портал и окрестности (PORTAL_R=3)
+			chk(not fog.is_discovered(52, 8), "W8.7a портал Снежника ещё туманен")
+			world.enter_location("snow")
+			waited = 0
+			while String(world.active_area) != "loc_snow" and waited < 300:
+				await get_tree().process_frame
+				waited += 1
+			chk(fog.is_discovered(52, 8) and fog.is_discovered(49, 5) and fog.is_discovered(55, 11) \
+					and not fog.is_discovered(48, 4),
+					"W8.7b вход в локацию открыл портал + кольцо r=3 (угол cheb=4 — туман)")
+			world.exit_location()
+			waited = 0
+			while String(world.active_area) != "worldmap" and waited < 300:
+				await get_tree().process_frame
+				waited += 1
+		# W8.8 сейв: to_dict/v4 аддитивно, легаси без ключа, roundtrip диска
+		var snap: Dictionary = GameState.to_dict()
+		var fog_b64 := String(snap.get("wm_fog", ""))
+		var cnt_saved: int = fog.discovered_count()
+		chk(fog_b64 != "" and fog_b64.length() == 960,
+				"W8.8a to_dict: ключ wm_fog (base64 720 байт), v остаётся 4")
+		var legacy: Dictionary = snap.duplicate(true)
+		legacy.erase("wm_fog")
+		GameState.from_dict(legacy)
+		chk(GameState.wm_fog == null and int(GameState.to_dict().get("v", 0)) == 4 \
+				and String(GameState.to_dict().get("wm_fog", "x")) == "",
+				"W8.8b легаси-сейв без ключа: туман ВЫКЛ (null), v4, ключ круглит пустым")
+		GameState.from_dict(snap)
+		chk(GameState.wm_fog.discovered_count() == cnt_saved \
+				and GameState.wm_fog.is_discovered(52, 8) and GameState.wm_fog.is_discovered(47, 56) \
+				and not GameState.wm_fog.is_discovered(0, 0),
+				"W8.8c discovered восстановлен из сейва (roundtrip в памяти)")
+		var saved_ok: bool = GameState.save_game()
+		GameState.wm_fog.reveal_disk(Vector2i(0, 0), 20)
+		GameState.load_game()
+		chk(saved_ok and GameState.wm_fog.discovered_count() == cnt_saved \
+				and not GameState.wm_fog.is_discovered(0, 0),
+				"W8.8d disk roundtrip: туман с диска перечеркнул послесейв-правки")
+		# W8.9 геометрия тумана не видит: walkable == генератор, слой — Sprite2D
+		var geo_ok := true
+		for y in range(0, int(wg.map_h), 7):
+			for x in range(0, int(wg.map_w), 5):
+				if wg.cell_walkable(Vector2i(x, y)) != ow.walkable(wg.map_rows, x, y):
+					geo_ok = false
+		chk(geo_ok and wg.fog_spr != null and not (wg.fog_spr is CollisionObject2D),
+				"W8.9 проходимость не зависит от тумана; вуаль без коллайдеров")
+	if GameState.toast.is_connected(glue):
+		GameState.toast.disconnect(glue)
 
 func _cjk(s: String) -> int:
 	var n := 0

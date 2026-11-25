@@ -15,7 +15,9 @@ extends Node
 ## рисуется после _draw радара, поэтому draw_center=false (t49) — фоном поля
 ## считает paint().
 ##
-## СОДЕРЖИМОЕ (текущая зона целиком, тумана войны нет): тайлы walk/wall кэшем
+## СОДЕРЖИМОЕ (текущая зона целиком; t7 «Туман открытия» 25.11: на карте мира
+## туманная вуаль поверх тайлов/блипов — неизвестные клетки темнеют, блипы
+## туманных порталов гаснут, герой всегда на открытой клетке): тайлы walk/wall кэшем
 ## ImageTexture (деревня — world.map_rows + CHAR_TO_TILE/BLOCKING, пещера —
 ## dungeon_zone.map_rows + cell_walkable, Пепелище — ashen_grid.map_rows +
 ## cell_walkable), герой — белая точка-маркер, мобы —
@@ -60,6 +62,9 @@ const C_NPC := Color(0.875, 0.902, 0.933)         # NPC — белый
 const C_PORTAL := Color(0.345, 0.784, 1.0)        # вход в пещеру / выход — голубой
 const C_GLADE := Color(0.373, 0.569, 0.251)       # Д2 поляна «лес запад» — LEAF MID (5f9140)
 const C_DIM := 0.38                               # альфа «прошлого» POI (пепел/пустой)
+# t7 «Туман открытия» (25.11): вуаль неизвестности карты мира — почти чёрная
+# синева, рисуется поверх тайлов и блипов (герой стоит только на открытом).
+const C_FOG := Color(0.020, 0.024, 0.036, 0.86)
 
 static var I: Minimap              # синглтон; назначает world._ready (fallback — _enter_tree)
 static var _enabled := true        # кэш user://minimap_cfg.json
@@ -76,6 +81,11 @@ var _grid_h := 0
 var _pois: Array = []              # [{t=Vector2i, c=Color, s=int}] — костры/сундуки/NPC/порты
 var _sig := ""                     # подпись зоны для поллинга: in_cave + сами rows (F9/пересборка)
 var _poll_t := 0.0
+# t7 «Туман открытия»: кэш вуали карты мира — пересборка только при смене
+# версии GameState.wm_fog (или самого объекта: новый круг).
+var _fog_obj = null
+var _fog_ver := -1
+var _fog_tex: ImageTexture = null
 
 # --- переключатель: user://minimap_cfg.json (дефолт — ВКЛ), контракт ClickMove ---
 
@@ -389,6 +399,30 @@ func _world_grid(zone: String):
 func _tile_of(p: Vector2, base: Vector2, ts: float) -> Vector2i:
 	return Vector2i(int(floor((p.x - base.x) / ts)), int(floor((p.y - base.y - 2.0) / ts)))
 
+## t7 «Туман открытия»: вуаль карты мира (1 клетка = 1 px, те координаты и
+## тот же rect, что у _grid_tex). Пересборка — только при смене версии
+## GameState.wm_fog или подмены объекта (новый круг): в покое — ноль работы.
+func _ensure_fog_tex() -> ImageTexture:
+	var fog = GameState.wm_fog
+	if fog == null or _grid_w <= 0 or _grid_h <= 0:
+		return null
+	if _fog_obj != fog or _fog_ver != int(fog.version) or _fog_tex == null:
+		var img := Image.create(_grid_w, _grid_h, false, Image.FORMAT_RGBA8)
+		for y in _grid_h:
+			for x in _grid_w:
+				if fog.is_discovered(x, y):
+					img.set_pixel(x, y, Color(0, 0, 0, 0))
+				else:
+					img.set_pixel(x, y, C_FOG)
+		_fog_tex = ImageTexture.create_from_image(img)
+		_fog_obj = fog
+		_fog_ver = int(fog.version)
+	return _fog_tex
+
+func _fog_known(t: Vector2i) -> bool:
+	var fog = GameState.wm_fog
+	return fog == null or fog.is_discovered(t.x, t.y)
+
 static func _dim(c: Color) -> Color:
 	return Color(c.r, c.g, c.b, C_DIM)
 
@@ -410,8 +444,11 @@ func paint(ci: CanvasItem) -> void:
 	var ox := inner.position.x + floorf((inner.size.x - _grid_w * TILE_SCALE) * 0.5)
 	var oy := inner.position.y + floorf((inner.size.y - _grid_h * TILE_SCALE) * 0.5)
 	ci.draw_texture_rect(_grid_tex, Rect2(ox, oy, _grid_w * TILE_SCALE, _grid_h * TILE_SCALE), false)
-	# статичные POI
+	# статичные POI. t7 «Туман открытия»: на карте мира туманные блипы не
+	# загораются (портал ещё неизвестен — арка в стартовой clearing всегда).
 	for poi in _pois:
+		if _zone == "worldmap" and not _fog_known(poi["t"]):
+			continue
 		_blip(ci, poi["t"], poi["c"], poi["s"], Vector2(ox, oy))
 	# мобы: группа "enemy" (мёртвый снят с группы — исчезает с радара сам)
 	var tree := get_tree()
@@ -424,6 +461,12 @@ func paint(ci: CanvasItem) -> void:
 				_blip(ci, t, C_BOSS, 4, Vector2(ox, oy))
 			else:
 				_blip(ci, t, C_MOB, 2, Vector2(ox, oy))
+	# t7 «Туман открытия»: вуаль поверх тайлов/блипов/мобов (клетка героя
+	# всегда открыта — герой под туман не попадает).
+	if _zone == "worldmap":
+		var ftex := _ensure_fog_tex()
+		if ftex != null:
+			ci.draw_texture_rect(ftex, Rect2(ox, oy, _grid_w * TILE_SCALE, _grid_h * TILE_SCALE), false)
 	# герой — белая точка с лучами
 	var pl: Node2D = world.player
 	if pl != null and is_instance_valid(pl):

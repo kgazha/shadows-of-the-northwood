@@ -8,6 +8,11 @@ extends Node2D
 ## (проход x=47..48, y=57..59) — арка back to village (E на клетке 'a').
 ## Публичный API: setup(p_world, p_map); cell_walkable/map_w/map_h/
 ## spawn_world_pos/portals_dict.
+## t7 «Туман открытия» (вердикт 25.11): поверх карты — кодовый слой тумана
+## (build_fog_overlay/refresh_fog) и гейт порталов (portal_fogged): в тумане
+## E по порталу не срабатывает («место туманное»), возврат через арку всегда
+## дозволен. Геометрия/коллайдеры/проходимость тумана НЕ видят (инвариант
+## GOLDEN-WM-PIN); туман — моделирует GameState.wm_fog (fog_of_war.gd).
 
 const TILE := 16
 const MANIFEST_PATH := "res://assets/world/world_regions.json"
@@ -33,6 +38,13 @@ var _slots := {}                      # имя тайла -> index
 var _props := {}                      # имя пропа -> регион-dict
 var _prop_tex: Texture2D
 var _rock_tex: Texture2D              # runtime-скала (STONE-рампа)
+# t7 «Туман открытия» (25.11): код-слой над картой. Image клетка-в-клетку
+# (map_w x map_h), Sprite2D масштаб 16x NEAREST — тёмная плитка с лёгким
+# шумом shash по CHAR-рампе; перерисовка только на reveal-событиях. Ни одной
+# геометрии/коллайдера: герой ходит по туману свободно (незнание, не стена).
+var fog_spr: Sprite2D = null
+var _fog_img: Image = null
+var _fog_tex: ImageTexture = null
 
 func setup(p_world: Node2D, p_map: Dictionary) -> void:
 	world = p_world
@@ -261,6 +273,61 @@ func _prop_h(pname: String) -> int:
 		return int(ForestArt.REGIONS[pname].size.y)
 	return 16
 
+# ---------------------------------------------------------------- туман (t7)
+## Слой тумана строится ОДИН раз после setup и посева clearing (world.
+## _ensure_worldmap); refresh — только на reveal-событиях (смена клетки героя,
+## вход в локацию, вход на карту). z=900 выше пропов и актёров: на туманной
+## клетке героя не бывает (клетка под герой-обзором всегда открыта).
+
+func build_fog_overlay() -> void:
+	if fog_spr != null or map_rows.is_empty():
+		return
+	_fog_img = Image.create(map_w, map_h, false, Image.FORMAT_RGBA8)
+	_fog_tex = ImageTexture.create_from_image(_fog_img)
+	_fog_tex.resource_name = "WorldmapFogV1"
+	fog_spr = Sprite2D.new()
+	fog_spr.name = "FogOfWarV1"
+	fog_spr.texture = _fog_tex
+	fog_spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	fog_spr.scale = Vector2(float(TILE), float(TILE))
+	fog_spr.position = Vector2(float(map_w * TILE) / 2.0, float(map_h * TILE) / 2.0)
+	fog_spr.z_as_relative = false
+	fog_spr.z_index = 900
+	add_child(fog_spr)
+	refresh_fog()
+
+## Перерисовка всей клеточной вуали (map_w*map_h пикселей — микросекунды) и
+## push в живую текстуру. Вызывается миром на reveal-событиях, не каждый кадр.
+func refresh_fog() -> void:
+	if _fog_img == null:
+		return
+	var fog = GameState.wm_fog
+	var lite := OW_PAL.c("CHAR", OW_PAL.T_OUTLINE)
+	var deep := OW_PAL.c("CHAR", OW_PAL.T_DARK)
+	for y in map_h:
+		for x in map_w:
+			if fog == null or fog.is_discovered(x, y):
+				_fog_img.set_pixel(x, y, Color(0, 0, 0, 0))
+				continue
+			var hh := OW.shash("fog:%d,%d" % [x, y])
+			var col: Color = deep if hh % 3 == 1 else lite
+			var a := 0.97
+			if hh % 3 == 1:
+				a = 0.93
+			elif hh % 3 == 2:
+				a = 0.90
+			col.a = a
+			_fog_img.set_pixel(x, y, col)
+	_fog_tex.update(_fog_img)
+
+## Портал в тумане (E не сработает)? Нет модели/нет портала — «не в тумане».
+func portal_fogged(b: String) -> bool:
+	var fog = GameState.wm_fog
+	if fog == null or not portals.has(b):
+		return false
+	var c: Vector2i = portals[b]
+	return not fog.is_discovered(c.x, c.y)
+
 # ---------------------------------------------------------------- интеракторы
 
 func _spawn_interactors() -> void:
@@ -350,8 +417,17 @@ class WorldPortal:
 		body_entered.connect(_on_enter)
 		body_exited.connect(_on_exit)
 	func get_hint() -> String:
+		# t7 «Туман открытия» (25.11): неизвестный портал — подсказка «туманное»
+		if zone.portal_fogged(biome):
+			return "Место туманное"
 		return String(OW.ZONE_NAMES.get(biome, "Локация")) + " — войти"
 	func try_interact() -> void:
+		# t7: E по порталу в тумане НЕ срабатывает — вход только после
+		# открытия клетки (обзор при ходьбе или вход в саму локацию).
+		if zone.portal_fogged(biome):
+			GameAudio.sfx("ui_deny")
+			GameState.toast.emit("Место туманное: сюда ещё не заглядывали. Пройди эти земли — карта запомнит.")
+			return
 		zone.world.enter_location(biome)
 	func _on_enter(b: Node) -> void:
 		if b.is_in_group("player"):

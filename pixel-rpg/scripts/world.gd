@@ -6,6 +6,9 @@ extends Node2D
 
 const TILE := 16
 const Nav := preload("res://scripts/nav.gd")
+# t7 «Туман открытия» (вердикт 25.11): модель discovered-поля карты мира +
+# константы радиусов (VIEW_R/ARC_R/PORTAL_R). Слой-вуаль — у самой зоны.
+const FOGW := preload("res://scripts/fog_of_war.gd")
 ## TILE-12 DISPOSITION (реестр diag-w4/audit.md §2; решение капитана по t3, 25.11):
 ## деревенский валун «r» рисует тайл 12, он же в списке блокирующих. Решение —
 ## «все три оставить с датированным комментарием»: A (это место) — определения
@@ -194,6 +197,7 @@ var ashen_map: Dictionary = {}
 ## (биом -> контейнер / сетка) + точки возврата на карте мира.
 var worldmap_zone: Node2D = null
 var worldmap_grid = null                # scripts/worldmap_zone.gd (слабо)
+var _fog_cell := Vector2i(-9999, -9999) # t7: последняя засвеченная клетка героя
 var biome_zone_cont := {}               # biome -> Node2D-контейнер
 var biome_grids := {}                   # biome -> scripts/biome_zone.gd (слабо)
 var loc_return := {}                    # biome -> Vector2 (отель портала на карте мира)
@@ -1073,6 +1077,10 @@ func _ensure_worldmap() -> bool:
 	var wz = load("res://scripts/worldmap_zone.gd").new()
 	worldmap_zone.add_child(wz)
 	wz.setup(self, OW.worldmap_map(GameState.run_seed))
+	# t7 «Туман открытия» (25.11): код-слой тумана над картой; посев стартовой
+	# clearing — на входе в зону (ветка _set_active_area), не здесь.
+	wz.build_fog_overlay()
+	_fog_cell = Vector2i(-9999, -9999)
 	worldmap_grid = wz
 	worldmap_zone.visible = false
 	worldmap_zone.process_mode = Node.PROCESS_MODE_DISABLED
@@ -1139,6 +1147,11 @@ func exit_worldmap() -> void:
 func enter_location(b: String) -> void:
 	if active_area == "loc_" + b or not _ensure_location(b):
 		return
+	# t7 «Туман открытия» (25.11): вход в локацию открывает её портал и
+	# окрестности на карте мира (PORTAL_R) — возврат всегда виден и дозволен.
+	var pc: Variant = OW.PORTAL_CELLS.get(b, null)
+	if pc != null and GameState.wm_fog != null:
+		GameState.wm_fog.reveal_disk(pc, FOGW.PORTAL_R)
 	var first: bool = str(GameState.flags.get("wm.open." + b, "")) != "1"
 	transition_to_area("loc_" + b, func():
 		if first:
@@ -1280,6 +1293,24 @@ func _process(delta: float) -> void:
 		hint_label.text = "E: " + near[0].get_hint()
 	_check_witch_done()
 	_update_cursor()
+	_fog_tick()
+
+## t7 «Туман открытия» (25.11): ходьба по карте мира открывает клетки в квадрате
+## VIEW_R по Чебышёву — СТОЛЬКО видит герой. Только знание: движение/коллайдеры
+## тумана не видят (t59-уроки: незнание не должно становиться стеной). Перерисовка
+## вуали — лишь когда появились НОВЫЕ клетки (сравнение клетки-стопа дешёвое).
+func _fog_tick() -> void:
+	if active_area != "worldmap" or worldmap_grid == null or player == null:
+		return
+	if GameState.wm_fog == null:
+		return
+	var c := Vector2i(int(floor(player.global_position.x / float(TILE))),
+			int(floor((player.global_position.y - float(OW.WM_OFFSET_Y) - 2.0) / float(TILE))))
+	if c == _fog_cell:
+		return
+	_fog_cell = c
+	if GameState.wm_fog.reveal_disk(c, FOGW.VIEW_R) > 0:
+		worldmap_grid.refresh_fog()
 
 # --- мышь: курсор и враги под курсором ---
 
@@ -1708,6 +1739,14 @@ func apply_area(area: String, teleport: bool = true) -> void:
 				var from_loc := prev.begins_with("loc_") and loc_return.has(prev.substr(4))
 				player.global_position = Vector2(0.0, OW.WM_OFFSET_Y) + worldmap_grid.spawn_world_pos() \
 					if not from_loc else loc_return[prev.substr(4)]
+				# t7 «Туман открытия» (вердикт «исследовать карту»): пустая модель
+				# (новый круг / легаси-сейв без ключа) получает clearing у спавна;
+				# сейв с туманом приносит своё поле. Затем — свежая перерисовка
+				# вуали (поле могло пополниться в локации) и перезапуск тика.
+				if GameState.wm_fog != null and GameState.wm_fog.discovered_count() == 0:
+					GameState.wm_fog.reveal_disk(worldmap_grid.spawn_tile, FOGW.ARC_R)
+				worldmap_grid.refresh_fog()
+			_fog_cell = Vector2i(-9999, -9999)
 		elif area.begins_with("loc_"):
 			# t3: вход в локацию — с её южной арки; на карте мира запоминаем,
 			# откуда вошли (обратный ход открывает портал у той же точки).
