@@ -42,6 +42,7 @@ func _ready() -> void:
 	await _n4_craft_counts()
 	await _n5_hotbar_mirror()
 	await _n6_save_v4_migration()
+	await _n8_affixes()  # t17: до N7 — тот добивает героя (экран итогов)
 	await _n7_window_gates()
 	print("QA INV: %d проверок" % (passes + fails))
 	print("QA_INV_RESULT %d/%d fails=%s" % [passes, passes + fails, "none" if fails == 0 else "see above"])
@@ -451,3 +452,64 @@ func _n7_window_gates() -> void:
 	await _fr(3)
 	_check(not Inventory.is_open() and not Shop.is_open() and not jr.is_open(),
 			"N7: стенд закрыт без висящих окон игры")
+
+# ---------------- N8 аффиксы в окне (t17, DESIGN_DEPTH_V2 §1, 25.11) ----------------
+# Взгляд живого окна: качество в имени/канте, честная строка аффикса,
+# клик из сумки разворачивает бонус в стат. Пин-билд совпадает с G10
+# стойки qa_gear: меч x2 + мастерство +45% + заточка +49% = 9, «Острый
+# край» = 10. Н7 добивает героя, поэтому диспетч зовёт N8 до N7.
+
+func _n8_affixes() -> void:
+	print("== N8: аффиксы в окне — имя, кант, подсказка, клик надевания ==")
+	_empty_inv()
+	GameState.gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
+	GameState.owned_gear = ["sword"]
+	GameState.affixes = {"sword": ["keen"]}
+	GameState.sharpen = {"sword": 5}
+	GameState.flags["meta.master"] = 3
+	GameState.has_amulet = false
+	var d0 := GameState.damage
+	# Из сумки молчит всё: ни аффикса, ни заточки (база 2 x мастерство 1.45 = 3).
+	_check(d0 == 3, "N8: контроль — из сумки аффикс и заточка молчат (%d)" % d0)
+	_key(KEY_I)
+	await _fr(3)
+	_check(Inventory.is_open(), "N8: окно открыто")
+	var ids: Array = Inventory.gear_view_ids()
+	var i0 := ids.find("sword")
+	_check(i0 >= 0, "N8: меч виден в сумке")
+	var btn: Button = invn.bag_cells[i0]["btn"] as Button
+	var sb := btn.get_theme_stylebox("normal") as StyleBoxFlat
+	_check(sb != null and sb.border_color == GearData.RARITY_COLORS["rare"] \
+			and sb.border_width_left == 2,
+			"N8: синий кант добротной вещи в живой сетке (повтор палитры family)")
+	_check(String(btn.tooltip_text).contains("добротная") \
+			and String(btn.tooltip_text).contains("Острый край: урон +10%"),
+			"N8: подсказка — качество и честная строка аффикса хвостом")
+	invn._on_bag_pressed(i0)
+	await _fr(3)
+	_check(GearData.equipped_id(GameState, "weapon") == "sword" and GameState.damage == 10,
+			"N8: клик надел — стат %d -> %d (аффикс работает только надетым)" % [d0, GameState.damage])
+	GameState.affixes["sword"] = ["keen", "lethal"]
+	invn._refresh_gear()
+	await _fr(1)
+	var sb2 := (invn.bag_cells[i0]["btn"] as Button).get_theme_stylebox("normal") as StyleBoxFlat
+	_check(sb2 != null and sb2.border_color == GearData.RARITY_COLORS["epic"] \
+			and String((invn.bag_cells[i0]["btn"] as Button).tooltip_text).contains("реликтовая"),
+			"N8: реликтовая — фиолетовый кант и имя при перерисовке")
+	# регресс обычной вещи: без аффиксов — ни суффикса, ни цветного канта (1:1)
+	GameState.affixes = {}
+	invn._refresh_gear()
+	await _fr(1)
+	var tip3 := String((invn.bag_cells[i0]["btn"] as Button).tooltip_text)
+	var sb3 := (invn.bag_cells[i0]["btn"] as Button).get_theme_stylebox("normal") as StyleBoxFlat
+	_check(not tip3.contains("добротная") and not tip3.contains("реликтовая") \
+			and sb3 != null and sb3.border_color != GearData.RARITY_COLORS["rare"],
+			"N8: обычная вещь без аффиксов — подсказка и кант прежние 1:1")
+	_key(KEY_I)
+	await _fr(3)
+	# за собой чисто: N7 работает с живым героем и пустым снаряжением
+	GameState.owned_gear = []
+	GameState.gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
+	GameState.sharpen = {}
+	GameState.flags["meta.master"] = 0
+	GameState.stats_changed.emit()

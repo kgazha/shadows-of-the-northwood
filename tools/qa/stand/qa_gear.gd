@@ -27,7 +27,12 @@ extends Node
 ##     мечи и щиты»): матрица 3x3, слот shield, гейт экипировки с причиной,
 ##     «не твоя рука» покупается но не надевается, легаси-сейв снимает чужое
 ##     одноразовым тостом, щит = плоская броня, мана-потолок посохов,
-##     FNV-иконки листа tools_art/sheet_weapons_v1.gd.
+##     FNV-иконки листа tools_art/sheet_weapons_v1.gd;
+##  G10 аффиксы (t17, DESIGN_DEPTH_V2 §1, 25.11): пул 8 / 15%+5% / 50 кейсов
+##     shash-бит-в-бит (источник — tools_art/affix_cases_dump.gd, двойной пин
+##     FNV) / статы только с надетого / цена x(1+0.5n) / сейв v4-аддитив +
+##     легаси + адверсариал / дроп-ролл без дублей / сине-фиолетовый кант и
+##     качество в подсказке.
 
 const MAIN_SCENE := "res://scenes/main.tscn"
 const SAVE := "user://save_morkheim.json"
@@ -64,6 +69,7 @@ func _ready() -> void:
 	await _g7_save()
 	await _g8_canon()
 	await _g9_world_art()
+	await _g10_affixes()
 	print("QA GEAR: %d проверок" % (passes + fails))
 	print("QA_GEAR_RESULT %d/%d fails=%s" % [passes, passes + fails, "none" if fails == 0 else "see above"])
 	get_tree().quit(0 if fails == 0 else 1)
@@ -141,6 +147,7 @@ func _empty_gear() -> void:
 	GameState.gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
 	GameState.owned_gear = []
 	GameState.sharpen = {}
+	GameState.affixes = {}  # t17: чистая экипировка = и чистые аффиксы
 	GameState.has_sword = false
 	GameState.has_amulet = false
 	GameState.gear_gate_note = ""  # t10: заметка легаси-гейта не наследуется
@@ -1036,3 +1043,272 @@ func _g9_world_art() -> void:
 		if String((shopn.rack_rects[rid] as TextureRect).tooltip_text) == "":
 			tips_ok = false
 	_check(tips_ok, "G9: у каждого кадра стойки — tooltip с названием предмета")
+
+# ---------------- G10 аффиксы (t17, DESIGN_DEPTH_V2 §1, 25.11) ----------------
+# Пул 8 / редкости 15%+5% / shash-детерминизм / сейв v4-аддитив / цена / UI.
+# Источник истины таблицы ниже — tools_art/affix_cases_dump.gd (headless -s,
+# чистый модуль affixes.gd); канон сверен НЕЗАВИСИМОЙ реимплементацией FNV
+# (питон-дабл-пин 50/50, прецедент двойного пина shash в qa_world).
+
+## 50 детерминизм-кейсов "seed|cell|ordinal" -> ролл. Регенерация таблицы —
+## сознательный датированный перепин при смене канона, не тихая правка.
+const AFFIX_ROLL_CASES := {
+		"7|0,0|0": [],
+		"7|0,0|1": [],
+		"7|0,0|2": [],
+		"7|0,0|7": ["keen"],
+		"7|0,0|4242": [],
+		"7|5,21|1": ["keen"],
+		"7|5,21|0": [],
+		"7|5,21|2": [],
+		"7|5,21|7": [],
+		"7|5,21|4242": ["mending"],
+		"7|17,-4|0": ["keen", "swift"],
+		"7|17,-4|1": [],
+		"7|17,-4|2": [],
+		"7|17,-4|7": [],
+		"7|17,-4|4242": [],
+		"7|chest:village@9,12|0": [],
+		"7|chest:village@9,12|1": [],
+		"7|chest:village@9,12|2": [],
+		"7|chest:village@9,12|7": [],
+		"7|chest:village@9,12|4242": [],
+		"7|chest:ashen|0": ["hardened"],
+		"7|chest:ashen|1": [],
+		"7|chest:ashen|2": [],
+		"7|chest:ashen|7": ["keen"],
+		"7|chest:ashen|4242": [],
+		"777|0,0|0": [],
+		"777|0,0|1": ["gilded", "deepwell"],
+		"777|0,0|2": [],
+		"777|0,0|7": [],
+		"777|0,0|4242": ["hardened"],
+		"777|5,21|0": [],
+		"777|5,21|1": [],
+		"777|5,21|2": [],
+		"777|5,21|7": [],
+		"777|5,21|4242": ["swift", "keen"],
+		"777|17,-4|0": ["quickhand"],
+		"777|17,-4|1": [],
+		"777|17,-4|2": [],
+		"777|17,-4|7": [],
+		"777|17,-4|4242": ["quickhand"],
+		"777|chest:village@9,12|0": [],
+		"777|chest:village@9,12|1": [],
+		"777|chest:village@9,12|2": [],
+		"777|chest:village@9,12|7": [],
+		"777|chest:village@9,12|4242": [],
+		"777|chest:ashen|0": [],
+		"777|chest:ashen|1": [],
+		"777|chest:ashen|2": ["mending"],
+		"777|chest:ashen|7": [],
+		"777|chest:ashen|4242": [],
+}
+
+func _g10_affixes() -> void:
+	print("== G10: аффиксы — пул/детерминизм/статы/цена/сейв/дроп/UI (t17) ==")
+	_empty_gear()
+	# G10.1 пул: 8 записей, имя + две ступени текста + число — в одном реестре;
+	# цвета качества — ПОВТОР существующих палитр family (синий/фиолетовый).
+	var pool_ok := GearData.AFFIX_ORDER.size() == 8
+	for aid in GearData.AFFIX_ORDER:
+		var d: Dictionary = GearData.AFFIXES.get(String(aid), {})
+		pool_ok = pool_ok and d.has("name") \
+				and (d.get("text", []) as Array).size() == 2 \
+				and (GearData.AFFIX_VALUES.get(String(aid), []) as Array).size() == 2
+	_check(pool_ok, "G10: пул 8 — имя/2 ступени текста/2 ступени значения в одном реестре")
+	_check(GearData.QUALITY_RARITY[1] == "rare" and GearData.QUALITY_RARITY[2] == "epic" \
+			and GearData.RARITY_COLORS.has("rare") and GearData.RARITY_COLORS.has("epic"),
+			"G10: добротная=синий(\"rare\"), реликтовая=фиолетовый(\"epic\") — повтор палитр, новых цветов нет")
+	# G10.2 бит-в-бит 50/50 + идемпотентность + force_relic (t18/t19 API)
+	var det_ok := true
+	for key in AFFIX_ROLL_CASES:
+		var p: PackedStringArray = String(key).split("|")
+		if Loot.affix_roll(int(p[0]), String(p[1]), int(p[2])) != (AFFIX_ROLL_CASES[key] as Array):
+			det_ok = false
+	_check(det_ok, "G10: 50 детерминизм-кейсов бит-в-бит (источник — dump affixes.gd)")
+	var twice_ok := true
+	for key in AFFIX_ROLL_CASES:
+		var p: PackedStringArray = String(key).split("|")
+		if Loot.affix_roll(int(p[0]), String(p[1]), int(p[2])) \
+				!= Loot.affix_roll(int(p[0]), String(p[1]), int(p[2])):
+			twice_ok = false
+	_check(twice_ok, "G10: повторный вызов идентичен (скрытого состояния/рандума нет)")
+	var fr: Array = Loot.affix_roll(777, "0,0", 0, true)
+	_check(fr.size() == 2 and fr[0] != fr[1] and GearData.AFFIXES.has(String(fr[0])) \
+			and GearData.AFFIXES.has(String(fr[1])),
+			"G10: force_relic — ровно 2 разных известных аффикса (гарантия t18/t19 тем же параметром)")
+	# G10.3 эконом-срез шансов на 2000 ключей (вилка BALANCE: ~15% + ~5%)
+	var relic_n := 0
+	var any_n := 0
+	for i in 2000:
+		var n := Loot.affix_roll(20261125, "e,%d" % i, 0).size()
+		if n == 2:
+			relic_n += 1
+		any_n += n
+	_check(relic_n >= 60 and relic_n <= 140 and any_n >= 440 and any_n <= 560,
+			"G10: эконом-срез 2000 ключей — реликтовых %d (~5%%), ячеек аффиксов %d (~25%% = 15%% + 2 x 5%%)" % [relic_n, any_n])
+	# G10.4 статы: работают ТОЛЬКО на надетом (канон оружия того же STAND'а).
+	# Пин-билд: старый меч (x2, без плоского) + мастерство 3 (+45%) + заточка 5
+	# (+49%) — база round(2 x 2.0 x 1.45 x 1.49) = 9; на ней ступени «Острого
+	# края» различимы ДО округления (6-плаские клинки съели бы дельту).
+	_set_cls("warrior")
+	_empty_gear()
+	_give("sword", "weapon")
+	GameState.has_amulet = false  # пин-билд без плоских +1: амулет в пине не участвует
+	GameState.flags["meta.master"] = 3
+	GameState.sharpen["sword"] = 5
+	var d0 := GameState.damage
+	_check(d0 == 9, "G10: контроль пин-билда (меч x2, мастерство +45%%, заточка +49%%) = %d" % d0)
+	GameState.affixes["sword"] = ["keen"]
+	_check(GameState.damage == 10 and GameState.damage > d0,
+			"G10: «Острый край» надетого оружия — урон %d -> %d (порядок: мастерство -> аффикс -> заточка)" % [d0, GameState.damage])
+	_check(is_equal_approx(GearData.affix_sum(GameState, "keen"), 0.10),
+			"G10: ступень добротной — ровно +10% (значение из одного реестра)")
+	GameState.affixes["sword"] = ["keen", "lethal"]
+	_check(is_equal_approx(GearData.affix_sum(GameState, "keen"), 0.15),
+			"G10: ступень реликтовой — ровно +15% (ступень = качество носителя)")
+	GameState.equip_item("weapon", "")
+	# Без оружия база = 2 x 1.0 x 1.45(мастерство) = 2.9 -> 3: ни аффикса,
+	# ни множителя оружия, ни заточки — сумка молчит целиком.
+	_check(GearData.affix_sum(GameState, "keen") == 0.0 and GameState.damage == 3,
+			"G10: аффикс БЕЗ носителя надетым — ноль (сумка бонусов не даёт): урон %d" % GameState.damage)
+	GameState.affixes.clear()
+	GameState.flags["meta.master"] = 0
+	GameState.sharpen = {}
+	_give("leather", "armor")
+	var a0 := GearData.armor_bonus(GameState)
+	GameState.affixes["leather"] = ["hardened"]
+	_check(GearData.armor_bonus(GameState) == a0 + 1, "G10: «Латаная кромка» — броня +1 (добротная)")
+	GameState.affixes["leather"] = ["hardened", "gilded"]
+	_check(GearData.armor_bonus(GameState) == a0 + 2, "G10: реликтовая ступень — броня +2")
+	# мана: маг + «Глубокий колодец» на НАДЕТОЙ броне (пересчёт на всех слотах)
+	GameState.affixes.clear()
+	_set_cls("mage")
+	var m0 := GameState.max_mana
+	_check(m0 > 0, "G10: контроль — маг с маной (%d)" % m0)
+	GameState.affixes["leather"] = ["deepwell"]
+	GameState.recalc_max_mana()
+	_check(GameState.max_mana == int(round(float(m0) * 1.15)),
+			"G10: «Глубокий колодец» — потолок маны +15%% и на броне (%d -> %d)" % [m0, GameState.max_mana])
+	GameState.affixes.clear()
+	GameState.recalc_max_mana()
+	_set_cls("warrior")
+	# лечение: «Тёплая нить» в канале GameState.heal
+	_give("leather", "armor")
+	GameState.affixes["leather"] = ["mending"]
+	GameState.hp = 1
+	GameState.heal(5)
+	_check(GameState.hp == 1 + int(round(5.0 * 1.1)),
+			"G10: «Тёплая нить» — получение лечения +10%% через GameState.heal (hp %d)" % GameState.hp)
+	# откат умений и крит — source-пины точек (формула видна в источнике;
+	# живой каст требует маны/цели — проверен qa_tal/qa_c1 каналами скиллов)
+	var psrc := FileAccess.get_file_as_string("res://scripts/player.gd")
+	_check(psrc.contains("skill_cd[i] = float(sd.cd) * (1.0 - GearData.affix_sum(GameState, \"quickhand\"))"),
+			"G10: «Быстрая рука» — откат скиллов x0.9 в точке установки КД (источник-пин)")
+	_check(psrc.contains("var crit := GearData.affix_sum(GameState, \"lethal\")") \
+			and psrc.contains("if crit > 0.0 and randf() < crit:"),
+			"G10: «Верная щель» — крит x2 в dmg_vs; без аффикса randf() НЕ зовётся (старые пины урона 1:1)")
+	_check(psrc.contains("velocity *= 1.0 + GearData.affix_sum(GameState, \"swift\")"),
+			"G10: «Быстрая поступь» — скорость хода +5% поверх талантов (источник-пин)")
+	# G10.5 цена продажи: половина покупки x (1 + 0.5 x аффиксы)
+	GameState.affixes.clear()
+	var p12 := GearData.price("leather")
+	var base_sell := GearData.sell_price("leather")
+	_check(GearData.sell_price_of(GameState, "leather") == base_sell, "G10: без аффиксов — прежняя цена 1:1")
+	GameState.affixes["leather"] = ["keen"]
+	_check(GearData.sell_price_of(GameState, "leather") == int(round(float(base_sell) * 1.5)),
+			"G10: добротная сдаётся в полтора раза дороже (%d -> %d)" % [base_sell, GearData.sell_price_of(GameState, "leather")])
+	GameState.affixes["leather"] = ["keen", "lethal"]
+	_check(GearData.sell_price_of(GameState, "leather") == int(round(float(base_sell) * 2.0)),
+			"G10: реликтовая — вдвое дороже базы (BALANCE-строка)")
+	GameState.affixes["leather"] = ["keen"]
+	_check(GearData.sell_price_of(GameState, "__ghost__") == 0, "G10: неизвестный id — 0 и с аффиксами")
+	# G10.6 живой дроп: seed+клетка+ordinal -> бит-в-бит; повтор не дублирует
+	_empty_gear()
+	GameState.run_seed = 4242
+	var ysel := -1
+	var exp: Array = []
+	for y in 200:
+		var e2: Array = Loot.affix_roll(4242, "0,%d" % y, 1)
+		if not e2.is_empty():
+			ysel = y
+			exp = e2
+			break
+	_check(ysel >= 0, "G10: контроль — найден детерминированный дроп-кейс (клетка 0,%d)" % ysel)
+	var hooked := GameState.toast.is_connected(_toast_g8)
+	if not hooked:
+		GameState.toast.connect(_toast_g8)
+	_toasts = []
+	Loot.test_roll = 0.04
+	Loot.on_mob_death("slime", Vector2(8, ysel * 16 + 8))
+	_check(GameState.owned_gear.has("shortsword") \
+			and GameState.affixes.get("shortsword") == exp,
+			"G10: дроп — аффиксы бит-в-бит от (seed, клетка, ordinal): %s" % str(GameState.affixes.get("shortsword")))
+	var quality_toast := false
+	for m in _toasts:
+		if String(m).contains("добротная") or String(m).contains("реликтовая"):
+			quality_toast = true
+	_check(quality_toast, "G10: тост дропа называет качество («Трофей: … — добротная!»)")
+	Loot.on_mob_death("slime", Vector2(8, ysel * 16 + 8))
+	_check(GameState.owned_gear.size() == 1 and GameState.affixes.get("shortsword") == exp,
+			"G10: повторный вход в клетку — предмет НЕ дублируется, аффиксы целы")
+	Loot.test_roll = -1.0
+	if not hooked:
+		GameState.toast.disconnect(_toast_g8)
+	# G10.7 сейв: roundtrip / легаси v4 без ключа / адверсариал
+	_empty_gear()
+	_give("nordsword", "weapon")
+	GameState.affixes["nordsword"] = ["keen", "gilded"]
+	_check(GameState.save_game(), "G10: сейв записан")
+	var dd: Dictionary = GameState.to_dict()
+	_check(((dd.get("inv", {}) as Dictionary)).has("affixes") and int(dd.get("v", 0)) == 4,
+			"G10: inv.affixes — аддитивный ключ v4-контейнера (версия не тронута)")
+	GameState.affixes = {}
+	_check(GameState.load_game() and GameState.affixes.get("nordsword") == ["keen", "gilded"],
+			"G10: roundtrip — аффиксы пережили сейв/загрузку")
+	_write_raw(JSON.stringify({
+		"v": 4, "class_id": "warrior", "level": 1, "seen_intro": true,
+		"inv": {"bag": ["nordsword"]},
+	}))
+	_check(GameState.load_game() and GameState.affixes.is_empty() \
+			and GameState.owned_gear.has("nordsword"),
+			"G10: легаси v4 без ключа — всё обычное, миграции нет")
+	_write_raw(JSON.stringify({
+		"v": 4, "class_id": "warrior", "level": 1, "seen_intro": true,
+		"inv": {"bag": ["nordsword"], "affixes": {
+			"nordsword": ["keen", "keen", "__ghost__"], "ghost": ["swift"]}},
+	}))
+	_check(GameState.load_game() and GameState.affixes.get("nordsword") == ["keen"] \
+			and GameState.affixes.size() == 1,
+			"G10: адверсариал — только известные id, дедуп, сироты из мусора дохлы")
+	GameState.start_fresh_game()
+	_check(GameState.affixes.is_empty() and GameState.owned_gear.is_empty(),
+			"G10: новый забег — аффиксы сгорают вместе с сумкой")
+	# G10.8 UI: кант и имя по качеству-инстансу, честные строки в подсказке
+	_empty_gear()
+	Inventory.open()
+	await _fr(2)
+	GameState.ensure_gear("shortsword")
+	GameState.affixes["shortsword"] = ["keen"]
+	invn._refresh_gear()
+	await _fr(1)
+	var ids: Array = Inventory.gear_view_ids()
+	var cell1: Dictionary = invn.bag_cells[ids.find("shortsword")]
+	var sb1 := (cell1["btn"] as Button).get_theme_stylebox("normal") as StyleBoxFlat
+	_check(sb1 != null and sb1.border_color == GearData.RARITY_COLORS["rare"] \
+			and sb1.border_width_left == 2,
+			"G10: синий кант 2px на добротной обычной вещи (раньше была бы белая)")
+	_check(String(cell1["btn"].tooltip_text).contains("добротная") \
+			and String(cell1["btn"].tooltip_text).contains("Острый край: урон +10%"),
+			"G10: в подсказке — качество и честная строка аффикса")
+	GameState.affixes["shortsword"] = ["keen", "lethal"]
+	invn._refresh_gear()
+	await _fr(1)
+	var sb2 := (cell1["btn"] as Button).get_theme_stylebox("normal") as StyleBoxFlat
+	_check(sb2 != null and sb2.border_color == GearData.RARITY_COLORS["epic"],
+			"G10: реликтовая — фиолетовый кант")
+	_check(String(cell1["btn"].tooltip_text).contains("реликтовая"),
+			"G10: имя называет реликтовую")
+	Inventory.close()
+	_empty_gear()

@@ -286,6 +286,83 @@ static func rarity_color(id: String) -> Color:
 static func rarity_name(id: String) -> String:
 	return String(RARITY_NAMES.get(rarity_of(id), ""))
 
+# --- t17 «Глубина v2 §1: Аффиксы» (25.11, docs/DESIGN_DEPTH_V2.md) ----------
+# Каталог, значения и ролл живут в ЧИСТОМ модуле scripts/affixes.gd
+# (ни GameState, ни randf — компилируется в headless -s, детерминизм-таблицы
+# воспроизводятся без игры). Здесь — алиасы реестра и точки применения
+# множителей к статам. Аффиксы дают ТОЛЬКО надетые вещи; из сумки — только
+# цена продажи (sell_price_of). Ролл дропа — Loot.affix_roll (тот же канон).
+
+const AFFIX_SRC := preload("res://scripts/affixes.gd")
+const AFFIX_ORDER: Array = AFFIX_SRC.AFFIX_ORDER
+const AFFIXES: Dictionary = AFFIX_SRC.AFFIXES
+const AFFIX_VALUES: Dictionary = AFFIX_SRC.AFFIX_VALUES
+const QUALITY_NAMES: Dictionary = AFFIX_SRC.QUALITY_NAMES
+const QUALITY_RARITY: Dictionary = AFFIX_SRC.QUALITY_RARITY
+
+static func affix_count(gs: Object, id: String) -> int:
+	if gs == null:
+		return 0
+	var av: Variant = gs.get("affixes")
+	if typeof(av) != TYPE_DICTIONARY:
+		return 0
+	var la: Variant = (av as Dictionary).get(id, [])
+	return mini(2, (la as Array).size()) if typeof(la) == TYPE_ARRAY else 0
+
+## Список аффиксов конкретной вещи-инстанса ([] — обычная).
+static func affix_list(gs: Object, id: String) -> Array:
+	if gs == null:
+		return []
+	var av: Variant = gs.get("affixes")
+	if typeof(av) != TYPE_DICTIONARY:
+		return []
+	var la: Variant = (av as Dictionary).get(id, [])
+	return la if typeof(la) == TYPE_ARRAY else []
+
+## Качество-instance: 0 обычная / 1 добротная / 2 реликтовая.
+static func quality_of(gs: Object, id: String) -> int:
+	return affix_count(gs, id)
+
+static func quality_name(gs: Object, id: String) -> String:
+	return String(QUALITY_NAMES.get(quality_of(gs, id), ""))
+
+## Ключ цвета для имени/канта: качество-instance поверх статной редкости
+## (вещь с аффиксами — её инстанс-качество; без аффиксов — прежнее 1:1).
+static func display_rarity(gs: Object, id: String) -> String:
+	var q := String(QUALITY_RARITY.get(quality_of(gs, id), ""))
+	return q if q != "" else rarity_of(id)
+
+## Сумма множителя kind по ВСЕМ надетым вещам (null gs — 0.0). kind — id
+## аффикса; ступень значения берется по качеству вещи-носителя.
+static func affix_sum(gs: Object, kind: String) -> float:
+	if gs == null:
+		return 0.0
+	var total := 0.0
+	for slot in ["weapon", "armor", "shield", "relic"]:
+		var id := equipped_id(gs, slot)
+		if id == "":
+			continue
+		var n := affix_count(gs, id)
+		for a in affix_list(gs, id):
+			if String(a) == kind and AFFIX_VALUES.has(kind):
+				total += float((AFFIX_VALUES[kind] as Array)[clampi(n - 1, 0, 1)])
+	return total
+
+## Честные строки аффиксов для подсказки («Острый край: урон +10%»),
+## ступень — по качеству вещи.
+static func affix_lines(gs: Object, id: String) -> String:
+	var n := quality_of(gs, id)
+	if n == 0:
+		return ""
+	var parts: Array = []
+	for a in affix_list(gs, id):
+		var d: Dictionary = AFFIXES.get(String(a), {})
+		if d.is_empty():
+			continue
+		parts.append("%s: %s" % [String(d.get("name", a)),
+				String((d.get("text", ["", ""]) as Array)[clampi(n - 1, 0, 1)])])
+	return "\n".join(PackedStringArray(parts))
+
 ## Степень заточки надетого оружия (0 — нет оружия/не точили).
 static func sharpen_tier(gs: Object) -> int:
 	if gs == null:
@@ -431,6 +508,15 @@ static func sell_price(id: String) -> int:
 		return 0
 	return maxi(1, p / SELL_DIV)
 
+## t17 (DESIGN_DEPTH_V2 §1, 25.11): цена продажи вещи-инстанса — половина
+## покупки x (1 + 0.5 x кол-во аффиксов), т.е. добротная +50%, реликтовая
+## +100% к обычной цене сдачи. Без аффиксов — прежнее sell_price 1:1.
+static func sell_price_of(gs: Object, id: String) -> int:
+	var p := sell_price(id)
+	if p <= 0:
+		return 0
+	return maxi(1, int(round(float(p) * (1.0 + 0.5 * float(affix_count(gs, id))))))
+
 # --- производные статы (параметр gs — GameState; null считается «голым» героем) ---
 
 ## Надетый item id в слоте ("weapon"/"armor"); "" — слот пуст или gs нет.
@@ -470,6 +556,9 @@ static func armor_bonus(gs: Object) -> int:
 		b += int(sh.get("armor_bonus", 0))
 	if gs != null:
 		b += gs.tal_rank("skin")
+	# t17 (25.11, DESIGN_DEPTH_V2 §1): аффикс «Латаная кромка» надетых брони/щита
+	# — тот же плоский канал, +1 (добротная) / +2 (реликтовая).
+	b += int(round(affix_sum(gs, "hardened")))
 	return b
 
 ## t10 (25.11): мана-потолок надетого посоха (только staff из слота weapon;
@@ -519,6 +608,10 @@ static func player_damage(base: int, gs: Object, skip_weapon_part: bool = false)
 	# Формула каноническая (см. шапку): база x оружие x мастерство, ярость —
 	# множит, амулет и тяжёлый удар — плоские +1 до округления.
 	var d := float(base) * (weapon_mult(gs) + w_add) * (1.0 + 0.15 * f)
+	# t17 (25.11, DESIGN_DEPTH_V2 §1): аффикс «Острый край» надетого оружия —
+	# множитель урона +10% (добротная) / +15% (реликтовая), ложится сразу после
+	# мастерства, до заточки/плоского бонуса/ярости.
+	d *= 1.0 + affix_sum(gs, "keen")
 	if not skip_weapon_part:
 		# g20b: заточка — накопленный множитель ступени (5/12/22/34/49%),
 		# ложится поверх мастерства; плоский бонус нового оружия добавляем

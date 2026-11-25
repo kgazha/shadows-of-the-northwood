@@ -74,6 +74,9 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 	# t20 «Глубокие карманы» мета-доски (meta.mb.deep_pockets): +8/16/24% золота
 	# мобов за ранг — последняя надбавка перед выдачей (поверх волны/угорь/жадность).
 	gold = int(round(gold * (1.0 + 0.01 * float(GameState.mb_value("deep_pockets")))))
+	# t17 (25.11, DESIGN_DEPTH_V2 §1): аффикс «Золотая жилка» надетой вещи —
+	# золотой лут мобов +10% (последняя надбавка; тот же канал, что и сундуки).
+	gold = int(round(gold * (1.0 + GearData.affix_sum(GameState, "gilded"))))
 	GameState.add_gold(gold)
 	GameAudio.sfx("coin")
 	GameState.toast.emit("+%d зол." % gold)
@@ -85,6 +88,8 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 ## Возвращает выданное золото (для тестов/журналов).
 static func chest_reward(gs: Node) -> int:
 	var gold := randi_range(8, 18)
+	# t17 (25.11): аффикс «Золотая жилка» — и сундучное золото +10% (тот же канал).
+	gold = int(round(gold * (1.0 + GearData.affix_sum(gs, "gilded"))))
 	gs.add_gold(gold)
 	GameAudio.sfx("coin")
 	gs.toast.emit("В сундуке: +%d зол." % gold)
@@ -99,6 +104,24 @@ static func chest_reward(gs: Node) -> int:
 
 static func _ow_gold_belt_mult(b: int) -> float:
 	return 1.0 + OW.GOLD_BELT_STEP * float(b)
+
+# --- t17 «Глубина v2 §1: Аффиксы» (25.11, docs/DESIGN_DEPTH_V2.md) ----------
+# Канон ролла и реестр — в ЧИСТОМ модуле scripts/affixes.gd (детерминизм
+# shash-канона, компилируется headless -s без автозагрузок). Здесь — фасад:
+# вызовы стендов и кода дропа идут через Loot, как через единую точку лута.
+
+const AFFIX := preload("res://scripts/affixes.gd")
+
+## Детерминированный ролл аффиксов дропа: shash(run_seed, cell, drop_ordinal)
+## (docstring канона — в affixes.gd). force_relic — гарантия реликтовой роли
+## (t18/t19/t20 заходят этим же параметром).
+static func affix_roll(run_seed: int, cell: String, drop_ordinal: int,
+		force_relic: bool = false) -> Array:
+	return AFFIX.affix_roll(run_seed, cell, drop_ordinal, force_relic)
+
+## Ключ клетки из мировой точки (TILE 16, канон world.gd).
+static func cell_key(pos: Vector2) -> String:
+	return AFFIX.cell_key(pos)
 
 ## Монеты из строки таблицы: [min, max] — равномерный бросок, int — сумма.
 static func _roll_gold(v: Variant) -> int:
@@ -127,22 +150,48 @@ static func _give_gear(gs: Node, id: String, world_pos: Vector2 = Vector2.ZERO, 
 		return
 	if not gs.ensure_gear(id):
 		return
+	# t17 (25.11): ролл аффиксов выпавшей вещи — детерминированно от
+	# (run_seed, клетка, ordinal=размер сумки после покупки). Повторный дроп
+	# сюда не доходит: ensure_gear уникален, аффиксы первого дропа целы.
+	_roll_instance_affixes(gs, id, cell_key(world_pos))
 	var it := GearData.item(id)
 	var rn := GearData.rarity_name(id)
+	# тост: качество-инстанс (добротная/реликтовая) важнее статной редкости —
+	# без аффиксов строка байт-в-байт прежняя.
+	var qn := GearData.quality_name(gs, id)
+	if qn != "":
+		rn = qn
 	GameAudio.sfx("potion")
 	gs.toast.emit("Трофей: %s%s!" % [String(it.get("name", id)), (" — " + rn) if rn != "" else ""])
-	if world != null and GearData.rarity_of(id) != "":
-		Fx.gear_glint(world_pos, world, GearData.rarity_color(id))
+	if world != null and GearData.rarity_color(id) != Color(0, 0, 0, 0):
+		Fx.gear_glint(world_pos, world,
+				GearData.RARITY_COLORS.get(GearData.display_rarity(gs, id), GearData.rarity_color(id)))
+
+## Общая точка ролла (моб-дроп и сундучные сеты): пусто — обычная (не пишем
+## ключ), непусто — в affixes GameState (сейв подхватит автосейвом ensure_gear).
+static func _roll_instance_affixes(gs: Node, id: String, cell: String,
+		force_relic: bool = false) -> void:
+	var affs := affix_roll(int(gs.run_seed), cell, int(gs.owned_gear.size()), force_relic)
+	if not affs.is_empty():
+		gs.affixes[id] = affs
 
 ## g20b (вердикт §4 «гарантированные наборы»): выдача сундучного сета
 ## снаряжения (деревня — краткий меч+кожа, пещера — северяне+кольчуга,
 ## Пепелище — клыко-клинок+шкура вепря). Один сундук открывается один раз,
 ## значит и сет один раз (used/chests_used — канон T2).
-static func grant_gear_set(gs: Node, ids: Array) -> void:
+## t17 (25.11): cell/force_relic — детерминированный ролл аффиксов сундучных
+## вещей (клетка сундука стабильна под повторными входами; force_relic —
+## гарантия реликтовой роли для сундуков микро-подземелий t19/t20 и финала
+## квестовой цепочки пояса t18 — заходят ЭТИМ же параметром). Пустая cell —
+## ролла нет, сет байт-в-байт прежний (вызывается headless-QA без карты).
+static func grant_gear_set(gs: Node, ids: Array, cell: String = "",
+		force_relic: bool = false) -> void:
 	var got: Array = []
 	for gid in ids:
 		var id := String(gid)
 		if gs.ensure_gear(id):
+			if cell != "":
+				_roll_instance_affixes(gs, id, cell, force_relic)
 			got.append(String(GearData.item(id).get("name", id)))
 	if not got.is_empty():
 		GameAudio.sfx("coin")

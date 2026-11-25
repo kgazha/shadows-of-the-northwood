@@ -268,7 +268,7 @@ func _build() -> void:
 	craft_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	craft_btn.pressed.connect(_on_craft_torch)
 	list_vb.add_child(craft_btn)
-	sell_head = _section_label("Скупка (сдам надетое вдвое дешевле):")
+	sell_head = _section_label("Скупка (сдам надетое вдвое дешевле; аффиксы дорожают):")
 	list_vb.add_child(sell_head)
 	for slot in ["weapon", "shield", "armor"]:  # t10: щит — тоже скупаем (слот рядом с оружием)
 		var sbtn := Button.new()
@@ -682,13 +682,14 @@ func _on_sell(slot: String) -> void:
 	if _external_lock():
 		return  # аналогично покупке: только под своим lock
 	var gid := GearData.equipped_id(GameState, slot)
-	var price := GearData.sell_price(gid)
+	var price := GearData.sell_price_of(GameState, gid)  # t17: аффиксы дорожают
 	if price <= 0:
 		GameAudio.sfx("ui_deny")
 		GameState.toast.emit("Продавать нечего.")
 		return
 	GameState.equip_item(slot, "")
 	GameState.owned_gear.erase(gid)  # g20b: выкуплено начисто — в сумке дубли нет
+	GameState.affixes.erase(gid)  # t17: и аффиксы сданной вещи уходят с ней
 	GameState.add_gold(price)
 	GameState.stats_changed.emit()
 	GameAudio.sfx("belt")
@@ -790,7 +791,7 @@ func refresh() -> void:
 	for slot in sell_btns:
 		var sbtn: Button = sell_btns[slot]
 		var gid := GearData.equipped_id(GameState, String(slot))
-		var price := GearData.sell_price(gid)
+		var price := GearData.sell_price_of(GameState, gid)  # t17: аффиксы дорожают
 		sbtn.disabled = price <= 0
 		sbtn.text = "%s — %d зол." % [String(GearData.item(gid).get("name", gid)), price] if price > 0 else "— пусто —"
 		sbtn.modulate = Color.WHITE

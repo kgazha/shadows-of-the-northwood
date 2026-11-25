@@ -474,9 +474,16 @@ static func _is_equipped(id: String) -> bool:
 func item_tip(id: String) -> String:
 	var it := GearData.item(id)
 	var nm := String(it.get("name", id))
-	var rn := GearData.rarity_name(id)
+	# t17 (DESIGN_DEPTH_V2 §1, 25.11): качество-инстанс (добротная/реликтовая)
+	# в имени важнее статной редкости; без аффиксов строка прежняя 1:1.
+	var qn := GearData.quality_name(GameState, id)
+	var rn := qn if qn != "" else GearData.rarity_name(id)
 	if rn != "":
 		nm += " (%s)" % rn
+	# t17: честные строки аффиксов («Острый край: урон +10%») — хвостом,
+	# после слотной строки; их порядок = порядок ролла.
+	var af := GearData.affix_lines(GameState, id)
+	var tip := nm
 	match String(it.get("slot", "")):
 		"weapon":
 			var t := GearData.sharpen_tier_of(GameState, id)
@@ -490,18 +497,21 @@ func item_tip(id: String) -> String:
 				tail += ". Мана +%d" % mb
 			if _is_equipped(id):
 				var part := GearData.weapon_part(GameState)
-				return "%s: Урон %d + %d%s" % [nm, GameState.damage - part, part, tail]
-			if it.has("dmg_bonus"):
-				return "%s: Урон +%d%s" % [nm, int(it["dmg_bonus"]), tail]
-			return "%s: Урон ×%.1f%s" % [nm, float(it.get("dmg_mult", 1.0)), tail]
+				tip = "%s: Урон %d + %d%s" % [nm, GameState.damage - part, part, tail]
+			elif it.has("dmg_bonus"):
+				tip = "%s: Урон +%d%s" % [nm, int(it["dmg_bonus"]), tail]
+			else:
+				tip = "%s: Урон ×%.1f%s" % [nm, float(it.get("dmg_mult", 1.0)), tail]
 		"armor":
-			return "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
+			tip = "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
 		"shield":
 			# t10: щит — тот же плоский канал, что броня (min 1 проходит)
-			return "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
+			tip = "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
 		"relic":
-			return "Амулет Леса: подсветка и +1 урон. Работает и без слота."
-	return nm
+			tip = "Амулет Леса: подсветка и +1 урон. Работает и без слота."
+	if af != "":
+		tip += "\n" + af
+	return tip
 
 ## Клик по вещи в сумке: надеть (или снять, если уже надето — вердикт §2).
 func _on_bag_pressed(i: int) -> void:
@@ -606,7 +616,7 @@ func _refresh_gear() -> void:
 		mark.text = "✓" if eq else ""
 		bbtn.tooltip_text = item_tip(id) + ("\nНадето — клик снимет." if eq else "\nКлик наденет.")
 		bbtn.add_theme_stylebox_override("normal",
-				_rarity_style(true, GearData.rarity_of(id)))
+				_rarity_style(true, GearData.display_rarity(GameState, id)))  # t17: качество-инстанс
 	for slot in SLOT_ORDER:
 		var sbtn: Button = slot_btns[slot]
 		var cur := GearData.equipped_id(GameState, slot)
@@ -618,7 +628,7 @@ func _refresh_gear() -> void:
 			sbtn.icon = icon_tex(cur)
 			sbtn.tooltip_text = item_tip(cur) + "\nКлик снимет в сумку."
 			sbtn.add_theme_stylebox_override("normal",
-					_rarity_style(true, GearData.rarity_of(cur)))
+					_rarity_style(true, GearData.display_rarity(GameState, cur)))  # t17: качество-инстанс
 	# Кнопка заточки: активна на НАДЕТОМ оружии, камни хватает, ступень < 5.
 	var wid := GearData.equipped_id(GameState, "weapon")
 	var valid := wid != "" and String(GearData.item(wid).get("slot", "")) == "weapon"

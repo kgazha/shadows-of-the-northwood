@@ -135,6 +135,11 @@ var owned_gear: Array = []
 ## Степень заточки по id оружия (g20b, вердикт п.4): id -> 0..5; шьётся
 ## к оружию, живёт в сейве, при снятии не теряется.
 var sharpen := {}
+## t17 «Глубина v2 §1: Аффиксы» (25.11): id предмета -> массив аффиксов
+## (0/1/2 шт — обычная/добротная/реликтовая). Пусто/нет ключа = обычная
+## (обратная совместимость v4 без миграции). Даёт бонус только НАДЕТАЯ вещь;
+## из сумки влияет лишь на цену продажи. Ролл — Loot.affix_roll (shash-канон).
+var affixes := {}
 ## Универсальные событийные флаги (квесты, диалоги, лавочник): id -> bool/int/string.
 var flags := {}
 
@@ -201,6 +206,10 @@ func hurt(n: int) -> void:
 	stats_changed.emit()
 
 func heal(n: int) -> void:
+	# t17 (25.11, DESIGN_DEPTH_V2 §1): аффикс «Тёплая нить» — получение
+	# лечения +10% (любой канал: травы, алхимия, казнь, костёр, реген).
+	if n > 0:
+		n = int(round(float(n) * (1.0 + GearData.affix_sum(self, "mending"))))
 	hp = min(max_hp, hp + n)
 	stats_changed.emit()
 
@@ -290,10 +299,11 @@ func equip_item(slot: String, item_id: String) -> String:
 		# M1 (QA): флаг синхронизируется ЖЁСТКО — любой другой id (топор, клинок)
 		# обязан гасить has_sword, иначе при очистке слота остаётся «призрачный меч» x2.
 		has_sword = (item_id == "sword")
-		# t10: мана-потолок от посоха пересчитывается вместе с оружием
-		# (recalc_max_mana сам эмитит stats_changed).
-		recalc_max_mana()
-		stats_changed.emit()
+	# t10: мана-потолок от посоха пересчитывается вместе с оружием. t17 (25.11):
+	# пересчёт переехал на ВСЕ слоты — аффикс «Глубокий колодец» живёт и на
+	# броне/щите/обереге; без посоха/колодца recalc тождественен (идемпотентен).
+	recalc_max_mana()
+	stats_changed.emit()
 	return prev
 
 ## g20b: положить экипируемый предмет в сумку (уникально; только реальные
@@ -403,7 +413,10 @@ func recalc_max_hp() -> void:
 ## посоха (t10, вердикт 25.11: «магу посохи» — посох даёт урон И ману);
 ## mana поджимается под потолок.
 func recalc_max_mana() -> void:
-	max_mana = int(Classes.class_data(class_id).get("mana", 0)) + GearData.mana_bonus(self)
+	var m := int(Classes.class_data(class_id).get("mana", 0)) + GearData.mana_bonus(self)
+	# t17 (25.11, DESIGN_DEPTH_V2 §1): аффикс «Глубокий колодец» надетой вещи —
+	# потолок маны +15% (round). Пересчёт идёт при экипировке/снятии — канон.
+	max_mana = int(round(float(m) * (1.0 + GearData.affix_sum(self, "deepwell"))))
 	if mana > max_mana:
 		mana = max_mana
 	stats_changed.emit()
@@ -510,6 +523,9 @@ func to_dict() -> Dictionary:
 			# g20b: сумка снаряжения и степени заточки — внутри того же v4-
 			# контейнера (аддитивно: старые v4 без этих ключей грузятся пустыми)
 			"bag": owned_gear.duplicate(), "sharpen": sharpen.duplicate(),
+			# t17 (25.11): аффиксы — аддитивно к тому же v4: отсутствие ключа
+			# у старой записи = обычные предметы, миграции нет.
+			"affixes": affixes.duplicate(true),
 		},
 		"campfires_used": campfires_used.duplicate(),
 		"chests_used": chests_used.duplicate(),
@@ -593,6 +609,25 @@ func from_dict(d: Dictionary) -> void:
 			var wids := String(wid)
 			if String(GearData.item(wids).get("slot", "")) == "weapon":
 				sharpen[wids] = clampi(_num(shv[wid], 0), 0, GearData.SHARPEN_MAX)
+	# t17 (25.11): аффиксы — аддитивное поле того же v4-контейнера (старые
+	# сейвы без ключа = всё обычное). Санитизация: ключ обязан лежать в
+	# сумке, значение — массив известных id без повторов, кап 2 (иначе
+	# «реликтовой» станет любая строка-мусор).
+	affixes = {}
+	var afv: Variant = inv_d.get("affixes", {})
+	if typeof(afv) == TYPE_DICTIONARY:
+		for aid in afv:
+			var aids := String(aid)
+			var arv: Variant = afv[aid]
+			if typeof(arv) != TYPE_ARRAY or not owned_gear.has(aids):
+				continue
+			var clean: Array = []
+			for el in arv:
+				var eid := String(el)
+				if GearData.AFFIXES.has(eid) and not clean.has(eid) and clean.size() < 2:
+					clean.append(eid)
+			if not clean.is_empty():
+				affixes[aids] = clean
 	var cu: Variant = d.get("campfires_used", {})
 	# M4 (QA): каппим как сундуки (64) с varning — раньше кап был только у
 	# chests_used и молча резал данные, а campfires_used не валидировался вовсе.
@@ -1002,6 +1037,7 @@ func start_new_run() -> void:
 	# Амулет Леса вернётся миграцией has_amulet при следующем лоаде).
 	owned_gear = []
 	sharpen = {}
+	affixes = {}  # t17: аффиксы — часть нажитого, сгорают вместе с сумкой
 	# t9 (25.11, ВЕРДИКТ ПОЛЬЗОВАТЕЛЯ «после смерти нельзя выбрать класс»): класс
 	# не вечен — смерть стирает героя до «безкласса», как свежая игра ДО выбора:
 	# world.gd при сборке нового мира увидит class_id == "" и покажет штатную
@@ -1043,6 +1079,7 @@ func start_fresh_game() -> void:
 	gear_gate_note = ""  # t10: свежий круг NG+ — заметок гейта не копим
 	owned_gear = []   # g20b: та же логика, что в start_new_run
 	sharpen = {}
+	affixes = {}  # t17: и аффиксы — тот же канон «нажитое сгорает»
 	class_id = ""
 	recalc_max_hp()
 	recalc_max_mana()

@@ -209,6 +209,9 @@ func _physics_process(delta: float) -> void:
 	# t20 «Пепельная поступь» мета-доски (meta.mb.ash_step): +4/8/12% к скорости
 	# хода за ранг. Поверх «Скорохода» (пер × проценты складываются мультипликативно).
 	velocity *= 1.0 + 0.01 * float(GameState.mb_value("ash_step"))
+	# t17 «Глубина v2 §1» (25.11): аффикс «Быстрая поступь» надетой вещи —
+	# скорость хода +5% (мультипликативно поверх таланта/поступи; кувырок не трогает).
+	velocity *= 1.0 + GearData.affix_sum(GameState, "swift")
 	if velocity != Vector2.ZERO:
 		_set_facing_from(velocity)
 		_walk_tick(delta)
@@ -402,6 +405,13 @@ func dmg_vs(e: Node, mult: float) -> int:
 	var d := float(GameState.damage) * mult * GameState.volkhv_bless_mult()
 	if e == mark_target and mark_t > 0.0:
 		d *= 1.5
+	# t17 «Глубина v2 §1» (25.11): аффикс «Верная щель» — шанс крата ×2 (+2%).
+	# Без аффикса ветка НЕ выполняется вовсе — randf() не зовётся, детерминизм
+	# старых пинов урона цел 1:1. Число на мобе просто вдвое крупнее: канал
+	# DmgNumbers у hurt() общий («смертельное = красное» семантика не врёт).
+	var crit := GearData.affix_sum(GameState, "lethal")
+	if crit > 0.0 and randf() < crit:
+		d *= 2.0
 	return int(round(d))
 
 # --- атаки ---
@@ -603,7 +613,7 @@ func cast_skill(i: int, at := Vector2.INF) -> bool:
 	# мана тратится после проверки цели — неудачный каст не «съедает» энергию
 	if not GameState.try_spend_mana(int(sd.get("mana", 0))):
 		return false
-	skill_cd[i] = float(sd.cd)
+	skill_cd[i] = float(sd.cd) * (1.0 - GearData.affix_sum(GameState, "quickhand"))
 	GameAudio.sfx("spell")  # файла spell.wav пока нет — тихий пропуск (guarded)
 	match sid:
 		"power_strike":

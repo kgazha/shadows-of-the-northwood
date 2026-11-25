@@ -120,7 +120,9 @@ func try_interact() -> void:
 		if area == "village":
 			for i in 2:
 				GameState.add_material("whet")
-			Loot.grant_gear_set(GameState, ["shortsword", "leather"])
+			# t17 (25.11): cell — uid сундука: аффиксы стартового сета
+			# детерминированы под этот сейв и не дрейфят при повторных входах.
+			Loot.grant_gear_set(GameState, ["shortsword", "leather"], "chest:" + _uid())
 		if area != "village":
 			var purse := randi_range(32, 42)
 			GameState.add_gold(purse)
