@@ -378,8 +378,9 @@ func _zone_base() -> Vector2:
 			return Vector2(0.0, float((offs as Dictionary)[String(_zone).substr(4)]))
 		return Vector2.ZERO
 	if String(_zone).begins_with("mini_"):
-		# t19: этаж хода (MD.MINI_Y = 10×YS_CYCLE — тот же шаг полос этажей)
-		return Vector2(0.0, preload("res://scripts/mini_dungeon.gd").MINI_Y)
+		# t19/t20: этаж хода MD.mini_y(биом) = 48000 + i×4800 (шаг полос этажей)
+		return Vector2(0.0, preload("res://scripts/mini_dungeon.gd").mini_y(
+				String(_zone).substr(5)))
 	if _zone == "ashen":
 		var ao: Variant = world.get("ASHEN_OFFSET")
 		var off := Vector2.ZERO

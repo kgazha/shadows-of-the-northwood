@@ -28,6 +28,49 @@ const MINI_DMG_MULT := 1.5
 const MINI_XP_MULT := 3
 const MINI_LEASH := 88.0   # сторожит дальнюю комнату, через весь ход не чует
 
+## t20 (25.11): ростер мини-боссов — REMAP существующих шкур (§2; обличья
+## из §4 — лист «Бестиарий v2» за t21, замена кожи без смены формулы):
+## степь — застрельщик (лучник, держит дистанцию), пустыня — песчаный червь
+## (рой-плоть), снег — шептун (призрак), подземелье — скелет-рудокоп (§2 —
+## покойницкая шкура wraith), замок — краденый рыцарь (колосс-стиль = брут),
+## лес — корневой засадчик (брут, t19-плейсхолдер обличья).
+const BOSS_FAM := {"forest": "brute", "steppe": "archer", "desert": "swarmling",
+		"snow": "wraith", "castle": "brute", "dungeon": "wraith"}
+const FAM_SCRIPTS := {"brute": "res://scripts/brute.gd",
+		"archer": "res://scripts/mob_archer.gd",
+		"swarmling": "res://scripts/mob_swarmling.gd",
+		"wraith": "res://scripts/mob_wraith.gd"}
+
+## Флейвор-таблицы (т20): ноль логики, только текст и палитра (рампы
+## закрытого PixelPalette — закон ART). HINT/RIM — в mini_dungeon (их читают
+## и inner-классы, и world); тосты перехода — здесь, входят статиками MDZ.
+const ENTER_TOAST := {
+	"forest": "Ход уходит в корни. Внизу дышит что-то большое.",
+	"steppe": "Ход уходит в сухие травы. Внизу пахнет полынью и пылью.",
+	"desert": "Песок сыплется вниз. Внизу гудит сухожилиями.",
+	"snow": "Снег смыкается над головой. Внизу шепчут.",
+	"castle": "Каменные ступени в темноту. Внизу звенит железо.",
+	"dungeon": "Сырые ступени вниз. Внизу скребут по камню.",
+}
+const CLOSE_TOAST := {
+	"forest": "Хрип стих. Корни затихли — ход закрыт.",
+	"steppe": "Свист тетивы оборвался. Ход затих.",
+	"desert": "Песок осел. Гул стих — ход закрыт.",
+	"snow": "Шёпот оборвался. Снег в ходу замолчал.",
+	"castle": "Железо звякнуло в последний раз. Ход закрыт.",
+	"dungeon": "Скрежет смолк. Под землёй пусто.",
+}
+
+static func enter_toast(b: String) -> String:
+	return String(ENTER_TOAST.get(b, ENTER_TOAST["forest"]))
+
+static func close_toast(b: String) -> String:
+	return String(CLOSE_TOAST.get(b, CLOSE_TOAST["forest"]))
+
+# Геттер для inner-класса выхода (его скоуп внешних const не видит).
+func close_line() -> String:
+	return String(CLOSE_TOAST.get(biome, CLOSE_TOAST["forest"]))
+
 ## Пулы реликтов сундука — ЗЕРКАЛО ярусных пулов цепочки t18 (тот же вкус
 ## награды: «поясная» вещь, которая точно надеть можно).
 const RELIC_POOLS := {
@@ -90,7 +133,6 @@ func cell_walkable(t: Vector2i) -> bool:
 # --- графика: пол биома + скала BiomeZone (тот же runtime-кодоген) -----------
 
 func _build_tiles() -> void:
-	var forest_ok := ResourceLoader.exists(FOREST_FLOOR)
 	var ts := TileSet.new()
 	var rock_tex: Texture2D = BZ._build_rock_texture()
 	var rock_src := TileSetAtlasSource.new()
@@ -98,12 +140,16 @@ func _build_tiles() -> void:
 	rock_src.texture_region_size = Vector2i(TILE, TILE)
 	rock_src.create_tile(Vector2i(0, 0))
 	ts.add_source(rock_src, 0)
-	if forest_ok:
+	# t20: пол — тайлсет биома (лес — forest_floor_v1 два кадра, прочие —
+	# пара слотов world_floor_v1 по индексам .manifest, паттерн BiomeZone).
+	var slots := _floor_pair()
+	var strip_ok := not slots.is_empty()
+	if strip_ok:
 		var fsrc := TileSetAtlasSource.new()
-		fsrc.texture = load(FOREST_FLOOR)
+		fsrc.texture = load(FOREST_FLOOR if biome == "forest" else BZ.FLOOR_TEX)
 		fsrc.texture_region_size = Vector2i(TILE, TILE)
-		fsrc.create_tile(Vector2i(0, 0))
-		fsrc.create_tile(Vector2i(1, 0))
+		for sxi in slots:
+			fsrc.create_tile(Vector2i(int(sxi), 0))
 		ts.add_source(fsrc, 1)
 	tilemap = TileMapLayer.new()
 	tilemap.tile_set = ts
@@ -114,10 +160,26 @@ func _build_tiles() -> void:
 		for x in map_w:
 			if String(row[x]) == "#":
 				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
-			elif forest_ok:
-				tilemap.set_cell(Vector2i(x, y), 1, Vector2i((x + y) % 2, 0))
+			elif strip_ok:
+				tilemap.set_cell(Vector2i(x, y), 1, Vector2i(int(slots[(x + y) % 2]), 0))
 			else:
 				tilemap.set_cell(Vector2i(x, y), 0, Vector2i(0, 0))
+
+## Пара atlas-X слотов пола: лес — свои 0/1; прочие — FLOOR_SLOTS-имена
+## через floor_slots манифеста (тот же json, что у BiomeZone; статик-кэш).
+static var _slot_cache := {}
+func _floor_pair() -> Array:
+	if biome == "forest":
+		return [0, 1] if ResourceLoader.exists(FOREST_FLOOR) else []
+	if not ResourceLoader.exists(BZ.FLOOR_TEX) or not BZ.FLOOR_SLOTS.has(biome):
+		return []
+	if _slot_cache.is_empty():
+		if FileAccess.file_exists(BZ.MANIFEST_PATH):
+			var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(BZ.MANIFEST_PATH))
+			if typeof(parsed) == TYPE_DICTIONARY:
+				_slot_cache = parsed.get("floor_slots", {})
+	var pair: Array = BZ.FLOOR_SLOTS[biome]
+	return [int(_slot_cache.get(String(pair[0]), 0)), int(_slot_cache.get(String(pair[1]), 1))]
 
 func _build_walls() -> void:
 	var body := StaticBody2D.new()
@@ -150,29 +212,40 @@ func _spawn_chest() -> void:
 	c.setup(self, chest_tile)
 	chest_node = c
 
-## Мини-босс: та же шкура вепря-тарана (brute.gd), ярус по канону поясов
-## (brute_tier), множители мини-босса — ПОСЛЕ поясного (паттерн зоны).
-## boss=false: механика/сейв-триггеры Грома его не касаются. Лут — базовая
-## строка таблицы "brute@b<N>" (brute_t1 в Loot-таблице нет с t3 — легаси
-## дыра, в бэклоге капитана; дублировать битый kind не стали).
+## Мини-босс: remap существующей шкуры (BOSS_FAM), ярус/пояс — каноном
+## (_spawn_bestiary-порядок: сначала базовые статы, множители ПОСЛЕ).
+## Поля семей разные: у брута dmg/kill_xp/tier/leash свои поля, у
+## лучника/червя/шептуна урон = конста × dmg_mult (паттерн зоны), XP —
+## var kill_xp (t20-рефакт мобов, значение по умолчанию = прежняя конста).
+## Лут — строка "<fam>@b<N>" (наследие brute_t1 в таблице — не наша дыра,
+## базовая строка семейства парсится механизмом суффикса).
 func _spawn_boss() -> void:
 	if boss_tile.x < 0:
 		return
-	var m = load("res://scripts/brute.gd").new()
-	m.boss = false
-	m.tier = OW.brute_tier(belt)
-	m.belt_loot = "brute@b%d" % belt
+	var fam := String(BOSS_FAM.get(biome, "brute"))
+	var m = load(FAM_SCRIPTS[fam]).new()
+	if "boss" in m:
+		m.boss = false
+	if "tier" in m:
+		m.tier = OW.brute_tier(belt)
+	var mult := OW.belt_mult(belt)
+	if "belt_loot" in m:
+		m.belt_loot = "brute@b%d" % belt
+	elif "loot_kind" in m:
+		m.loot_kind = "%s@b%d" % [fam, belt]
 	add_child(m)
 	m.setup(world, boss_tile)
-	var mult := OW.belt_mult(belt)
 	m.hp = maxi(1, int(round(int(round(float(m.hp) * mult)) * MINI_HP_MULT)))
 	if "max_hp" in m:
 		m.max_hp = m.hp
-	m.dmg = maxi(2, int(round(int(round(float(m.dmg) * mult)) * MINI_DMG_MULT)))
-	if "dmg_mult" in m:
-		m.dmg_mult = mult
-	m.kill_xp = int(m.kill_xp) * MINI_XP_MULT
-	m.boss_leash = MINI_LEASH
+	if "dmg" in m:
+		m.dmg = maxi(2, int(round(int(round(float(m.dmg) * mult)) * MINI_DMG_MULT)))
+	elif "dmg_mult" in m:
+		m.dmg_mult = mult * MINI_DMG_MULT
+	if "kill_xp" in m:
+		m.kill_xp = int(m.kill_xp) * MINI_XP_MULT
+	if "boss_leash" in m:
+		m.boss_leash = MINI_LEASH
 	OW.apply_biome_skin(m, biome)
 	boss_node = m
 	var w := MiniBossWatch.new()
@@ -185,11 +258,14 @@ func _relic_pool() -> Array:
 class MiniReturn:
 	extends Area2D
 	## Выход «тем же интерактором»: стойка хода у спавна (паттерн BiomeExit).
+	const MDS := preload("res://scripts/mini_dungeon.gd")
 	var zone
 	func setup(p_zone, tile: Vector2i) -> void:
 		zone = p_zone
 		position = zone.tile_to_world(tile)
 		var root := MiniHoleArt.new()
+		root.rim = MDS.hole_rim(String(zone.biome))
+		root.stub_biome = String(zone.biome)
 		root.scale.x = -1.0  # разворот пасти (Node2D, не Sprite — flip_h тут нет)
 		root.position = Vector2(0, -2)
 		add_child(root)
@@ -221,12 +297,16 @@ class MiniHole:
 	extends Area2D
 	## E-интерактор «ход» ВНУТРИ локации (ставит world._ensure_hole). «Виден
 	## после открытия» по §2 выполняется самим фактом: ход живёт в локации,
-	## а локация открывается туманом t7 — до входа в Чащу хода не существует.
+	## а локация открывается туманом t7 — до входа в биом хода не существует.
+	const MDS := preload("res://scripts/mini_dungeon.gd")
 	var zone
+	var biome := "forest"   # ставит world._ensure_hole (zone здесь — BiomeZone)
 	func setup(p_zone, tile: Vector2i) -> void:
 		zone = p_zone
 		position = zone.tile_to_world(tile)
 		var root := MiniHoleArt.new()
+		root.rim = MDS.hole_rim(biome)
+		root.stub_biome = biome
 		root.position = Vector2(0, -2)
 		add_child(root)
 		var stub := root._ensure_art()
@@ -242,7 +322,7 @@ class MiniHole:
 		body_entered.connect(_on_enter)
 		body_exited.connect(_on_exit)
 	func get_hint() -> String:
-		return "Ход вниз (корни)"
+		return MDS.hole_hint(biome)
 	func try_interact() -> void:
 		GameAudio.sfx("ui_click")
 		zone.world.enter_mini(String(zone.biome))
@@ -255,18 +335,24 @@ class MiniHole:
 
 class MiniHoleArt:
 	extends Node2D
-	## Код-графика пасти: тёмный провал под корнями (CAVE_ROCK/BARK из
-	## PixelPalette — закон ART), сверху цепляется пень-коряга STUMP_F из
-	## существующего ForestArt-листа. Ноль растровых файлов.
+	## Код-графика пасти: тёмный провал (CAVE_ROCK) с биомным ободом
+	## (HOLE_RIM — рампы закрытого PixelPalette — закон ART). Лес сверху
+	## цепляет пень-корягу STUMP_F из существующего ForestArt-листа; прочие
+	## биомы — провал без опознавательного знака биома (свой антураж — §4).
+	## Ноль растровых файлов.
 	const PAL := preload("res://scripts/pixel_palette.gd")
+	var rim := "BARK"
+	var stub_biome := "forest"
 	func _draw() -> void:
 		var dk: Color = PAL.c("CAVE_ROCK", PAL.T_OUTLINE)
-		var md: Color = PAL.c("BARK", PAL.T_DARK)
+		var md: Color = PAL.c(rim, PAL.T_DARK)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.72))
 		draw_circle(Vector2(0, 2), 7.0, dk)
 		draw_arc(Vector2(0, 2), 7.5, PI, TAU, 12, md, 2.0)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	func _ensure_art() -> Sprite2D:
+		if stub_biome != "forest":
+			return null
 		if ResourceLoader.exists(ForestArt.ATLAS_PATH) and ForestArt.REGIONS.has("STUMP_F"):
 			var s := Sprite2D.new()
 			s.texture = ForestArt._region(ForestArt.load_atlas(), "STUMP_F")
@@ -345,5 +431,5 @@ class MiniBossWatch:
 		var dead: bool = (dy == true) or (int(hpv) <= 0)
 		if dead:
 			QuestsData.note_belt_mini(GameState, String(zone.biome))
-			GameState.toast.emit("Хрип стих. Корни затихли — ход закрыт.")
+			GameState.toast.emit(zone.close_line())
 			GameState.quest_changed.emit()

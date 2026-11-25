@@ -54,6 +54,7 @@ var home := Vector2.ZERO
 var wander_t := 0.0
 var wander_dir := Vector2.ZERO
 var dying := false            # страж повторной смерти: XP — ровно один раз
+var kill_xp := 9              # t20: XP со смерти (мини-боссы ×3; дефолт = прежняя конста)
 var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
@@ -292,7 +293,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		dying = true
 		remove_from_group("enemy")
 		GameAudio.sfx("drop")
-		GameState.add_xp(9)
+		GameState.add_xp(kill_xp)
 		Achv.count("kill_archer")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Лесокров-лучник повержен! (+9 опыта)")

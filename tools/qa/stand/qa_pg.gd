@@ -70,7 +70,10 @@ func _ready() -> void:
 	# обрывает лишь текущую функцию — RALL по СОБСТВЕННОМУ счётчику ловит оборванные
 	# блоки. До генератора вердикт стенда — плановый красный.
 	# t19 (25.11): +8 проверок PG12 (микро-подземелья) — 34 -> 42.
-	check("RALL: исполнены все 42 проверок PG1–PG12 (нет оборванных блоков)", _pass + _fail == 42)
+	# t20 (25.11): PG12 — экран на биом (8×|BIOMES|): ожидаемое число
+	# 34 + 8×биомов считается из счётчика самой группы (_pg12_n), формула —
+	# пин; обрыв экрана биома краснит RALL, как и прежде.
+	check("RALL: исполнены все %d проверок PG1–PG12 (нет оборванных блоков)" % (34 + _pg12_n), _pass + _fail == 34 + _pg12_n)
 	done()
 
 # --- обвязка сидов ---
@@ -783,17 +786,39 @@ static func _anchor_points(m: Dictionary, zone: String) -> Dictionary:
 # ============================================================================
 
 const MINI_N := 8
-# t19 (25.11): GOLDEN-MINI-PIN — _fnv64(_canon(generate(seed_i,"forest"))),
-# seed_i = RUN_SEED + i*7919, i=0..7. Смена генератора = датированный перепин.
-const GOLDEN_MINI_PINS := [-6030551601869369432, 1154886462938138434,
-		-3114410360865595063, -3965890087986326957, 925730499021545312,
-		1090194656137663427, 18686846262414015, 4416759497817221237]
+# t19 (25.11): GOLDEN-MINI-PIN — _fnv64(_canon(generate(seed_i,биом))),
+# seed_i = RUN_SEED + i*7919, i=0..7. РОВНО ОДНА СТРОКА НА БИОМ — «отдельный
+# датированный перепин только своей зоны» (t20):forest пин 25.11 t19, прочие
+# строки added 25.11 t20 по факту открытия биома. Пустая/нулевая строка =
+# биом ещё не запинен (красный до пинновки — планово).
+const GOLDEN_MINI_PINS := {
+	"forest": [-6030551601869369432, 1154886462938138434,
+			-3114410360865595063, -3965890087986326957, 925730499021545312,
+			1090194656137663427, 18686846262414015, 4416759497817221237],  # t19 25.11
+	"steppe": [7358676138047515151, -7472501534681731420,
+			8850234298201729831, -8872145745433655077, 7899300456401514655,
+			4510298889119075651, 3814351202253213434, -3331495903624114317],  # t20 25.11
+	"desert": [1498433426308306036, 8039670826091219658,
+			-8661087342432766801, -8984093234253030275, -3297759871884377048,
+			3985349775579055026, -7071727417246324609, 8951765669067930802],  # t20 25.11
+	"snow": [-4622590530229389352, 2055072947249197928,
+			5214455640158675306, -6827587517710437981, -8470988617368294890,
+			-4699979332049563751, -6400637898619947541, -1856950381376075228],  # t20 25.11
+	"castle": [2561536177336584476, 2750707830800916825,
+			-7666361124769607280, 568215379900190487, 3051836272538683816,
+			3939189919996782055, 6313097419253685917, 7847280489981715717],  # t20 25.11
+	"dungeon": [240437127313881251, 4894184675851016677,
+			-4153367350835419957, 8674027100302836086, 482731112093588444,
+			-9196264111912036105, -2558100275147529404, 6674334383960380088],  # t20 25.11
+}
 
 func _mini_seeds() -> Array:
 	var out: Array = []
 	for i in MINI_N:
 		out.append(RUN_SEED + i * 7919)
 	return out
+
+var _pg12_n := 0
 
 func pg12_mini() -> void:
 	var md: Variant = null
@@ -802,22 +827,28 @@ func pg12_mini() -> void:
 	if md == null:
 		for k in 8:
 			check("PG12: mini_dungeon.gd не поставлен", false)
+		_pg12_n = 8
 		return
 	var ow: Variant = load("res://scripts/open_world.gd")
-	var fl := String(md.floor_ch("forest"))
-	# PG12a — детерминизм: бит-в-бит повтор на 8 сидах
+	for b in md.BIOMES:
+		_pg12_bio(md, ow, String(b))
+
+## Полный PG12-экран ОДНОГО биома: 8 проверок (детерминизм/комнаты/BFS/
+## дальняя/якоря/периметр/GOLDEN-строка/pick_hole+достижимость).
+func _pg12_bio(md: Variant, ow: Variant, biome: String) -> void:
+	var fl := String(md.floor_ch(biome))
+	# .a — детерминизм: бит-в-бит повтор на 8 сидах
 	var bad_a: Array = []
 	for rs in _mini_seeds():
-		if str(md.generate(rs, "forest")) != str(md.generate(rs, "forest")):
+		if str(md.generate(rs, biome)) != str(md.generate(rs, biome)):
 			bad_a.append("seed %d: повтор разошёлся" % rs)
-	check("PG12a: generate бит-в-бит при повторе (%d сидов)" % MINI_N, _report("PG12a", bad_a))
-	# PG12b..e — инварианты планиметрии
+	check("PG12[%s]a: generate бит-в-бит при повторе (%d сидов)" % [biome, MINI_N], _report("PG12a", bad_a))
 	var bad_b: Array = []
 	var bad_c: Array = []
 	var bad_d: Array = []
 	var bad_e: Array = []
 	for rs in _mini_seeds():
-		var m: Dictionary = md.generate(rs, "forest")
+		var m: Dictionary = md.generate(rs, biome)
 		var rows: Array = m["grid"]
 		var meta: Dictionary = m["meta"]
 		var n: int = int(meta.get("n_rooms", 0))
@@ -840,24 +871,22 @@ func pg12_mini() -> void:
 			if not dist.has("%d,%d" % [cv2.x, cv2.y]):
 				bad_c.append("seed %d: центр (%d,%d) недостижим" % [rs, cv2.x, cv2.y])
 		var db := int(dist["%d,%d" % [boss.x, boss.y]])
-		var dc := int(dist["%d,%d" % [chest.x, chest.y]])
 		var worst_centers := 0
 		for c in centers:
 			var cv3: Vector2i = c
 			worst_centers = maxi(worst_centers, int(dist.get("%d,%d" % [cv3.x, cv3.y], 0)))
 		if db != worst_centers:
-			bad_d.append("seed %d: boss не дальняя (d=%d, centers=%d, chest=%d)" % [rs, db, worst_centers, dc])
+			bad_d.append("seed %d: boss не дальняя (d=%d, centers=%d)" % [rs, db, worst_centers])
 		if boss == chest or boss == sp or chest == sp \
 				or OW9_cheb(chest, sp) < 5 or OW9_cheb(boss, sp) < 5:
 			bad_e.append("seed %d: якоря слиплись sp=%s chest=%s boss=%s" % [rs, sp, chest, boss])
-	check("PG12b: комнаты 3..4, центры на полу (%d сидов)" % MINI_N, _report("PG12b", bad_b))
-	check("PG12c: BFS 4-связность spawn->boss/chest/центры (%d сидов)" % MINI_N, _report("PG12c", bad_c))
-	check("PG12d: мини-босс в дальней комнате (BFS-max) (%d сидов)" % MINI_N, _report("PG12d", bad_d))
-	check("PG12e: якоря spawn/chest/boss различны и разнесены (%d сидов)" % MINI_N, _report("PG12e", bad_e))
-	# PG12f — периметр глухой ('#' кольцо, пол не течёт за карту)
+	check("PG12[%s]b: комнаты 3..4, центры на полу (%d сидов)" % [biome, MINI_N], _report("PG12b", bad_b))
+	check("PG12[%s]c: BFS 4-связность spawn->boss/chest/центры (%d сидов)" % [biome, MINI_N], _report("PG12c", bad_c))
+	check("PG12[%s]d: мини-босс в дальней комнате (BFS-max) (%d сидов)" % [biome, MINI_N], _report("PG12d", bad_d))
+	check("PG12[%s]e: якоря spawn/chest/boss различны и разнесены (%d сидов)" % [biome, MINI_N], _report("PG12e", bad_e))
 	var bad_f: Array = []
 	for rs in _mini_seeds():
-		var rows2: Array = (md.generate(rs, "forest") as Dictionary)["grid"]
+		var rows2: Array = (md.generate(rs, biome) as Dictionary)["grid"]
 		var w0: int = String(rows2[0]).length()
 		for x in w0:
 			if String(rows2[0])[x] != "#" or String(rows2[rows2.size() - 1])[x] != "#":
@@ -868,36 +897,39 @@ func pg12_mini() -> void:
 			if rw[0] != "#" or rw[rw.length() - 1] != "#":
 				bad_f.append("seed %d: пол в боковом периметре" % rs)
 				break
-	check("PG12f: периметр хода глухой (%d сидов)" % MINI_N, _report("PG12f", bad_f))
-	# PG12g — GOLDEN-MINI-PIN ×8 (канон планиметрии всей картой: сетка+мета)
+	check("PG12[%s]f: периметр хода глухой (%d сидов)" % [biome, MINI_N], _report("PG12f", bad_f))
+	# .g — GOLDEN-строка биома (канон планиметрии всей картой: сетка+мета)
+	var pins: Array = GOLDEN_MINI_PINS.get(biome, [])
 	var bad_g: Array = []
 	for i in MINI_N:
-		var g: int = _fnv(_canon(md.generate(_mini_seeds()[i], "forest")))
-		if GOLDEN_MINI_PINS[i] == 0 or g != GOLDEN_MINI_PINS[i]:
-			bad_g.append("seed[%d]=%d fnv64=%d pin=%d" % [i, _mini_seeds()[i], g, GOLDEN_MINI_PINS[i]])
+		var g: int = _fnv(_canon(md.generate(_mini_seeds()[i], biome)))
+		var want: int = int(pins[i]) if i < pins.size() else 0
+		if want == 0 or g != want:
+			bad_g.append("seed[%d]=%d fnv64=%d pin=%d" % [i, _mini_seeds()[i], g, want])
 	if not bad_g.is_empty():
-		print("  [PG12g] фактические хэши: %s" % str(bad_g))
-	check("PG12g: GOLDEN-MINI-PIN генератора ×%d" % MINI_N, _report("PG12g", bad_g))
-	# PG12h — клетка «хода» в loc_forest: не пустая, 'f' у массы, вдали от якорей
+		print("  [PG12g:%s] фактические хэши: %s" % [biome, str(bad_g)])
+	check("PG12[%s]g: GOLDEN-MINI-PIN генератора ×%d" % [biome, MINI_N], _report("PG12g", bad_g))
+	# .h — клетка хода в локации биома: 'fl' у массы, вдали, достижима
 	var bad_h: Array = []
 	for rs in _mini_seeds():
-		var lm: Dictionary = ow.loc_map(rs, "forest")
+		var lm: Dictionary = ow.loc_map(rs, biome)
 		var lmeta: Dictionary = lm["meta"]
 		var lsp := Vector2i(int((lmeta["spawn"] as Array)[0]), int((lmeta["spawn"] as Array)[1]))
 		var lpo := Vector2i(int((lmeta["portal_out"] as Array)[0]), int((lmeta["portal_out"] as Array)[1]))
 		var lch := Vector2i(int((lmeta["chest"] as Array)[0]), int((lmeta["chest"] as Array)[1]))
-		var t: Vector2i = md.pick_hole(lm["grid"], lsp, lch, lpo, "forest")
+		var t: Vector2i = md.pick_hole(lm["grid"], lsp, lch, lpo, biome)
 		if t.x < 0:
 			bad_h.append("seed %d: клетка хода не найдена" % rs)
 			continue
 		var rows3: Array = lm["grid"]
 		if String(String(rows3[t.y])[t.x]) != fl:
-			bad_h.append("seed %d: ход не на лесном полу" % rs)
+			bad_h.append("seed %d: ход не на полу биома" % rs)
 		if OW9_cheb(t, lsp) < 9 or OW9_cheb(t, lpo) < 9 or OW9_cheb(t, lch) < 7:
 			bad_h.append("seed %d: ход слишком близко к якорям" % rs)
 		if not OW9_reachable(rows3, lsp, t):
 			bad_h.append("seed %d: ход недостижим от входа локации (BFS по проходимым)" % rs)
-	check("PG12h: pick_hole на loc_forest (клетка/дистанции/достижимость, %d сидов)" % MINI_N, _report("PG12h", bad_h))
+	check("PG12[%s]h: pick_hole на loc_%s (клетка/дистанции/достижимость, %d сидов)" % [biome, biome, MINI_N], _report("PG12h", bad_h))
+	_pg12_n += 8
 
 static func OW9_cheb(a: Vector2i, b: Vector2i) -> int:
 	return maxi(absi(a.x - b.x), absi(a.y - b.y))

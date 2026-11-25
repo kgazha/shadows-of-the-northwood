@@ -126,6 +126,7 @@ func _ready() -> void:
 	await w8_fog(OWg)
 	w9_boar()
 	await w10_mini()
+	await w11_minis()
 	# и после себя не оставляем: автосейвы чекпойнтов/фикстуры W3 — на диске
 	_wipe_save()
 	GameState.start_fresh_game()
@@ -1109,12 +1110,101 @@ func w10_mini() -> void:
 			"W10.7 резолвер зон пропускает mini_forest")
 	GameState.area = "village"
 	# W10.8 перф-прогрев: три туда-обратно — утечек нод нет, контейнер один
-	var cnt0: int = world.find_children("*", "", true, true).size()
+	var cnt0: int = world.find_children("*", "", true, false).size()
 	for _r in 3:
 		world.enter_mini("forest")
 		await _frames(40)
 		world.exit_mini("forest")
 		await _frames(40)
-	var cnt1: int = world.find_children("*", "", true, true).size()
+	var cnt1: int = world.find_children("*", "", true, false).size()
 	chk(cnt1 == cnt0 and (world.mini_cont as Dictionary).size() == 1,
 			"W10.8 прогресс-раунды хода×3: утечек нод 0, сцена переиспользуется")
+
+# --- W11 микро-подземелья x5 (t20 «Глубина v2 §2б», 25.11) --------------------
+# Лес разобран подробно в W10; здесь — ОБОД каждый открытый MD.BIOMES биом:
+# ход == pick_hole-ожидание, вход на свой этаж (лимиты камеры = этаж,
+# резюме-резолвер), мини-босс = ожидаемая шкура и статы по формуле (базы
+# семей — скриптовые константы, TIERS брута — её конста), сундук, выход
+# ровно на клетку хода. Обход дополнительно служит утечкой-щупом.
+
+const W11_BASE := {
+	"archer": {"hp": 4, "xp": 9},
+	"swarmling": {"hp": 2, "xp": 3},
+	"wraith": {"hp": 8, "xp": 15},
+}
+const W11_FAM := {"steppe": "archer", "desert": "swarmling", "snow": "wraith",
+		"castle": "brute", "dungeon": "wraith"}
+
+func w11_minis() -> void:
+	if world == null:
+		chk(false, "W11.0 живой world не поставлен")
+		return
+	var MD := load("res://scripts/mini_dungeon.gd")
+	var BR := load("res://scripts/brute.gd")
+	# Разогрев: ПЕРВЫЙ вход в каждый ход строит его сцену (легитимные ноды —
+	# тилы/стены/сундук/босс/вотчер), утечкой не является. Щуп снимаем на
+	# раунде ПОВТОРНОГО использования (t20: наивный замер до прогона ловил
+	# сборки 5 сцен как «+136 нод»).
+	for b0 in MD.BIOMES:
+		if String(b0) == "forest":
+			continue
+		world.enter_mini(String(b0))
+		await _frames(40)
+		world.exit_mini(String(b0))
+		await _frames(40)
+	var cnt0: int = world.find_children("*", "", true, false).size()
+	for b in MD.BIOMES:
+		var bio := String(b)
+		if bio == "forest":
+			continue  # лес — подробная разделка W10
+		var gz = world.biome_grids.get(bio, null)
+		var hole = world.mini_holes.get(bio, null)
+		if gz == null or hole == null:
+			chk(false, "W11[%s] ход/локация не стоят" % bio)
+			continue
+		var want: Vector2i = MD.pick_hole(gz.map_rows, gz.spawn_tile, gz.chest_tile,
+				gz.portal_out_tile, bio)
+		var hp0 := (hole as Node2D).position
+		var ht := Vector2i(int(floor(hp0.x / 16.0)), int(floor((hp0.y - 2.0) / 16.0)))
+		chk(ht == want and gz.cell_walkable(want),
+				"W11[%s]a ход локации = pick_hole-ожидание и проходим" % bio)
+		world.enter_mini(bio)
+		await _frames(40)
+		var mz = world.mini_grids.get(bio, null)
+		var fy := int(MD.mini_y(bio))
+		var ok_in: bool = String(world.active_area) == "mini_" + bio and mz != null \
+				and world.cam.limit_top == fy and world.cam.limit_bottom == fy + 24 * 16 \
+				and world.player.global_position.distance_to(
+						Vector2(0.0, MD.mini_y(bio)) + mz.spawn_world_pos()) < 0.75 \
+				and String(GameState.resolve_resume_zone("mini_" + bio)) == "mini_" + bio
+		chk(ok_in, "W11[%s]b вход на этаж хода %d (лимиты/позиция/резолвер)" % [bio, fy])
+		if mz == null:
+			continue
+		var fam := String(W11_FAM.get(bio, "brute"))
+		var want_path := ("res://scripts/mob_" + fam + ".gd") if fam != "brute" \
+				else "res://scripts/brute.gd"
+		var boss = mz.boss_node
+		var belt := int(OWg.zone_belt(bio))
+		var mult: float = OWg.belt_mult(belt)
+		var ok_b: bool = boss != null and String(boss.get_script().resource_path) == want_path
+		if boss != null:
+			if fam == "brute":
+				var tb: Dictionary = BR.TIERS[int(OWg.brute_tier(belt))]
+				ok_b = ok_b and int(boss.hp) == maxi(1, int(round(int(round(float(int(tb["hp"])) * mult)) * 2.5))) \
+						and int(boss.kill_xp) == int(tb["xp"]) * 3
+			else:
+				var bb: Dictionary = W11_BASE[fam]
+				ok_b = ok_b and int(boss.hp) == maxi(1, int(round(int(round(float(int(bb["hp"])) * mult)) * 2.5))) \
+						and int(boss.kill_xp) == int(bb["xp"]) * 3 \
+						and absf(float(boss.dmg_mult) - mult * 1.5) < 1e-6
+		chk(ok_b, "W11[%s]c мини-босс=%s и статы по формуле (пояс %d)" % [bio, fam, belt])
+		var chest = mz.chest_node
+		chk(chest != null and String(chest.get_hint()) == "Открыть сундук",
+				"W11[%s]d реликтовый сундук стоит" % bio)
+		world.exit_mini(bio)
+		await _frames(40)
+		chk(String(world.active_area) == "loc_" + bio
+				and world.player.global_position.distance_to((hole as Node2D).global_position) < 0.75,
+				"W11[%s]e выход на клетку хода" % bio)
+	var cnt1: int = world.find_children("*", "", true, false).size()
+	chk(cnt1 == cnt0, "W11.x обход биомов: утечек нод нет (%d == %d)" % [cnt1, cnt0])

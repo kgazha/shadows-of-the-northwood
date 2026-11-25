@@ -1211,6 +1211,7 @@ func _ensure_hole(b: String, gz) -> void:
 		push_warning("Ход: для локации %s не нашлось клетки — пропускаем" % b)
 		return
 	var h = MDZ.MiniHole.new()
+	h.biome = b  # t20: флейвор подсказки/обода хода (zone здесь — BiomeZone)
 	gz.add_child(h)
 	h.setup(gz, t)
 	mini_holes[b] = h
@@ -1223,7 +1224,7 @@ func _ensure_mini(b: String) -> bool:
 		return false
 	var cont := Node2D.new()
 	cont.name = "Mini_" + b
-	cont.position = Vector2(0.0, MD.MINI_Y)
+	cont.position = Vector2(0.0, MD.mini_y(b))  # t20: этаж на биом (append-only)
 	cont.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	add_child(cont)
 	mini_cont[b] = cont
@@ -1250,7 +1251,7 @@ func enter_mini(b: String) -> void:
 	transition_to_area("mini_" + b, func():
 		if first:
 			GameState.set_flag("mini.seen." + b, "1")
-			GameState.toast.emit("Ход уходит в корни. Внизу дышит что-то большое.")
+			GameState.toast.emit(MDZ.enter_toast(b))
 			if FirstHint.I != null: FirstHint.I.show_hint("mini", "Микро-подземелье: смерть здесь — конец забега. Сундук с реликтом — за дальней комнатой.")
 		GameState.input_locked = false)
 
@@ -1745,7 +1746,7 @@ func _place_resumed_player() -> void:
 				entry = Vector2(0.0, float(OW.LOC_OFFSET_Y[zone.substr(4)])) + g.spawn_world_pos()
 			elif zone.begins_with("mini_"):
 				# t19: резюме внутри хода — с его спавна (клетка того же выхода)
-				entry = Vector2(0.0, MD.MINI_Y) + mini_grids[zone.substr(5)].spawn_world_pos()
+				entry = Vector2(0.0, MD.mini_y(zone.substr(5))) + mini_grids[zone.substr(5)].spawn_world_pos()
 	apply_area(zone, false)
 	player.global_position = entry
 	_snap_camera()  # t64 (g18b): «вышел к входу» — камера сразу на арке, старый край не показываем
@@ -1753,15 +1754,14 @@ func _place_resumed_player() -> void:
 
 ## Проходима ли мировая точка в зоне, которой она принадлежит по координате/флагу.
 func _pos_walkable(p: Vector2) -> bool:
-	# t19: ход — верхний «этаж» 48000 (10×YS_CYCLE). y-полосный резолвер
-	# ленту >= 48000 не различает (сейчас ход один — лес; t20 при надобности
-	# разведёт пояса по своим полосам тем же правилом 4800).
+	# t19/t20: ходы — верхние «этажи» 48000+i×4800 (тот же шаг полос).
+	# Биом точки — по этажу (MD.biome_at_y), построенная сцена обязательна.
 	if p.y >= MD.MINI_Y:
-		for b in MD.BIOMES:
-			var mz = mini_grids.get(b, null)
-			if mz != null:
-				return mz.cell_walkable(_world_to_tile(p, Vector2(0.0, MD.MINI_Y)))
-		return false
+		var mb := MD.biome_at_y(p.y)
+		if mb == "" or not mini_grids.has(mb) or mini_grids[mb] == null:
+			return false
+		return (mini_grids[mb] as Node2D).call("cell_walkable",
+				_world_to_tile(p, Vector2(0.0, MD.mini_y(mb))))
 	# t3: верхние «этажи» Мира — карта мира и локации (порядок сверху вниз:
 	# самому верхнему этажу соответствует наибольший не превышающий y офсет).
 	if p.y >= OW.WM_OFFSET_Y:
@@ -1878,7 +1878,7 @@ func apply_area(area: String, teleport: bool = true) -> void:
 			# t19: вход в ход — с его спавна (клетка того же интерактора внутри)
 			var mb := area.substr(5)
 			if mini_grids.has(mb) and mini_grids[mb] != null:
-				player.global_position = Vector2(0.0, MD.MINI_Y) \
+				player.global_position = Vector2(0.0, MD.mini_y(mb)) \
 					+ (mini_grids[mb] as Node2D).spawn_world_pos()
 		elif prev == "ashen":
 			player.global_position = ashen_return_pos if ashen_return_pos != Vector2.INF else tile_to_world(spawn_tile)
@@ -1926,12 +1926,13 @@ func _set_cam_limits(area: String) -> void:
 		cam.limit_bottom = int(OW.LOC_OFFSET_Y[area.substr(4)]) + int(gz.map_h) * TILE
 	elif area.begins_with("mini_") and mini_grids.has(area.substr(5)) \
 			and mini_grids[area.substr(5)] != null:
-		# t19: ход 40×24 (640×384) — обе оси >= вида (640×360), полос нет.
+		# t19/t20: ход 40×24 (640×384) — обе оси >= вида (640×360), полос нет.
 		var mz = mini_grids[area.substr(5)]
+		var mfy := int(MD.mini_y(area.substr(5)))
 		cam.limit_left = 0
-		cam.limit_top = int(MD.MINI_Y)
+		cam.limit_top = mfy
 		cam.limit_right = int(mz.map_w) * TILE
-		cam.limit_bottom = int(MD.MINI_Y) + int(mz.map_h) * TILE
+		cam.limit_bottom = mfy + int(mz.map_h) * TILE
 	else:
 		cam.limit_left = 0
 		cam.limit_top = 0

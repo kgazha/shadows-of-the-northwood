@@ -52,6 +52,7 @@ var wander_t := 0.0
 var wander_dir := Vector2.ZERO
 var last_safe := Vector2.ZERO # последняя проходимая точка — выход из фазы в стене
 var dying := false            # страж повторной смерти: XP — ровно один раз
+var kill_xp := 15             # t20: XP со смерти (мини-боссы ×3; дефолт = прежняя конста)
 var _shape: CollisionShape2D
 
 func setup(p_world: Node2D, tile: Vector2i) -> void:
@@ -295,7 +296,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		dying = true
 		remove_from_group("enemy")
 		GameAudio.sfx("drop")
-		GameState.add_xp(15)
+		GameState.add_xp(kill_xp)
 		Achv.count("kill_wraith")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Тенеплёт рассеян! (+15 опыта)")

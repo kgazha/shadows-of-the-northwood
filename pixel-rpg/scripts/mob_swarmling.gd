@@ -61,6 +61,7 @@ var home := Vector2.ZERO
 var facing := "down"
 var bit_t := 0.0              # >0 — проигрывается кадр укуса
 var dying := false            # страж повторной смерти: XP — ровно один раз
+var kill_xp := 3              # t20: XP со смерти (мини-боссы ×3; дефолт = прежняя конста)
 var swarm_left := false       # крыса покинула стайный учёт ровно один раз (смерть XOR бегство)
 var flee_best := 0.0          # t44: макс. удаление от дома за текущий бег (якорь = FLEE_RADIUS)
 var flee_stall := 0.0         # t44: секунды с последней прибавки к этому рекорду
@@ -289,7 +290,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		dying = true
 		remove_from_group("enemy")
 		GameAudio.sfx("drop")
-		GameState.add_xp(3)
+		GameState.add_xp(kill_xp)
 		Achv.count("kill_swarmling")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Мглокрыс повержен! (+3 опыта)")

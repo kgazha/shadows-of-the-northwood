@@ -23,10 +23,28 @@ const OW := preload("res://scripts/open_world.gd")
 const W := 40
 const H := 24
 const MINI_Y := 48000.0
+## t20 (25.11): «этаж» хода на биом — MINI_Y + i×4800 (тот же шаг полос
+## YS_CYCLE, что у всех зон). ПОРЯДОК BIOMES-append-only: индексы (а значит
+## и этажи, и сейвы «mini_<biom>») прежних биомов не двигаются.
+const FLOOR_STEP := 4800.0
 
-## t19: лес — единственный подключённый биом (§2 «по одному биому за шаг»;
-## t20 дописывает остальные пять и звенья цепочки «закрыть ход»).
-const BIOMES := ["forest"]
+## t19: лес (§2 «по одному биому за шаг»). t20 (25.11) шагами открывает
+## остальные пять; список append-only (этажи mini_y привязаны к индексу).
+const BIOMES := ["forest", "steppe", "desert", "snow", "castle", "dungeon"]
+
+## Этаж (y-сдвиг) хода биома; неизвестный биом — base (не должен зваться).
+static func mini_y(biome: String) -> float:
+	var i: int = BIOMES.find(biome)
+	return MINI_Y + FLOOR_STEP * float(maxi(i, 0))
+
+## Биом по мировой y («с какого хода точка»); вне мини-этажей — "".
+static func biome_at_y(y: float) -> String:
+	if y < MINI_Y:
+		return ""
+	var i := int(floor((y - MINI_Y) / FLOOR_STEP))
+	if i < 0 or i >= BIOMES.size():
+		return ""
+	return String(BIOMES[i])
 
 ## Пол биома (символ клетки внутренней сетки).
 static func floor_ch(biome: String) -> String:
@@ -34,6 +52,25 @@ static func floor_ch(biome: String) -> String:
 
 static func seed_for(run_seed: int, biome: String) -> int:
 	return OW.zone_seed(run_seed, "mini_" + biome)
+
+## t20 (25.11): флейвор-данные хода (текст/палитра — closed RAMPS имена).
+## Живут в data-слое: читают их inner-классы mini_zone (их скоуп внешние
+## const своего файла не видит) и world.
+const HOLE_HINT := {
+	"forest": "Ход вниз (корни)", "steppe": "Ход вниз (полынь)",
+	"desert": "Ход вниз (пески)", "snow": "Ход вниз (снег)",
+	"castle": "Ход вниз (обвал)", "dungeon": "Ход вниз (пролом)",
+}
+const HOLE_RIM := {
+	"forest": "BARK", "steppe": "STONE_WARM", "desert": "PATH",
+	"snow": "CRYSTAL", "castle": "IRON", "dungeon": "BONE",
+}
+
+static func hole_hint(b: String) -> String:
+	return String(HOLE_HINT.get(b, "Ход вниз (открытая рана)"))
+
+static func hole_rim(b: String) -> String:
+	return String(HOLE_RIM.get(b, "BARK"))
 
 ## Полная внутренняя карта: {width, height, grid: Array[String], meta}.
 ## meta: biome, spawn, chest, boss, centers (по порядку комнат), n_rooms, seed.
