@@ -1991,23 +1991,19 @@ func stage_belt1_mini() -> void:
 	chk("belt1: босс и сундук в разных комнатах (дальняя — боссу)",
 		int(mz.boss_tile.x) >= 0 and int(mz.chest_tile.x) >= 0 and mz.boss_tile != mz.chest_tile,
 		"boss=%s chest=%s" % [str(mz.boss_tile), str(mz.chest_tile)])
-	# t22 (25.11): ЧЕСТНАЯ ПОМЕТКА ВМЕСТО CHECKPOINT-а внутри хода. Сейв+резюме в
-	# микро-подземелье — НЕ РАБОТАЕТ (воспроизведено голым зондом
-	# diag-t22/mini_save_probe.gd, лог diag-t22/mini_save_probe.log): до сейва
-	# active=area=«mini_snow», после do_quickload() — active=area=«loc_dungeon»
-	# при прежней позе (328, 62698), т.е. герой стоит на этаже хода, мир считает
-	# его Подземельем, сцена хода снята с физики. Причина по чтению world.gd:
-	# do_quickload() сначала зовёт apply_zone(in_cave=false) -> apply_area(«village»)
-	# затирает GameState.area (world.gd:1809), и лишь потом _place_resumed_player()
-	# читает ключ (world.gd:1703) — ключ уже «village», а y-полосы (19200..43200)
-	# не знают этажей MINI_Y=48000 и отдают верхнюю полосу loc_dungeon.
-	# Кликабельный P1 для t19/t20 (заявка «сейв внутри хода переживает рестарт»
-	# не выполняется). CHECKPOINT здесь дал бы КРАСНЫЙ плейт и заблокировал волну
-	# без пользы для фикса, поэтому дефект оформлен находкой, а не пином;
-	# стендовый чек появится вместе с фиксом (капитан решает).
-	finding("save_mini", "сейв+резюме в micro-подземелье выбрасывает в loc_dungeon "
-			+ "(mini_save_probe: было mini_snow -> стало loc_dungeon при y=62698; "
-			+ "do_quickload затирает GameState.area до чтения ключа резюме)")
+	# t22 (25.11) F-1: сейв+резюме внутри микро-подземелья раньше выбрасывало
+	# героя в «Подземелье» (замер diag-t22/mini_save_probe.gd: до сейва
+	# active=area=«mini_snow», после do_quickload() — «loc_dungeon» при прежней
+	# позиции: do_quickload затирает GameState.area (world.gd:1809) до чтения
+	# ключа резюме (world.gd:1703)). P1 принят капитаном как t25 и ИСПРАВЛЕН в
+	# HEAD fbb0ceb (узкая форма mini_*; широкая ломала легаси-кейс c37 —
+	# устаревший area обязан падать на спавн деревни). Живое подтверждение:
+	# прогон diag-t22/qa_c1_run12.log делал сейв+quickload внутри хода — зона
+	# осталась mini_snow, сцена хода на месте. Постоянный чек здесь НЕ ставим:
+	# do_quickload пересоздаёт сцену мира посреди маршрута, и плейт теряет
+	# кэшированные ссылки (на том же прогоне — 17 каскадных красных, см.
+	# diag-t22/REGRESS_DEPTH.md F-10). Регресс закрыт standalone-зондом и
+	# стендовыми проверками t25, поэтому finding отсюда снят (не кричим волком).
 	await frames(10)
 	mz = world.mini_grids.get("snow", null)
 	if mz == null or mz.boss_node == null:
