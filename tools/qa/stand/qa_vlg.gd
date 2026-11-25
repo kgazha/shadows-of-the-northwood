@@ -220,6 +220,7 @@ func _ready() -> void:
 	await _inv_scale_resume()
 	await _inv_halo()
 	await _d2_live()
+	await _env_pond()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -1813,3 +1814,56 @@ func _inv_halo() -> void:
 	# в g22 нет вообще)
 	chk(_blocked(27, 16) and _blocked(28, 16) and not _blocked(22, 16) and not _blocked(24, 21),
 		"roots/g22: физика bit-in-bit — пара (27,16)/(28,16) глуха, тропа (22,16) и просвет (24,21) открыты")
+
+# ------------------------------------------- «Среда v1» (t11, вердикт 25.11)
+## Пруд деревни: геометрия НЕ двинута (map_village / MAP_VILLAGE_MD5 не
+## трогаем), изменён только источник и характер анимации: тайлы AtmoWater
+## берутся из кодо-полосы EnvArt «EnvWtrS» (лето 4к@300мс, ноль растров),
+## кадр клетки = int((tick + фаза shash(x,y))/18)%4, tick — СЧЁТ КАДРОВ
+## atmosphere (не wall-time), в сейв не пишется.
+
+func _env_pond() -> void:
+	var w = game_world
+	var ENV := load("res://scripts/env_art.gd")
+	var wl: TileMapLayer = null
+	for c in w.village_zone.get_children():
+		if c is TileMapLayer and String(c.name) == "AtmoWater":
+			wl = c
+			break
+	if wl == null:
+		chk(false, "env v1: слой AtmoWater не найден")
+		return
+	var ts: TileSet = wl.tile_set
+	var oksrc: bool = ts != null and ts.get_source_count() == 1
+	if oksrc:
+		var s := ts.get_source(0) as TileSetAtlasSource
+		oksrc = s != null and s.texture != null \
+				and String(s.texture.resource_name) == "EnvWtrS" \
+				and s.texture.get_width() == 64 and s.texture.get_height() == 16
+	chk(oksrc, "env v1: тайлы пруда — кодо-полоса EnvWtrS 4x16 (вердикт 25.11, ноль растров)")
+	var atmo = w.get_tree().get_first_node_in_group("atmosphere")
+	if atmo == null:
+		chk(false, "env v1: atmosphere не найден")
+		return
+	var cells: Array = atmo.get("water_cells")
+	chk(cells.size() >= 20, "env v1: пруд живёт тайлмапом (%d клеток, карта не двинута)" % cells.size())
+	var det_ok := true
+	var base := int(atmo.get("_env_ticks"))
+	for c in cells:
+		var ph: int = ENV.cell_phase(c.x, c.y, ENV.T_WATER, 4)
+		if wl.get_cell_atlas_coords(c) \
+				!= Vector2i(ENV.cell_frame(base, ph, ENV.T_WATER, 4), 0):
+			det_ok = false
+			break
+	await _frames(25)
+	var base2 := int(atmo.get("_env_ticks"))
+	var adv_ok := true
+	for c in cells:
+		var ph2: int = ENV.cell_phase(c.x, c.y, ENV.T_WATER, 4)
+		if wl.get_cell_atlas_coords(c) \
+				!= Vector2i(ENV.cell_frame(base2, ph2, ENV.T_WATER, 4), 0):
+			adv_ok = false
+			break
+	chk(det_ok and adv_ok and base2 > base,
+		"env v1: пруд — живой кадр клетки строго int((tick+фаза)/18)%4 по счёту кадров \n" \
+				+ "        (не wall-time; тик продвинулся на %d, фазы по shash клетки)" % (base2 - base))

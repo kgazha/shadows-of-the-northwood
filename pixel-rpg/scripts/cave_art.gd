@@ -31,18 +31,14 @@ extends RefCounted
 ##    тёплый акцент пещеры — настенные факелы; кадр BRAZIER остаётся в атласе
 ##    неиспользуемым искус (пин qa_lp: в дереве пещеры его нет).
 
-## Факел (c5, вердикт «факелы лучше»): 2 кадра фликера с периодом T_TORCH
-## (паттерн A_TORCH atmosphere.gd: смена кадра int(t/0.25)%2, глобальный синк)
-## + PointLight2D с пульсом по паттерну _altar_light (atmosphere.gd:177):
-## base 0.75, амплитуда 0.25, частота 2.2 рад/с; фаза — детерминирована
-## клеткой. Радиус/цвет света — как деревенский факел (_build_torches).
+## Факел (c5 «факелы лучше» + «Среда v1» t11 вердикт 25.11): состав и
+## расстановка прежние (TORCH_MAX <= 5/уровень, якоря сундук/вход/дверь/алтари);
+## ПОВЕДЕНИЕ ИНВЕРТИРОВАННЫЙ ВЕРДИКТОМ: легаси «2 кадра + PointLight2D с
+## пульсом» ЗАМЕНЁН на 4-кадровый ночной цикл листа (250 мс, пульс — модуляция
+## тона внутри рампы FIRE, БЕЗ PointLight2D — gl_compatibility, свет у якорей
+## факелов снят решением пользователя). Тик — счётчик кадров, не wall-time.
 const TORCH_MAX := 5               # верх по составу (acceptance: 3..5)
-const TORCH_FRAME_T := 0.25
-const TORCH_LIGHT_BASE := 0.75
-const TORCH_LIGHT_AMP := 0.25      # амплитуда как у алтаря
-const TORCH_LIGHT_FREQ := 2.2
-const TORCH_RANGE := 36.0
-const TORCH_COLOR := Color(1.0, 0.75, 0.45)
+const ENV := preload("res://scripts/env_art.gd")
 ## Порядок кандидатов вокруг якоря (сундук/вход/дверь/алтари): стена с
 ## проходимой клеткой под нею; кольцо радиуса 3 (стена алтарного зала стоит
 ## не ближе 2 клеток от «A»); фиксированный список => детерминизм без сида.
@@ -252,49 +248,29 @@ static func torch_slots(rows: Array, chest: Vector2i, spawn: Vector2i,
 	return out
 
 
-## Текстура радиального света — тот же паттерн, что atmosphere._radial
-## (константы держим внутри CaveArt по контракту c5).
-static var _torch_rad: Texture2D = null
+## «Среда v1» (25.11): _mk_torch_light/PointLight2D СНЯТЫ по вердикту —
+## световой пульс живёт в тоне кадров листа (рампа FIRE), освещение у якорей
+## факелов не ставим (gl_compatibility, без shader/Light2D).
 
 
-static func _mk_torch_light() -> PointLight2D:
-	if _torch_rad == null:
-		var g := Gradient.new()
-		g.set_color(0, Color(1, 1, 1, 1))
-		g.set_color(1, Color(1, 1, 1, 0))
-		var gt := GradientTexture2D.new()
-		gt.gradient = g
-		gt.fill = GradientTexture2D.FILL_RADIAL
-		gt.fill_from = Vector2(0.5, 0.5)
-		gt.fill_to = Vector2(0.5, 0.0)
-		gt.width = int(ceil(TORCH_RANGE * 2.0))
-		gt.height = gt.width
-		_torch_rad = gt
-	var l := PointLight2D.new()
-	l.texture = _torch_rad
-	l.color = TORCH_COLOR
-	l.energy = TORCH_LIGHT_BASE
-	l.texture_scale = 1.0
-	return l
-
-
-## Факел-спрайт: 2-кадровый фликер (паттерн A_TORCH atmosphere.gd — смена
-## текстуры int(t/T)%2, синхронно у всех) + синусный пульс своего света
-## (паттерн _altar_light). Живёт и тикает только когда зона пещеры активна
-## (PROCESS_MODE наследуется от зоны) — вне пещеры не светит и не крутится.
+## Факел-спрайт «Среда v1»: 4-кадровый НОЧНОЙ цикл листа (250 мс, пульс тона
+## встроен в кадр), фаза — shash клетки, t — счётчик кадров зоны (не wall-time;
+## вне пещеры зона PROCESS_MODE_DISABLED и тики стоят — картинка не «догоняется»).
+## PointLight2D больше НЕТ (вердикт 25.11). Живёт и тикает только когда зона
+## пещеры активна (PROCESS_MODE наследуется от зоны).
 class TorchSprite:
 	extends Sprite2D
-	var t0: Texture2D
-	var t1: Texture2D
-	var lit: PointLight2D
-	var phase := 0.0
+	var strip: Texture2D
+	var ph := 0
+	var tick := 0
+	var last := -1
 
 	func _process(_delta: float) -> void:
-		var tt := float(Time.get_ticks_msec()) / 1000.0
-		texture = t1 if int(tt / CaveArt.TORCH_FRAME_T) % 2 == 1 else t0
-		if lit != null:
-			lit.energy = CaveArt.TORCH_LIGHT_BASE \
-					+ CaveArt.TORCH_LIGHT_AMP * sin(tt * CaveArt.TORCH_LIGHT_FREQ + phase)
+		tick += 1
+		var idx := CaveArt.ENV.cell_frame(tick, ph, CaveArt.ENV.T_TORCH, 4)
+		if idx != last:
+			last = idx
+			texture = CaveArt.ENV.atlas_of(strip, idx, 10)
 
 
 ## Строит слой CaveV1 в контейнере пещеры; возвращает слой (или null, если
@@ -359,27 +335,23 @@ static func build(world) -> Node2D:
 				c.z_as_relative = false
 				c.z_index = Z_STALC
 				layer.add_child(c)
-	# факелы (c5, вердикт «факелы лучше»): тёплый акцент на стенах у сундука,
-	# входа и двери; кострище-мох не ставится (BRAZIER остаётся в атласе
-	# неиспользуемым искусом — пин qa_lp «в дереве пещеры его нет»).
-	var t_tex0 := _region(atlas, "TORCH1")
-	var t_tex1 := _region(atlas, "TORCH2")
+	# факелы (c5 «факелы лучше» + «Среда v1» 25.11): ночной 4-кадровый цикл
+	# листа БЕЗ PointLight2D; кострище-мох не ставится (BRAZIER остаётся в
+	# атласе неиспользуемым искусом — пин qa_lp «в дереве пещеры его нет»).
+	var t_strip: Texture2D = ENV.strip_torch(true)
 	for m in torch_slots(rows, dz.chest_tile, dz.spawn_tile, dz.door_tile):
 		var t := TorchSprite.new()
-		t.t0 = t_tex0
-		t.t1 = t_tex1
-		t.texture = t_tex0
+		t.strip = t_strip
+		t.ph = ENV.cell_phase(m.x, m.y, ENV.T_TORCH, 4)
+		t.texture = ENV.atlas_of(t_strip, ENV.cell_frame(0, t.ph, ENV.T_TORCH, 4), 10)
 		# «стопа» кронштейна на 2 px выше верхней границы проходимой клетки
-		# под стеной: всё пламя — выше головы идущего героя; z — общая шкала
-		# V-01 от «стопы»; в дим-реестр НЕ идёт (на стене, героя не накрывает).
+		# под стеной: кадр листа 10x15 центрирован — нижняя граница рамки
+		# кадра стоит на «стопе», всё пламя — выше головы идущего героя
+		# (инвариант прежних 12-px кадров сохранён); z — общая шкала V-01 от
+		# «стопы»; в дим-реестр НЕ идёт (на стене, героя не накрывает).
 		var tbottom := float(m.y + 1) * 16.0 - 2.0
-		t.position = Vector2(float(m.x) * 16.0 + 8.0, tbottom - 5.0)
-		t.phase = frac(m.x, m.y, 23) * TAU
+		t.position = Vector2(float(m.x) * 16.0 + 8.0, tbottom - 7.5)
 		layer.add_child(t)
-		var lt := _mk_torch_light()
-		lt.position = Vector2(0.0, -2.0)  # ядро пламени (верхние кадры)
-		t.add_child(lt)
-		t.lit = lt
 		world._ys_prop(t)
 	# c7 микро-жизнь: медленные падающие пылинки в залах (чистая визуализация)
 	_build_dust(world, layer)

@@ -16,6 +16,7 @@ const PROP_TEX := "res://assets/world/world_props_v1.png"
 const FOREST_FLOOR := "res://assets/forest/forest_floor_v1.png"
 
 const OW := preload("res://scripts/open_world.gd")
+const ENV := preload("res://scripts/env_art.gd")
 
 var world: Node2D
 var map_rows: Array = []
@@ -50,6 +51,7 @@ func setup(p_world: Node2D, p_map: Dictionary) -> void:
 	_build_tiles()
 	_build_walls()
 	_build_props()
+	_build_env()
 	_spawn_interactors()
 
 func _load_manifest() -> void:
@@ -274,6 +276,46 @@ func _spawn_interactors() -> void:
 	a.setup(self, arch_tile)
 	arch_node = a
 
+# ---------------------------------------------------------------- «Среда v1»
+## Мохово-лишайниковые оверлеи скальных кластеров замкового поля 'c' (массы
+## 'W') — «Среда v1» t11 (вердикт 25.11): GRASS-лишайник, 3к@900мс, две
+## яркости, детерминированный подотбор по shash; геометрию не трогают.
+## Факелы порталов навешивает сам WorldPortal (день — плоский вариант листа).
+const MOSS_WM_MAX := 10
+
+var env_ticker: Node2D = null
+
+func _build_env() -> void:
+	env_ticker = ENV.EnvTicker.new()
+	env_ticker.name = "EnvTickerV1"
+	add_child(env_ticker)
+	var mlayer := Node2D.new()
+	mlayer.name = "EnvMossV1"
+	add_child(mlayer)
+	var sb: Texture2D = ENV.strip_moss("CASTLE", true)
+	var sd: Texture2D = ENV.strip_moss("CASTLE", false)
+	var put := 0
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in row.length():
+			if String(row[x]) != "W":
+				continue
+			var hh := OW.shash("wmoss:%d,%d" % [x, y])
+			if hh % 100 >= 18:
+				continue
+			var spr := Sprite2D.new()
+			spr.position = Vector2(float(x) * TILE + 8.0, float(y + 1) * TILE - 8.0)
+			var foot := float((y + 1) * TILE)
+			spr.z_as_relative = false
+			spr.z_index = int(round(fposmod(foot, float(world.YS_CYCLE)))) + 1
+			mlayer.add_child(spr)
+			var bright := (hh >> 8) % 2 == 0
+			env_ticker.add_spr(spr, sb if bright else sd, TILE,
+					ENV.T_MOSS, 3, ENV.cell_phase(x, y, ENV.T_MOSS, 3))
+			put += 1
+			if put >= MOSS_WM_MAX:
+				return
+
 const OW_PAL := preload("res://scripts/pixel_palette.gd")
 
 class WorldPortal:
@@ -289,6 +331,15 @@ class WorldPortal:
 		if spr != null:
 			spr.position = Vector2(0, 6 - zone._prop_h("PORTAL_" + biome.to_upper()) / 2.0)
 			add_child(spr)
+		# «Среда v1» (25.11, вердикт): факел у портала — ДНЕВНОЙ вариант листа
+		# (4 кадра 250 мс, без ядра/пульса и БЕЗ Light2D — свет снят в пользу
+		# модуляции тона), восточнее створа; тикет — общий скинер зоны.
+		var t := Sprite2D.new()
+		t.position = Vector2(11, -1)
+		zone.env_ticker.add_spr(t, zone.ENV.strip_torch(false), 10,
+				zone.ENV.T_TORCH, 4,
+				zone.ENV.cell_phase(int(tile.x), int(tile.y), zone.ENV.T_TORCH, 4))
+		add_child(t)
 		var cs := CollisionShape2D.new()
 		var sh := CircleShape2D.new()
 		sh.radius = 14.0

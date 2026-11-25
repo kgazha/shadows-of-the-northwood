@@ -17,7 +17,8 @@ extends RefCounted
 ##
 ## Сетка (алфавит): '#' скала-стена (блок), '.' степь, 's' снег, 'f' лес,
 ## 'd' пустыня, 'c' замок, 'u' подземелье, '-' дорога, 'p' портал (проходн.),
-## 'a' арка (проходн.), 'M'/'W'/'C' глухая масса (блок),
+## 'a' арка (проходн.), 'M'/'W'/'C' глухая масса (блок), 'w' вода (блок,
+## «Среда v1» 25.11: река/озеро/оазис, плавания нет),
 ## deco (проходные): 'i' ледяной шип, 'S' кости/череп, 'b' знамёна, 'r' хлам,
 ## 't' ковыль, 'n' папоротник, 'g' гриб-свет.
 
@@ -159,6 +160,17 @@ static func hash_map(m: Dictionary) -> int:
 # Геометрия
 # ============================================================================
 const SOLID := ["#", "M", "W", "C"]
+## «Среда v1» (t11, 25.11, ВЕРДИКТ ПОЛЬЗОВАТЕЛЯ «вода — заказана»): водная
+## клетка 'w' — непроходима ВСЮДУ (плавания нет по дизайну), честный
+## blocking-прямоугольник в слитых коллайдерах — иллюзии проходимости нет.
+## cluster_holes (g24a «коридор >= 2») остаётся каноном ТОЛЬКО для скальных/
+## стеновых масс SOLID: брод через реку — штатная осознанная 1-клеточная
+## переправа (пересечение река x дорога), а не дыра между массами;
+## периметровое кольцо t59 вода не трогает (водные клетки строго x∈2..W-3).
+const WATER := "w"
+const SOLID_ALL := ["#", "M", "W", "C", WATER]
+## Проходной декор локаций (для правил расстановки воды).
+const DECO_CH := "iSbrtng"
 
 static func ch_at(grid: Array, x: int, y: int) -> String:
 	if y < 0 or x < 0 or y >= grid.size():
@@ -169,12 +181,13 @@ static func ch_at(grid: Array, x: int, y: int) -> String:
 	return row[x]
 
 static func walkable(grid: Array, x: int, y: int) -> bool:
-	return not SOLID.has(ch_at(grid, x, y))
+	return not SOLID_ALL.has(ch_at(grid, x, y))
 
 ## Слияние глухих клеток в прямоугольники-коллайдеры (приём деревни: 825
 ## СЛИТЫХ полос вместо клетки-на-клетку). Жадно: вниз до упора, затем вправо
 ## на всю высоту. Детерминированно, O(cells·H). Возвращает Array[Vector4i]
-## (x, y, w, h) в клетках.
+## (x, y, w, h) в клетках. «Среда v1» (25.11): по SOLID_ALL — вода тоже честный
+## блокирующий прямоугольник (t59-герметичность физики не нарушается).
 static func solid_rects(grid: Array) -> Array:
 	var out: Array = []
 	var h := grid.size()
@@ -187,12 +200,12 @@ static func solid_rects(grid: Array) -> Array:
 		for x in w:
 			if covered.has("%d,%d" % [x, y]):
 				continue
-			if not SOLID.has(row[x]):
+			if not SOLID_ALL.has(row[x]):
 				continue
 			var hh := 0
 			while y + hh < h:
 				var r2 := String(grid[y + hh])
-				if x >= r2.length() or not SOLID.has(r2[x]) or covered.has("%d,%d" % [x, y + hh]):
+				if x >= r2.length() or not SOLID_ALL.has(r2[x]) or covered.has("%d,%d" % [x, y + hh]):
 					break
 				hh += 1
 			var ww := 1
@@ -200,7 +213,7 @@ static func solid_rects(grid: Array) -> Array:
 				var ok := true
 				for dy in hh:
 					var r3 := String(grid[y + dy])
-					if x + ww >= r3.length() or not SOLID.has(r3[x + ww]) \
+					if x + ww >= r3.length() or not SOLID_ALL.has(r3[x + ww]) \
 							or covered.has("%d,%d" % [x + ww, y + dy]):
 						ok = false
 						break
@@ -215,6 +228,9 @@ static func solid_rects(grid: Array) -> Array:
 
 ## Перенос проверки из world_paint.cluster_holes (утверждённая геометрия):
 ## единичный ЗАМКНУТЫЙ проход между массами = нарушение «коридор >= 2».
+## «Среда v1» (25.11): скоуп — скальные/стеновые массы SOLID (как в g24a);
+## вода (SOLID_ALL) в проверку НЕ входит: 1-клеточная переправа дороги через
+## реку — штатный заказанный брод, а не дыра между массами (вердикт 25.11).
 static func cluster_holes(grid: Array) -> Array:
 	var out: Array = []
 	var solid := func(x: int, y: int) -> bool:
@@ -598,6 +614,10 @@ static func loc_map(run_seed: int, zone: String) -> Dictionary:
 		var ay := 4 + int(nz(zs, tries * 41, 53) * float(LOC_H - rows - 9))
 		if _stamp_cluster_rect(grid, cmap, ax, ay, blocked_zone, placed, LOC_W, LOC_H):
 			got += 1
+	# «Среда v1» (t11, вердикт 25.11): вода — ДО дорог: штатная дорога,
+	# пересекающая реку, становится brod-клеткой '-' при отрисовке дорог
+	# (переправа ровно в 1 клетку, в штатных бродах).
+	_paint_water(grid, zs, zone, blocked_zone, spawn)
 	for rc in road_cells:
 		_paint(grid, rc[0], rc[1], "-")
 	# маркеры
@@ -616,7 +636,7 @@ static func loc_map(run_seed: int, zone: String) -> Dictionary:
 			var y := 3 + int(nz(zs, 700 + scan * 23 + kind.length() * 13, 37) * float(LOC_H - 8))
 			scan += 1
 			var k2 := "%d,%d" % [x, y]
-			if blocked_zone.has(k2) or ch_at(grid, x, y) in SOLID or ch_at(grid, x, y) == "#":
+			if blocked_zone.has(k2) or not walkable(grid, x, y):
 				continue
 			if cheb(Vector2i(x, y), spawn) < 8:
 				continue
@@ -648,6 +668,100 @@ static func _paint(grid: Array, x: int, y: int, ch: String) -> void:
 		return
 	row[x] = ch
 	grid[y] = row
+
+# ============================================================================
+# «Среда v1» (t11, 25.11, ВЕРДИКТ ПОЛЬЗОВАТЕЛЯ «да»): водная геометрия —
+# единственная часть наполнения, двигающая карту. Река «Чащи» — русло в
+# 1 клетку глубиной по строке 10..21; переправа — ровно 1 клетка в штатных
+# бродах (дорога, прочерченная ПОСЛЕ воды, остаётся '-'). Озеро «Снежника»
+# (зимний цикл) и зеркало-оазис «Пустоши» — эллипс на чистом грунте с
+# проходимым береговым кольцом >= 2 (герметичность t59 не трогается:
+# периметр вода не касает, коллайдеры — честные слитые прямоугольники).
+# Откат кандидата, если появился отрезанный от спавна карман (R2-инвариант).
+# ============================================================================
+
+static func _paint_water(grid: Array, zs: int, zone: String, blocked: Dictionary,
+		spawn: Vector2i) -> void:
+	match zone:
+		"forest":
+			_place_river(grid, zs)
+		"snow":
+			_place_lake(grid, zs, blocked, spawn, 4, 3)
+		"desert":
+			_place_lake(grid, zs, blocked, spawn, 3, 2)
+
+## Река: горизонтальное русло в одной клетке (ry 10..21 — вне строки дороги
+## y=6 и зоны спавна 25..31). Водой замещаются только проходимый грунт/декор:
+## скальные массы не разрезаются новых коридоров, '#'/массы остаются.
+static func _place_river(grid: Array, zs: int) -> void:
+	var ry := 10 + int(nz(zs, 7717, 5) * 12.0)
+	for x in range(2, LOC_W - 2):
+		var ch := ch_at(grid, x, ry)
+		if ch == loc_ground("forest") or DECO_CH.find(ch) >= 0:
+			_paint(grid, x, ry, WATER)
+
+## Характер клетки для воды/её берегового кольца: проходимый НЕдорожный грунт
+## ('-' не замещаем и не считаем берегом — броды рождает отрисовка дорог).
+static func _water_ok_ch(ch: String) -> bool:
+	return ch != "#" and ch != "-" and ch != WATER and not SOLID_ALL.has(ch)
+
+static func _place_lake(grid: Array, zs: int, blocked: Dictionary, spawn: Vector2i,
+		rx: int, ry_: int) -> void:
+	for t in range(40):
+		var cx := 7 + int(nz(zs, 9000 + t * 37, 13) * float(LOC_W - 14))
+		var cy := 6 + int(nz(zs, 9500 + t * 41, 29) * float(LOC_H - 16))
+		if _try_lake(grid, cx, cy, rx, ry_, blocked, spawn):
+			return
+
+static func _try_lake(grid: Array, cx: int, cy: int, rx: int, ry_: int,
+		blocked: Dictionary, spawn: Vector2i) -> bool:
+	var r2x := rx * rx
+	var r2y := ry_ * ry_
+	var waters: Array = []
+	var wset := {}
+	for dy in range(-ry_, ry_ + 1):
+		for dx in range(-rx, rx + 1):
+			if dx * dx * r2y + dy * dy * r2x <= r2x * r2y:
+				var x := cx + dx
+				var y := cy + dy
+				waters.append([x, y])
+				wset["%d,%d" % [x, y]] = true
+	if waters.is_empty():
+		return false
+	# озеро (грунт, не дорога, вне blocked) + кольцо Чебышева 2 (чистый
+	# проходимый берег: зеркало оазиса в кольце, карманов и щелей нет)
+	for wcell in waters:
+		for oy in range(-2, 3):
+			for ox in range(-2, 3):
+				var x := int(wcell[0]) + ox
+				var y := int(wcell[1]) + oy
+				var k := "%d,%d" % [x, y]
+				if wset.has(k):
+					continue
+				if not _water_ok_ch(ch_at(grid, x, y)):
+					return false
+		if blocked.has("%d,%d" % [wcell[0], wcell[1]]):
+			return false
+	var snap := {}
+	for wcell in waters:
+		var y := int(wcell[1])
+		if not snap.has(y):
+			snap[y] = String(grid[y])
+		_paint(grid, int(wcell[0]), y, WATER)
+	# R2-инвариант: ни одной проходимой клетки, отрезанной от спавна
+	# (счёт сравнением мощности: один обход вместо поштучного has()).
+	var want := 0
+	for y in grid.size():
+		var rowc := String(grid[y])
+		for x in rowc.length():
+			if walkable(grid, x, y):
+				want += 1
+	var seen := reachable(grid, spawn)
+	if seen.size() < want:
+		for sy in snap:
+			grid[int(sy)] = snap[sy]
+		return false
+	return true
 
 static func _stamp_cluster_rect(grid: Array, cmap: Array, ax: int, ay: int,
 		blocked: Dictionary, placed: Array, w: int, h: int) -> bool:

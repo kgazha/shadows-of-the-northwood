@@ -7,6 +7,13 @@ extends Node2D
 ## world.gd — единственный источник констант карты (preload), циклов зависимостей нет.
 
 const WorldScript := preload("res://scripts/world.gd")
+## «Среда v1» (t11, вердикт 25.11): кодо-циклы листа вместо легаси anim_tiles —
+## пруд (лето 4к@300мс), факелы дверей/арки (день 4к@250мс, Light2D СНЯТ по
+## решению вердикта — пульс тона внутри рамки FIRE), мох пещеры (MOSS_GLOW
+## 3к@900мс, Light2D снят). Скинер — вариант B листа: t — счётчик кадров
+## (не wall-time), фаза shash клетки; в сейв не пишется.
+const ENV := preload("res://scripts/env_art.gd")
+const OWGEN := preload("res://scripts/open_world.gd")
 
 const DECOR_TEX := "res://assets/decor.png"        # 128x16: 0 куст+ягоды, 1 папоротник, 2 кленовый лист, 3 мухомор, 4 пень, 5 камыши, 6 рогоз, 7 камни
 const ANIM_TEX := "res://assets/anim_tiles.png"    # 128x16: 0-3 вода, 4-5 факел, 6-7 светящийся мох
@@ -28,8 +35,8 @@ const FEET_FALLBACK := {
 }
 const SCAN_PERIOD := 0.5       # пересканирование сущностей для теней, с
 const FULL_SCAN_DEBOUNCE := 0.15  # полный скан по child_entered — не чаще этого интервала, с
-const T_WALK := 0.35           # период смены кадра воды, с
-const T_TORCH := 0.25          # период смены кадра факела, с
+# «Среда v1» (25.11): T_WALK/T_TORCH (легаси wall-time 0.35/0.25 с) СНЯТЫ —
+# циклы листа идут от счётчика кадров _env_ticks (T_* в EnvArt, кадры при 60fps).
 
 # индексы decor.png
 const D_BUSH := 0
@@ -55,11 +62,11 @@ const TINT_CAVE := Color(0.85, 0.93, 1.04)
 var world: Node2D
 var water_layer: TileMapLayer
 var water_cells: Array[Vector2i] = []
-var _water_frame := 0
-var _water_t := 0.0
-var _torch_t := 0.0
-var _torches: Array = []       # {spr: Sprite2D, light: Light2D, phase: float}
-var _moss: Array = []          # {spr: Sprite2D, light: Light2D, phase: float}
+var _env_ticks := 0            # «Среда v1»: СЧЁТ КАДРОВ (детерминирован, не wall-time)
+var _water_frame := 0          # кэш общего кадра пруда (перестановка тайлов только на смене)
+var _water_cell_frame := {}    # "x,y" -> кадр скинера (per-cell фаза)
+var _torches: Array = []       # {spr, tex, fw, k, n, ph, last} — «Среда v1», свет снят вердиктом
+var _moss: Array = []          # {spr, tex, fw, k, n, ph, last} — то же (пещера, MOSS_GLOW)
 var _altar_light: Light2D = null
 var _altar_home := Vector2.ZERO    # t18: домашняя позиция света алтаря для bob (спрайт не трогаем)
 var _prop_lights: Array = []       # t18: {light, home, phase, base, amp} — пульс + bob ±1.5 px
@@ -149,29 +156,31 @@ func _process(delta: float) -> void:
 		_scan_pending = false
 		_scan_cool = FULL_SCAN_DEBOUNCE
 		_scan_shadows()
-	# вода: 4 кадра 16x16 из anim_tiles.png, цикл T_WALK
+	# «Среда v1» (t11, вердикт 25.11, лист вариант B): вода пруда, факели дверей
+	# и мох пещеры — тиковые скиннеры int((ticks+фаза shash)/K)%N. t — счётчик
+	# кадров Atmo (в headless детерминирован), НЕ wall-time; Light2D у факелов
+	# и мха СНЯТ по решению вердикта (пульс — модуляция тона внутри рампы).
+	_env_ticks += 1
 	if water_layer != null and not water_cells.is_empty():
-		_water_t += delta
-		if _water_t >= T_WALK:
-			_water_t -= T_WALK
-			_water_frame = (_water_frame + 1) % 4
-			for c in water_cells:
-				water_layer.set_cell(c, 0, Vector2i(A_WATER0 + _water_frame, 0))
-	# факелы: 2 кадра + мягкий синусный фликер (кадр — смена AtlasTexture)
-	if not _torches.is_empty():
-		_torch_t += delta
-		var ti := int(_torch_t / T_TORCH) % 2
-		var tt := _time()
-		for tr in _torches:
-			tr["spr"].texture = tr["t1"] if ti == 1 else tr["t0"]
-			tr["light"].energy = 0.9 * (0.85 + 0.15 * sin(tt * 7.0 + float(tr["phase"])))
-	# мох пещеры: 2 кадра + фликер
-	if not _moss.is_empty():
-		var mt := int(_time() * 2.5) % 2
-		var tt2 := _time()
-		for m in _moss:
-			m["spr"].texture = m["t1"] if mt == 1 else m["t0"]
-			m["light"].energy = 0.9 * (0.8 + 0.2 * sin(tt2 * 5.0 + float(m["phase"])))
+		for c in water_cells:
+			var k := "%d,%d" % [c.x, c.y]
+			if not _water_cell_frame.has(k):
+				_water_cell_frame[k] = {"ph": ENV.cell_phase(c.x, c.y, ENV.T_WATER, 4), "last": 0}
+			var wd: Dictionary = _water_cell_frame[k]
+			var f := ENV.cell_frame(_env_ticks, int(wd["ph"]), ENV.T_WATER, 4)
+			if f != int(wd["last"]):
+				wd["last"] = f
+				water_layer.set_cell(c, 0, Vector2i(f, 0))
+	for tr in _torches:
+		var ti := ENV.cell_frame(_env_ticks, int(tr["ph"]), int(tr["k"]), int(tr["n"]))
+		if ti != int(tr["last"]):
+			tr["last"] = ti
+			tr["spr"].texture = ENV.atlas_of(tr["tex"], ti, int(tr["fw"]))
+	for m in _moss:
+		var mi := ENV.cell_frame(_env_ticks, int(m["ph"]), int(m["k"]), int(m["n"]))
+		if mi != int(m["last"]):
+			m["last"] = mi
+			m["spr"].texture = ENV.atlas_of(m["tex"], mi, int(m["fw"]))
 	# алтарь: медленный пульс
 	if _altar_light != null:
 		_altar_light.energy = 0.75 + 0.25 * sin(_time() * 2.2)
@@ -483,17 +492,15 @@ func _feet_fallback(e: Node2D, spr: Node2D) -> Vector2:
 		feet = Vector2(0.0, h * 0.5 - 2.0)
 	return spr.position + spr.scale * feet
 
-# ---------- вода (деревня) ----------
+# ---------- вода (деревенский пруд) — «Среда v1»: тайлы те же (map_village
+# не двигаем), источник кадров — кодо-полоса EnvArt (ноль обращения к растров)
 
 func _build_water() -> void:
-	if _anim_tex == null:
-		push_warning("atmosphere: нет assets/anim_tiles.png — вода/факелы/мох без анимации")
-		return
 	var ts := TileSet.new()
 	var src := TileSetAtlasSource.new()
-	src.texture = _anim_tex
+	src.texture = ENV.strip_water(false)
 	src.texture_region_size = Vector2i(16, 16)
-	for i in 8:
+	for i in 4:
 		src.create_tile(Vector2i(i, 0))
 	ts.add_source(src, 0)
 	water_layer = TileMapLayer.new()
@@ -509,7 +516,7 @@ func _build_water() -> void:
 			if ct.has(row[x]) and int(ct[row[x]]) == 4:
 				water_cells.append(Vector2i(x, y))
 	for c in water_cells:
-		water_layer.set_cell(c, 0, Vector2i(A_WATER0, 0))
+		water_layer.set_cell(c, 0, Vector2i(0, 0))
 
 func _village_tilemap_index() -> int:
 	var i := 0
@@ -519,28 +526,37 @@ func _village_tilemap_index() -> int:
 		i += 1
 	return 0
 
-# ---------- факелы у дверей (деревня) ----------
+# ---------- факели у дверей и северной арки (деревня) — «Среда v1»: ДНЕВНОЙ
+# вариант листа (4 кадра 250 мс, без ядра/пульса), Light2D СНЯТ по вердикту
 
 func _build_torches() -> void:
-	if _anim_tex == null:
-		return
-	var ct: Dictionary = WorldScript.CHAR_TO_TILE
+	var strip := ENV.strip_torch(false)
 	for y in world.map_h:
 		var row := String(world.map_rows[y])
 		for x in world.map_w:
-			if not ct.has(row[x]) or int(ct[row[x]]) != 8:
+			if String(row[x]) != "D":
 				continue
 			var holder := Node2D.new()
 			holder.position = world.tile_to_world(Vector2i(x, y)) + Vector2(0, -6)  # -6 px от центра двери
 			var spr := Sprite2D.new()
-			var t0 := _anim_frame(A_TORCH0)
-			var t1 := _anim_frame(A_TORCH0 + 1)
-			spr.texture = t0
 			holder.add_child(spr)
-			var l := _mk_light(Color(1.0, 0.75, 0.45), 0.9, 36.0)
-			holder.add_child(l)
 			_amb_village.add_child(holder)
-			_torches.append({"spr": spr, "light": l, "phase": float(_hash(x, y)), "t0": t0, "t1": t1})
+			var ph := ENV.cell_phase(x, y, ENV.T_TORCH, 4)
+			spr.texture = ENV.atlas_of(strip, ENV.cell_frame(0, ph, ENV.T_TORCH, 4), 10)
+			_torches.append({"spr": spr, "tex": strip, "fw": 10, "k": ENV.T_TORCH,
+					"n": 4, "ph": ph, "last": 0})
+	# «Среда v1»: факел северной арки (22,2) — тот же дневной цикл, восточнее
+	# створа (якорь рантайм-интерактора world.WORLD_ARCH_TILE, map_village не тронут)
+	var arch: Vector2i = WorldScript.WORLD_ARCH_TILE
+	var ah := Node2D.new()
+	ah.position = world.tile_to_world(arch) + Vector2(11, -2)
+	var aspr := Sprite2D.new()
+	ah.add_child(aspr)
+	_amb_village.add_child(ah)
+	var aph := ENV.cell_phase(arch.x, arch.y, ENV.T_TORCH, 4)
+	aspr.texture = ENV.atlas_of(strip, ENV.cell_frame(0, aph, ENV.T_TORCH, 4), 10)
+	_torches.append({"spr": aspr, "tex": strip, "fw": 10, "k": ENV.T_TORCH,
+			"n": 4, "ph": aph, "last": 0})
 
 func _anim_frame(idx: int) -> AtlasTexture:
 	var at := AtlasTexture.new()
@@ -578,19 +594,23 @@ func _build_cave() -> void:
 			chosen.append(t)
 			if chosen.size() >= 8:
 				break
+	# «Среда v1» (25.11, вердикт): светящийся мох пещеры — цикл листа MOSS_GLOW
+	# 3к@900мс, две яркости (shash клетки); Light2D у мха СНЯТ (пульс — тон
+	# внутри рампы). Отбор клеток прежний (~8, подстраховка — первые 8).
+	var mb: Texture2D = ENV.strip_moss("DUNGEON", true)
+	var md := ENV.strip_moss("DUNGEON", false)
 	for t in chosen:
 		var base: Vector2 = dz.tile_to_world(t) + Vector2(world.CAVE_OFFSET)
 		var spr := Sprite2D.new()
-		var t0 := _anim_frame(A_MOSS0)
-		var t1 := _anim_frame(A_MOSS0 + 1)
-		spr.texture = t0
 		spr.position = base
 		spr.z_index = -8  # мох на полу, под сущностями
 		add_child(spr)
-		var l := _mk_light(Color(0.4, 1.0, 0.5), 0.9, 28.0)
-		l.position = base
-		add_child(l)
-		_moss.append({"spr": spr, "light": l, "phase": float(_hash(t.x + 11, t.y + 7)), "t0": t0, "t1": t1})
+		var bright := _hash(t.x + 31, t.y + 5) % 2 == 0
+		var ph := ENV.cell_phase(t.x, t.y, ENV.T_MOSS, 3)
+		var strip := mb if bright else md
+		spr.texture = ENV.atlas_of(strip, ENV.cell_frame(0, ph, ENV.T_MOSS, 3), 16)
+		_moss.append({"spr": spr, "tex": strip, "fw": 16, "k": ENV.T_MOSS,
+				"n": 3, "ph": ph, "last": 0})
 	# алтарь 'A' — один зелёный Light2D radius 60 (центр по клеткам A), пульс
 	if not altar_cells.is_empty():
 		var c := Vector2.ZERO

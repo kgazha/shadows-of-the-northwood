@@ -24,17 +24,20 @@ const SEEDS := 16                  # тяжёлая геометрия (BFS+hole
                                    # золотые пины — свои 5 (GOLDEN_N)
 const GOLDEN_N := 5
 
-# GOLDEN-WM-PIN(19.11, причина: «W-P0-1 fix» — южные ворота мира перестали
-# прорезать ряд 59, кольцо снизу замкнуто; ряд 18.11: 8645…/4246…/6360…/8408…/-4502…):
+# GOLDEN-WM-PIN(25.11, причина: «Среда v1» — водная геометрия локаций: река
+# Чащи с 1-клеточными бродами на штатных дорогах, озеро Снежника, зеркало-
+# оазис Пустоши; вода SOLID- block, периметр t59 и worldmap не тронуты.
+# Ряд 19.11 «W-P0-1 fix»: -3144…/1295…/9108…/-1282…/-8037…; ряд 18.11:
+# 8645…/4246…/6360…/8408…/-4502…).
 # FNV-1a 64 composition(run_seed) = канон мира целиком (worldmap + 6 локаций + пояса).
 # Пересъёмка датированная при изменении генератора — с указанием причины
 # (как GOLDEN-CAVE-PIN в qa_pg).
 const GOLDEN_COMP_PINS := [
-	-3144181420589087209,  # seed 97531
-	1295891944235987713,   # seed 105450
-	9108852878537949803,   # seed 113369
-	-1282044995112029049,  # seed 121288
-	-8037476502682230815,  # seed 129207
+	3667740230982545934,    # seed 97531
+	-223799754728817763,    # seed 105450
+	-6968745053202592759,   # seed 113369
+	-4388011758957587721,   # seed 121288
+	-8369543153597366183,   # seed 129207
 ]
 # Двойной пин таблицы порталов (стенд независим от OpenWorld.PORTAL_CELLS):
 # клетка -> ожидаемый пояс (BALANCE.md «Мир v1» строки 11–14).
@@ -110,6 +113,7 @@ func _ready() -> void:
 	await w4_wiring()
 	await w5_edges()
 	w6_hygiene()
+	w7_env(OWg)
 	# и после себя не оставляем: автосейвы чекпойнтов/фикстуры W3 — на диске
 	_wipe_save()
 	GameState.start_fresh_game()
@@ -653,6 +657,86 @@ func _find_anim(n: Node) -> Array:
 					if at != null and at.atlas != null:
 						out.append(String(at.atlas.resource_path))
 	return out
+
+# --- W7 «Среда v1» (t11, вердикт 25.11) ----------------------------------------
+# Паритет рантайм-циклов с утверждённым листом (FNV-пины PINS_W4), геометрия
+# воды (река/озеро/оазис: наличие, непроходимость, переправы, отсутствие
+# воды в чужих биомах и у периметра), детерминизм тик-скиннера варианта B,
+# ноль новых растров.
+
+const ENVW := preload("res://scripts/env_art.gd")
+
+func w7_env(ow: Variant) -> void:
+	if ow == null:
+		chk(false, "W7.0 OpenWorld не загружен")
+		return
+	# W7.1 кадры == лист: FNV по PNG-байтам каждого кадра всех 10 циклов +
+	# палитра RAMPS/FLATS без отклонений (self_check пустой).
+	var mismatch := ENVW.self_check()
+	chk(mismatch.is_empty(), "W7.1 кадрантайма == лист «Среда v1» (FNV-пины PINS_W4, палитра) %s"
+			% ("" if mismatch.is_empty() else str(mismatch.slice(0, 3))))
+	# W7.2 геометрия: вода только в трёх биомах; переправа в реке; периметр чист
+	var geo_ok := true
+	var ford_ok := true
+	var river_ok := true
+	for s in _seeds():
+		var counts := {"snow": 0, "desert": 0, "forest": 0, "steppe": 0, "castle": 0, "dungeon": 0}
+		for z in counts.keys():
+			var lm: Dictionary = _loc(s, String(z))
+			var g: Array = lm["grid"]
+			var wcells := 0
+			for y in g.size():
+				var row := String(g[y])
+				if row.find("w") >= 0 and (y <= 1 or y >= g.size() - 2):
+					geo_ok = false  # вода у периметра — запрещена (t59)
+				for x in row.length():
+					if String(row[x]) == "w":
+						wcells += 1
+						if ow.walkable(g, x, y):
+							geo_ok = false  # вода обязана быть непроходима
+			counts[z] = wcells
+			if String(z) != "snow" and String(z) != "desert" and String(z) != "forest" and wcells > 0:
+				geo_ok = false
+		if int(counts["snow"]) < 12 or int(counts["desert"]) < 8 or int(counts["forest"]) < 3:
+			geo_ok = false
+			print("  W7.2 seed=%d counts=%s" % [s, str(counts)])
+		# река: брод — проходимая дорога '-' с водой слева и справа (или сверху
+		# и снизу — вертикальная дорога к сундуку)
+		var fg: Array = _loc(s, "forest")["grid"]
+		var found := false
+		for y in range(2, fg.size() - 2):
+			var r := String(fg[y])
+			for x in range(2, r.length() - 2):
+				if String(r[x]) != "-":
+					continue
+				if (String(r[x - 1]) == "w" and String(r[x + 1]) == "w") \
+						or (String(fg[y - 1])[x] == "w" and String(fg[y + 1])[x] == "w"):
+					found = true
+		if not found:
+			river_ok = false
+			ford_ok = false
+	chk(geo_ok, "W7.2 вода: только снег/пустошь/лес, непроходима, >=12/8/3 клеток, периметр чист")
+	chk(river_ok and ford_ok, "W7.3 река Чащи: 1-клеточный брод на штатной дороге (все сиды)")
+	# W7.4 скинер варианта B: int((t+фаза)/K)%N — детерминирован, фазы клеток
+	# разнесены, цикл замкнут (t = K*N возвращает кадр 0).
+	var det_ok := true
+	var phases := {}
+	for i in 24:
+		var ph := ENVW.cell_phase(i, 7, ENVW.T_WATER, 4)
+		phases[ph] = true
+		if ENVW.cell_frame(ENVW.T_WATER * 4, ph, ENVW.T_WATER, 4) \
+				!= ENVW.cell_frame(0, ph, ENVW.T_WATER, 4):
+			det_ok = false
+		if ENVW.cell_frame(ENVW.T_WATER * 4 + 18, ph, ENVW.T_WATER, 4) \
+				!= ENVW.cell_frame(18, ph, ENVW.T_WATER, 4):
+			det_ok = false
+	chk(det_ok and phases.size() >= 8,
+		"W7.4 тик-скинер B: int((t+фаза)/K) по кадрам детерминирован, цикл замкнут, фазы разнесены")
+	# W7.5 ноль растров: EnvArt не читает растровых ресурсов (только RAMPS-код)
+	var src := FileAccess.get_file_as_string("res://scripts/env_art.gd")
+	chk(not src.contains(".png") and not src.contains("ResourceLoader") \
+			and not src.contains("_load_tex"),
+			"W7.5 env_art.gd: ни одного растрового ресурса (кодо-бейк из PixelPalette)")
 
 func _md5_file(path: String) -> String:
 	if not FileAccess.file_exists(path):

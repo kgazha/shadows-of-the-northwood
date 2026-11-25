@@ -70,6 +70,7 @@ func setup(p_world: Node2D, p_map: Dictionary) -> void:
 	_build_tiles()
 	_build_walls()
 	_build_props()
+	_build_env()
 	_spawn_chest()
 	_spawn_exit()
 	_spawn_bestiary()
@@ -236,6 +237,78 @@ func _spawn_exit() -> void:
 	add_child(p)
 	p.setup(self, portal_out_tile)
 	portal_out_node = p
+
+# ---------------------------------------------------------------- «Среда v1»
+## Вода (река/озеро/оазис, «Среда v1» t11 вердикт 25.11) — скинер варианта B:
+## кадры листа (лето 4x300мс; Снежник — зима 4x400мс), пофазная прокрутка по
+## shash клетки; t — счётчик кадров, не wall-time. Моховые оверлеи — скальные
+## кластеры леса (LEAF) и замка (GRASS), геометрию НЕ меняют. Ноль растров:
+## полосы печатает EnvArt кодом из PixelPalette.
+const ENV := preload("res://scripts/env_art.gd")
+const MOSS_RAMP := {"forest": "FOREST", "castle": "CASTLE"}
+## Символ скальной массы в сетке локации (лес — 'M', замок — 'W'; подземелье
+## мох получает от пещерного слоя atmosphere, не от карты).
+const MOSS_CH := {"forest": "M", "castle": "W"}
+const MOSS_MAX := 14
+
+var env_ticker: Node2D = null
+var water_cells: Array[Vector2i] = []
+
+func _build_env() -> void:
+	var winter := biome == "snow"
+	var layer := Node2D.new()
+	layer.name = "EnvWaterV1"
+	layer.z_index = -9  # над полом (-10), под сущностями — как деревенская вода
+	add_child(layer)
+	env_ticker = ENV.EnvTicker.new()
+	env_ticker.name = "EnvTickerV1"
+	add_child(env_ticker)
+	var wtex: Texture2D = ENV.strip_water(winter)
+	var wfw := ENV.T_ICE if winter else ENV.T_WATER
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in map_w:
+			if String(row[x]) != OW.WATER:
+				continue
+			water_cells.append(Vector2i(x, y))
+			var s := Sprite2D.new()
+			s.position = Vector2(float(x) * TILE + 8.0, float(y) * TILE + 8.0)
+			layer.add_child(s)
+			env_ticker.add_spr(s, wtex, TILE, wfw, 4, ENV.cell_phase(x, y, wfw, 4))
+	_build_moss()
+
+func _build_moss() -> void:
+	var zk := String(MOSS_RAMP.get(biome, ""))
+	if zk == "":
+		return
+	var mch := String(MOSS_CH[biome])
+	var strip_b: Texture2D = ENV.strip_moss(zk, true)
+	var strip_d: Texture2D = ENV.strip_moss(zk, false)
+	var mlayer := Node2D.new()
+	mlayer.name = "EnvMossV1"
+	add_child(mlayer)
+	var put := 0
+	for y in map_h:
+		var row := String(map_rows[y])
+		for x in map_w:
+			if String(row[x]) != mch:
+				continue
+			var hh := OW.shash("moss:%d,%d" % [x, y])
+			if hh % 100 >= 30:
+				continue
+			var bright := (hh >> 8) % 2 == 0
+			var spr := Sprite2D.new()
+			# мох — низ клетки массы (силуэт листа заполняет ряды 5..12)
+			spr.position = Vector2(float(x) * TILE + 8.0, float(y + 1) * TILE - 8.0)
+			var foot := float((y + 1) * TILE)
+			spr.z_as_relative = false
+			spr.z_index = int(round(fposmod(foot, float(world.YS_CYCLE))))
+			mlayer.add_child(spr)
+			env_ticker.add_spr(spr, strip_b if bright else strip_d, TILE,
+					ENV.T_MOSS, 3, ENV.cell_phase(x, y, ENV.T_MOSS, 3))
+			put += 1
+			if put >= MOSS_MAX:
+				return
 
 ## Наполнение локации (контракт «Мир v1»): семейства мобов — существующие
 ## (те же скрипты, что в лесу/пещере/Пепелище), сложность — ТОЛЬКО поясной

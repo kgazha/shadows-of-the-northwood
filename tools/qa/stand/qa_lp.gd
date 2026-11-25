@@ -1845,15 +1845,16 @@ func _t16() -> void:
 				or src.contains("теньfoot-"):
 			bad_src += 1
 	chk(bad_src == 0, "t16: комментарии чистые — без CJK и склеек (%d файлов с дефектами)" % bad_src)
-	# 10) c5 факелы (вердикт «факелы лучше»): состав 3..5, два кадра фликера,
-	#     легальный настенный монтаж выше головы, пульс света, мох-кострища
-	#     в дереве пещеры нет, расстановка бит-детерминирована
-	if not (CA.REGIONS.has("TORCH1") and CA.REGIONS.has("TORCH2")):
-		chk(false, "t16: c5 — кадры TORCH1/TORCH2 не в REGIONS (поставка не на месте)")
-		return
+	# 10) c5 факелы + «Среда v1» (t11, ВЕРДИКТ 25.11): состав 3..5 и настенный
+	#     монтаж прежние; ПОВЕДЕНИЕ ИНВЕРТИРОВАНО: легаси «2 кадра TORCH1/2 +
+	#     PointLight2D с пульсом» заменён ночным 4-кадровым циклом листа
+	#     (250 мс, пульс тона в рампе FIRE) БЕЗ PointLight2D; тик — счётчик
+	#     кадров. Легаси-кадры остаются в атласе искусом (как BRAZIER).
+	chk(CA.REGIONS.has("TORCH1") and CA.REGIONS.has("TORCH2"),
+		"t9/t16: легаси-кадры TORCH1/2 целы в атласе (спрайт их более не использует)")
 	var torches: Array = []
 	for c in layer.get_children():
-		if c is Sprite2D and c.get("t0") != null and c.get("t1") != null:
+		if c is Sprite2D and c.get("strip") != null:
 			torches.append(c)
 	chk(torches.size() >= 3 and torches.size() <= 5,
 		"t16: состав факелов 3..5 (%d)" % torches.size())
@@ -1861,26 +1862,27 @@ func _t16() -> void:
 	var trh_cells: Array = []
 	for t in torches:
 		var s2 := t as Sprite2D
-		var a0 := s2.get("t0") as AtlasTexture
-		var a1 := s2.get("t1") as AtlasTexture
-		var lt: Object = s2.get("lit")
+		var st := s2.get("strip") as ImageTexture
+		var cur := s2.texture as AtlasTexture
 		var rr := _t15_rect(s2)
 		var wx := int(round((rr.get_center().x - origin.x - 8.0) / 16.0))
 		# низ кронштейна — на 2 px выше верхней границы проходимой клетки
 		var wy := int(round((rr.end.y - origin.y + 2.0) / 16.0)) - 1
 		trh_cells.append(Vector2i(wx, wy))
-		var frames_ok: bool = a0 != null and a1 != null and a0 != a1 \
-				and a0.region == CA.REGIONS["TORCH1"] and a1.region == CA.REGIONS["TORCH2"]
+		var frames_ok: bool = st != null and String(st.resource_name) == "EnvTrN" \
+				and cur != null and cur.region.size == Vector2(10, 15) \
+				and int(cur.region.position.x) % 10 == 0
 		var mount_ok: bool = _ch(rows, wx, wy) == "#" and _ch(rows, wx, wy + 1) in [".", ","] \
 				and absf(rr.end.y - (origin.y + float(wy + 1) * 16.0 - 2.0)) < 0.6
 		var depth_ok: bool = s2.z_index == int(round(fposmod(rr.end.y, WS.YS_CYCLE))) \
 				and not ysd.has(s2)
-		var light_ok: bool = lt is PointLight2D
-		if frames_ok and mount_ok and depth_ok and light_ok:
+		var nolight_ok: bool = s2.get_children().is_empty()  # PointLight2D СНЯТ вердиктом 25.11
+		if frames_ok and mount_ok and depth_ok and nolight_ok:
 			trh_ok += 1
 	chk(trh_ok == torches.size() and torches.size() > 0,
-		"t16: факелы — 2 кадра (TORCH1/2), стена над проходимым, выше головы," \
-				+ " z V-01, вне дима, со светом (%d/%d)" % [trh_ok, torches.size()])
+		"t9/t16: факелы — ночной цикл листа EnvTrN 4к@250мс БЕЗ PointLight2D \n" \
+				+ "        (вердикт 25.11), стена над проходимым, выше головы, z V-01 (%d/%d)" \
+				% [trh_ok, torches.size()])
 	# расстановка = независимое зеркало алгоритма (тот же контракт порядка)
 	var slots_a := _t16_torch_slots(rows, dz.chest_tile, dz.spawn_tile, dz.door_tile)
 	var slots_b := _t16_torch_slots(rows, dz.chest_tile, dz.spawn_tile, dz.door_tile)
@@ -1893,32 +1895,33 @@ func _t16() -> void:
 	chk(cells_eq,
 		"t16: расстановка факелов детерминирована и совпадает с зеркалом (%d/%d)" \
 				% [slots_a.size(), torches.size()])
-	# живой фликер + пульс: зона пещеры активна лишь мгновение пробы (паттерн
-	# физ-пробы сундука); кадры обязан показать оба, свет — ненулевой размах
+	# ЖИВОЙ ЦИКЛ «Среда v1» (детерминизм от счёта кадров, без wall-time окна):
+	# активировать зону, задать baseline tick, ровно 61 кадр — все 4 тона
+	# ночного кадра показаны в каноническом порядке int((tick+ph)/15)%4,
+	# PointLight2D нет. Прежние пины «2 кадра + размах света» ИНВЕРТИРОВАНЫ
+	# вердиктом 25.11 (свет у якорей факелов снят, пульс — тон кадра).
 	if not torches.is_empty():
 		var ts0 := torches[0] as Sprite2D
 		world.cave_zone.process_mode = Node.PROCESS_MODE_INHERIT
+		var ph0 := int(ts0.get("ph"))
+		var base_tick := int(ts0.get("tick"))
+		var seq_ok := true
 		var seen_frames := {}
-		var e_min := 99.0
-		var e_max := -99.0
-		# окно — НАСТОЯЩЕЕ время (в headless кадры могут идти быстрее реального):
-		# 1.3 c ≈ 45 % периода алтарного пульса (2.2 рад/с) => размах гарантирован
-		var t_end := Time.get_ticks_msec() + 1300
-		while Time.get_ticks_msec() < t_end:
-			await _frames(2)
+		for f in range(1, 62):
+			await _frames(1)
 			var cur := ts0.texture as AtlasTexture
+			var want := int((base_tick + f + ph0) / 15) % 4
+			if cur == null or int(cur.region.position.x) != want * 10:
+				seq_ok = false
 			if cur != null:
-				seen_frames[cur.region.position.x] = true
-			var l2: Object = ts0.get("lit")
-			if l2 is PointLight2D:
-				e_min = minf(e_min, float(l2.energy))
-				e_max = maxf(e_max, float(l2.energy))
+				seen_frames[float(cur.region.position.x)] = true
 		world.cave_zone.process_mode = Node.PROCESS_MODE_DISABLED
-		chk(seen_frames.has(CA.REGIONS["TORCH1"].position.x) \
-				and seen_frames.has(CA.REGIONS["TORCH2"].position.x),
-			"t16: факел мигает двумя кадрами (паттерн A_TORCH T=0.25 c)")
-		chk(e_max - e_min > 0.15,
-			"t16: пульс света ненулевой (размах %.3f, амплитуда как у алтаря)" % (e_max - e_min))
+		chk(seq_ok and seen_frames.size() == 4 \
+				and seen_frames.has(0.0) and seen_frames.has(10.0) \
+				and seen_frames.has(20.0) and seen_frames.has(30.0) \
+				and ts0.get_children().is_empty(),
+		"t9/t16: факел — 4 тона кадра листа по счёту кадров int((t+ph)/15)%4, \n" \
+				+ "        детерминирован, БЕЗ PointLight2D (вердикт 25.11)")
 	# кострище-мох: кадр сохранён в атласе как искусство, но в дереве пещеры
 	# ни одного спрайта с регионом BRAZIER
 	var brz_n := 0
