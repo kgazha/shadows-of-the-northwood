@@ -3786,7 +3786,12 @@ const G12_UNTOUCHED := {
 	# не был обновлён в тот день, отсюда легаси-красный g12 в базлайнах.
 	# Файл с тех пор не двигался (git log -1 == 9402ee1, рабочее дерево == HEAD).
 	# Прежний пин: 93520eda37ea1e453cd2bc4c737e04d4.
-	"res://scripts/first_hint.gd": "bcca59dda31fa2106617c96774a3349e",
+	# t24eol (капитан, 25.11 ~23:00): тот же файл в git-архивном стейдже приходит
+	# в CRLF-базисе 93520eda… (содержимое НЕ менялось — смена пина была только
+	# помесячной EOL-нормализацией git), а robocopy-стейдж отдаёт LF bcca59dd… .
+	# Двойной пин: стенд сверяет с обоими, красный гаснет в обоих режимах,
+	# любое ТРЕТЬЕ значение — по-прежнему красный. Исторические значения ниже.
+	"res://scripts/first_hint.gd": ["bcca59dda31fa2106617c96774a3349e", "93520eda37ea1e453cd2bc4c737e04d4"],
 	# 16.11 вечер: текст-фикс пользователя «здрав->здоров» тронул alchemy.gd —
 	# ре-пин по прецеденту вердиктных волн (g13/g14/g15), базис прежний: md5
 	# файла на диске архива (CRLF), измерен распаковкой git archive HEAD.
@@ -4059,7 +4064,10 @@ func _t41() -> void:
 	# 3) регресс: g12 не трогала чужие файлы (Esc-меню, RunSummary/мета, HUD…)
 	var touched: Array = []
 	for p in G12_UNTOUCHED:
-		if _t11_md5(String(p)) != String(G12_UNTOUCHED[p]):
+		var want = G12_UNTOUCHED[p]
+		var got := _t11_md5(String(p))
+		var ok_pin: bool = (got == String(want)) or (want is Array and (want as Array).has(got))
+		if not ok_pin:
 			touched.append(String(p))
 	chk(touched.is_empty(), "g12: Esc-меню/RunSummary/мета/npc/FirstHint/alchemy/journal бит-в-бит (%s)" % str(touched))
 	# порядок: сейв-тест не оставляет мусора
