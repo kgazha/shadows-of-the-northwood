@@ -9,7 +9,9 @@ var _seen_t := 0.0
 var _seen_pos := Vector2.ZERO
 ## Босс «Осквернённый гром» (boss=true) и «отпрыски гнили» (boss=false) —
 ## моб пещеры трёх ярусов, которых world.gd расставляет по глубине (CAVE_MOB_BANDS).
-## Лист assets/brute.png — 64x32, два кадра 32x32.
+## t13 «Тлель-вепрь» (25.11, вердикт по листу «Замена v1»): носитель скина —
+## кодо-бейк assets/mobs_boar_v1.png 64x32 (boar_sprite_v1.gd), геомет кадра
+## прежний 32px. Легаси brute.png в дереве (c23/G12), но не рисуется нигде.
 ## Баланс (правка пещеры): герой 3–5 уровня проходит ярусы с потерями, но живым;
 ## пик сложности — босс. Было: hp 12 / dmg 2 / speed 30 / рывок раз в 4.5 с.
 
@@ -28,8 +30,13 @@ const TELEGRAPH_SEGMENTS := 12  # сегментов дуги телеграфа
 const WINDUP_TINT := Color(1.35, 0.42, 0.36)   # t18-дисциплина цвета: красный = смертельно
 const RECOVER_TINT := Color(0.62, 0.58, 0.72)  # «оседание» — приглушённый, не боевой сигнал
 ## Рывок: босс каждые 4.0 с, ярусы 2–3 — реже; ярус 1 не рывкует (cd=0).
-const CHARGE_SPEED := 80.0
-const CHARGE_TIME := 0.7
+## t13 «Тлель-вепрь» (25.11, лист «Замена v1»): таран с телеграфом — стойка
+## зарывания 0.5 с (направление зафиксировано), затем рывок 0.5 с x95 px/с
+## (было 0.7 x 80 без стойки). Дистанция тарана 47.5 px против прежних 56 —
+## короче, но честнее: удар видно заранее.
+const RAM_STANCE := 0.5       # стойка-зарывание: телеграф тарана
+const CHARGE_SPEED := 95.0    # t13: +15 по листу (было 80)
+const CHARGE_TIME := 0.5      # t13: сам таран (было 0.7 без стойки)
 const CHARGE_MIN_DIST := 26.0
 const LEASH := 64.0        # моб преследует героя только в этом радиусе
 const WANDER_R := 24.0     # и бродит не дальше этого от точки появления
@@ -50,6 +57,8 @@ const MAT_DROP_TABLE := ["suhotsvet", "zhim"]
 const VISUAL_SCALE := 1.0
 # t52 снос (закон 13.11): ген-бестиарий art_gen (rotspawn/grom) снят — прежний
 # листовой канон brute.png (32px-кадры, ярусы через TIERS.scale).
+# t13 (25.11): канонический лист заменён на mobs_boar_v1.png (Тлель-вепрь),
+# ярусная математика TIERS.scale — дословно прежняя.
 ## Ярусы мобов: чем глубже, тем жирнее, злее и быстрее (xp — за убийство).
 ## t51: scale — «было» {0.72, 0.85, 1.0} (t12-пересчёт 0.6905/0.8333 под H=32 снят).
 const TIERS := {
@@ -97,6 +106,10 @@ var freeze_t := 0.0
 var charge_t := 2.5
 var rush_t := 0.0
 var rush_dir := Vector2.ZERO
+## t13 «Тлель-вепрь»: >0 — стойка-зарывание (телеграф тарана), направление
+## зафиксирована; по окончании стойки rush_dir/rush_t поджигаются автоматически.
+var stance_t := 0.0
+var stance_dir := Vector2.ZERO
 ## t19 «честный Гром»: fair — модель честности живёт только на настоящем Грома
 ## (тот же фильтр get_script(), что у венцов §D): ярусные отпрыски и Ведьма
 ## (mob_boss2.gd) сохраняют прежнее поведение контакты-урона.
@@ -170,8 +183,8 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 	fr.add_animation("walk")
 	fr.set_animation_loop("walk", true)
 	fr.set_animation_speed("walk", 2.5)
-	if ResourceLoader.exists("res://assets/brute.png"):
-		var tex := load("res://assets/brute.png")
+	if ResourceLoader.exists("res://assets/mobs_boar_v1.png"):
+		var tex := load("res://assets/mobs_boar_v1.png")
 		for col in [0, 1]:
 			var at := AtlasTexture.new()
 			at.atlas = tex
@@ -187,7 +200,7 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		anim.scale = Vector2.ONE * s
 		anim.position = Vector2(0, 11.0 * (s_old - s))
 	else:
-		push_warning("Нет ассета: assets/brute.png — у босса цветная заглушка")
+		push_warning("Нет ассета: assets/mobs_boar_v1.png — у босса цветная заглушка")
 		var ph := ColorRect.new()
 		ph.color = Color(0.45, 0.28, 0.5)
 		ph.size = Vector2(24, 22)
@@ -257,6 +270,20 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.move_toward(Vector2.ZERO, 140.0 * delta)  # только докат от ударов
 			move_and_slide()
 			return
+	# t13 «Тлель-вепрь»: таран-телеграф — стойка-зарывание с фиксированным
+	# направлением. Приоритет над wander/погоней: обязательство уже выдано
+	# игроку, позиция зафиксирована (та же дисциплина, что у замаха t19 —
+	# телеграф не ездит под ногами). Тёплый тинт тот же, что у рывка:
+	# сближение, не атака (красный — эксклюзив замаха Грома).
+	if stance_t > 0.0:
+		stance_t -= delta
+		velocity = Vector2.ZERO
+		if hurt_t <= 0.0 and freeze_t <= 0.0:
+			modulate = Color(1.15, 0.7, 0.55)
+		if stance_t <= 0.0:
+			rush_t = CHARGE_TIME
+			rush_dir = stance_dir
+		return
 	if d > (boss_leash if boss else LEASH) and (not boss or boss_leash > 0.0):
 		# героя далеко нет — не идём на весь cave, а сторожим свою часть карты
 		# (Гром: boss_leash=0 — тотальный преслед как раньше;
@@ -272,7 +299,7 @@ func _physics_process(delta: float) -> void:
 		velocity = wander_dir * speed * 0.4
 		move_and_slide()
 		if global_position.distance_to(player.global_position) < hit_dist:
-			player.take_damage(dmg, "brute")  # t20: kind убийцы для экрана смерти
+			player.take_damage(dmg, kill_src())  # t20 kind убийцы; t13 честная атрибуция
 		return
 	if rush_t > 0.0:
 		rush_t -= delta
@@ -293,8 +320,10 @@ func _physics_process(delta: float) -> void:
 		charge_t -= delta
 		if charge_cd > 0.0 and charge_t <= 0.0 and d > CHARGE_MIN_DIST and sees:
 			charge_t = charge_cd
-			rush_t = CHARGE_TIME
-			rush_dir = (player.global_position - global_position).normalized()
+			# t13: не стартуем бросок мгновенно — сначала стойка RAM_STANCE
+			# (направление зафиксирована), таран поджигается в стойка-ветке выше.
+			stance_t = RAM_STANCE
+			stance_dir = (player.global_position - global_position).normalized()
 			if boss:
 				GameState.toast.emit("Гром бросается вперёд — отходи!")
 		elif sees or _seen_t > 0.0:
@@ -315,7 +344,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_push_from_hero()  # до проверки урона: оценка боя идёт на равновесном контакте, как при живой стене
 	if global_position.distance_to(player.global_position) < hit_dist:
-		player.take_damage(dmg, "brute")  # t20: kind убийцы для экрана смерти
+		player.take_damage(dmg, kill_src())  # t20 kind убийцы; t13 честная атрибуция
 
 ## t19: геометрия lethal-зоны = полигон телеграфа (один источник истины: и картинка,
 ## и удар резолвятся этим полигоном — тест qa_gb сверяет сетку проб с strike_contains).
@@ -351,7 +380,13 @@ func _strike() -> void:
 	recover_t = STRIKE_RECOVER  # и после попадания тоже: окно, чтобы добить не отвечающего
 	var player: CharacterBody2D = world.player
 	if player != null and is_instance_valid(player) and strike_contains(player.global_position):
-		player.take_damage(dmg, "brute")  # t20: kind убийцы для экрана смерти
+		player.take_damage(dmg, kill_src())  # t20 kind убийцы; t13 честная атрибуция
+
+## t13 «Тлель-вепрь» (25.11): kind убийцы для экрана смерти — имя носителя, а
+## не вида: «Тлель-вепрь» (моб), «Осквернённый Гром» (босс), Ведьма переопределяет
+## на "boss2" в mob_boss2.gd. Реестр имён — AchvCatalog.MOBS (run_summary).
+func kill_src() -> String:
+	return "boss" if boss else "brute"
 
 ## «Стенка без пиления» (дребезг экрана вплотную): герой (слой 1) убран из маски —
 ## два CharacterBody2D при упоре друг в друга пилят каждый кадр в противофазе, а

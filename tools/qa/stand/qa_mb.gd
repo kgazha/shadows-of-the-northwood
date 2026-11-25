@@ -210,7 +210,10 @@ func r6_death_screen() -> void:
 	check("R6: время mm:ss (Время: 01:05)", st.contains("Время: 01:05"))
 	check("R6: золото показано (Золото: 41)", st.contains("Золото: 41"))
 	check("R6/t70: пепел: заработано 8 / сохраняется всё", st.contains("заработано 8") and st.contains("сохраняется всё"))
-	check("R6: убийца — RU-имя из AchvCatalog (Пал от: Осквернённый Гром)", st.contains("Пал от: Осквернённый Гром"))
+	# t13 перепин 25.11 (замена брютов «Тлель-вепрь», лист «Замена v1»): kind
+	# "brute" — моб, его RU-имя теперь «Тлель-вепрь»; босс — отдельная ветка
+	# kill_src()="boss" («Осквернённый Гром» в покрве run_summary).
+	check("R6: убийца — RU-имя из AchvCatalog (Пал от: Тлель-вепрь)", st.contains("Пал от: Тлель-вепрь"))
 	check("R6: убийства по типам (Слайм ×2)", rs.kills_lbl.text.contains("Слайм ×2"))
 	check("R6: статус боссов (Гром повержен / Ведьма повержена)", rs.kills_lbl.text.contains("Гром повержен") and rs.kills_lbl.text.contains("Ведьма повержена"))
 	check("R6: благословение в UI: +6% (vd=2 + эта смерть = 3)", rs.bless_lbl.text.contains("+6%"))

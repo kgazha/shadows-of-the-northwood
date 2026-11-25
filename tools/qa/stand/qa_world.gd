@@ -60,7 +60,11 @@ const WORLD_REGIONS_MD5 := "6d72298ace3e1c4654a162786446c2f9"
 ## синтаксических комментариев); floor_slots/props байт-в-байт прежние, читатели
 ## (worldmap_zone/biome_zone parsed.get) незнакомый ключ игнорируют. Прежний пин
 ## w1-wire: 429589588f6a1db711cee6752c7ad86a.
-const MOBS_VARIANTS_MD5 := "89fed95c18bc32b6443d6d3d7b046e78"   # skins(15), bake 18.11 (шаг 3)
+## ^ ПЕРЕПИН 25.11 «Тлель-вепрь» (t13, замена брютов по листу «Замена v1»):
+## носитель семейства brute перепечён с кодо-бейка assets/mobs_boar_v1.png
+## (boar_sprite_v1.gd), геомет 64x32 и skins(15) не изменились; в json сменился
+## только src шести brute-скинов. Прежний bake 18.11: 89fed95c18bc32b6443d6d3d7b046e78.
+const MOBS_VARIANTS_MD5 := "6f167c6dd078aaadf30071110f8fc61f"   # skins(15), bake 25.11 (brute->вепрь)
 const VILLAGE_V4_MD5 := "3159f23a2da9303b8771099b09f23a21"     # t65-прецедент: деревня байт-цела
 const FOREST_PROPS_MD5 := "f1451755ade072a458b077dbd946d255"
 
@@ -120,6 +124,7 @@ func _ready() -> void:
 	w6_hygiene()
 	w7_env(OWg)
 	await w8_fog(OWg)
+	w9_boar()
 	# и после себя не оставляем: автосейвы чекпойнтов/фикстуры W3 — на диске
 	_wipe_save()
 	GameState.start_fresh_game()
@@ -615,7 +620,7 @@ func w6_hygiene() -> void:
 	chk(_md5_file("res://assets/world/world_regions.json") == WORLD_REGIONS_MD5,
 			"W6 world_regions.json по пину")
 	chk(_md5_file("res://assets/world/mobs_variants.json") == MOBS_VARIANTS_MD5,
-			"W6 mobs_variants.json по пину (bake 18.11)")
+			"W6 mobs_variants.json по пину (bake 25.11: brute->Тлель-вепрь)")
 	var skins := 0
 	var da := DirAccess.open("res://assets/world")
 	if da != null:
@@ -935,3 +940,72 @@ func _cjk(s: String) -> int:
 		if (u >= 0x2E80 and u <= 0x9FFF) or (u >= 0xFB00 and u <= 0xFB4F) or u == 0x200B or u == 0xFEFF:
 			n += 1
 	return n
+
+# --- W9 «Тлель-вепрь» (t13, замена брютов 25.11, лист «Замена v1») --------------
+# Механический слот не двигался (brute_tier — W2.4 выше; TIERS — qa_lp T11/qa_ng;
+# рывок-механика босса — qa_gb). Здесь: носитель, палитра, силуэт-антикупол,
+# перескин всех биомов и «легаси больше нигде не рисуется».
+
+func w9_boar() -> void:
+	var PAL = load("res://scripts/pixel_palette.gd")
+	var idx: Dictionary = PAL.color_index()
+	if not ResourceLoader.exists("res://assets/mobs_boar_v1.png"):
+		chk(false, "W9.1 носитель assets/mobs_boar_v1.png есть")
+		return
+	chk(true, "W9.1 носитель assets/mobs_boar_v1.png есть (кодо-бейк boar_sprite_v1.gd)")
+	var img: Image = load("res://assets/mobs_boar_v1.png").get_image()
+	chk(img.get_width() == 64 and img.get_height() == 32,
+			"W9.2 геометрия листа 64x32 == легаси (regions/TIERS.scale не плывут)")
+	var off := 0
+	for y in 32:
+		for x in 64:
+			var c := img.get_pixel(x, y)
+			if c.a > 0.5 and not idx.has(PAL.key(c)):
+				off += 1
+	chk(off == 0, "W9.3 палитра носителя чиста (RAMPS off=%d)" % off)
+	var lo_x := 99
+	var hi_x := -1
+	var lo_y := 99
+	var hi_y := -1
+	var bone := 0
+	var eye := 0
+	var bone_k: int = PAL.key(PAL.c("BONE", PAL.T_LIGHT))
+	var eye_k: int = PAL.key(PAL.c("HP_RED", PAL.T_MID))
+	for y in 32:
+		for x in 32:
+			var p := img.get_pixel(x, y)
+			if p.a > 0.5:
+				lo_x = mini(lo_x, x)
+				hi_x = maxi(hi_x, x)
+				lo_y = mini(lo_y, y)
+				hi_y = maxi(hi_y, y)
+				var k: int = p.to_argb32()
+				if k == bone_k:
+					bone += 1
+				elif k == eye_k:
+					eye += 1
+	var w := hi_x - lo_x + 1
+	var h := maxi(hi_y - lo_y + 1, 1)
+	chk(w == 30 and h == 20,
+			"W9.4 K0 огранычок %dx%d == 30x20 (лист-канон, x2 с 16px-дизайна)" % [w, h])
+	# Анти-трапеция по ветке «читается пропорцией» (вепрь — низкий широкий таран):
+	# у купола-брюта огранычок 27x22 (w/h~1.23, да и тот шире к НИЗУ); вепрь — 1.50.
+	chk(float(w) / float(h) >= 1.4,
+			"W9.5 пропорция w/h=%.2f >= 1.4 — низкий широкий, не купол" % (float(w) / float(h)))
+	chk(bone >= 2 and eye >= 2,
+			"W9.6 опознаки K0: клык BONE=%d, глаз HP_RED=%d (К0)" % [bone, eye])
+	var mf: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/world/mobs_variants.json"))
+	var srcs_ok := true
+	var n_brute := 0
+	if typeof(mf) == TYPE_DICTIONARY:
+		var skins: Dictionary = (mf as Dictionary).get("skins", {})
+		for key in skins:
+			if String(key).ends_with("/brute"):
+				n_brute += 1
+				if String((skins[key] as Dictionary)["src"]) != "res://assets/mobs_boar_v1.png":
+					srcs_ok = false
+	chk(n_brute == 6 and srcs_ok,
+			"W9.7 все 6 биомных brute-скинов пестуются с mobs_boar_v1.png")
+	var src_txt := FileAccess.get_file_as_string("res://scripts/brute.gd")
+	chk(not src_txt.contains("assets/brute.png"),
+			"W9.8 рантайм brute.gd не грузит легаси-лист (пиксель-канон: нигде не рисуется)")

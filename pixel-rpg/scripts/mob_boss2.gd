@@ -75,6 +75,11 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		# отпрысков»); мультипликат H=32 (51/32) снят, якорь при этом ZERO.
 		anim.scale = Vector2.ONE * 1.12
 
+## t13 (25.11): атрибуция убийцы — «Ведьма Пепелища», а не вид и не Гром
+## (контактный урон идёт из унаследованного _physics_process).
+func kill_src() -> String:
+	return "boss2"
+
 func hurt(dmg_in: int, from: Vector2) -> void:
 	if dying:
 		return  # труп не получает урон: XP, флаг и лут — ровно один раз

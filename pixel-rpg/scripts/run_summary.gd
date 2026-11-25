@@ -253,7 +253,8 @@ func _mob_name(k: String) -> String:
 	if k == "boss":
 		return "Осквернённый Гром"
 	if k.begins_with("brute_t"):
-		return "Гром (усиленный)"
+		# t13 (25.11): усиленные ярусы тяжёлого милишника — тоже Тлель-вепрь
+		return "Тлель-вепрь (усиленный)"
 	if k == "wraith":
 		return "Тенеплёт"
 	return k

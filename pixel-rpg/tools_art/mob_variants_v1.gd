@@ -18,7 +18,10 @@ const P := preload("res://scripts/pixel_palette.gd")
 
 const FAMILY_ATLAS := {
 	"slime": "res://assets/slime.png",
-	"brute": "res://assets/brute.png",
+	# t13 «Тлель-вепрь» (25.11, вердикт по листу «Замена v1»): носитель тяжёлого
+	# милишника — кодо-бейк boar_sprite_v1.gd (тот же геомет 64x32). Легаси
+	# assets/brute.png остаётся в дереве (c23/G12-носители), но не скинится.
+	"brute": "res://assets/mobs_boar_v1.png",
 	"archer": "res://assets/mobs_archer.png",
 	"swarmling": "res://assets/mobs_swarmling.png",
 	"wraith": "res://assets/mobs_wraith.png",
