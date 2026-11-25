@@ -38,6 +38,13 @@ const ASH := preload("res://scripts/ash.gd")
 const SHOP := preload("res://scripts/shop.gd")
 const MB := preload("res://scripts/meta_board.gd")
 const RS := preload("res://scripts/run_summary.gd")
+# t22 (25.11, «Глубина v2 §5»): маршрут плейта через микро-подземелье и доску
+# поясов. Клетка хода сверяется с ЧИСТЫМ генератором (mini_dungeon.gd), аффиксы
+# реликтов — с чистым модулем ролла (affixes.gd): сверка с источником, а не с
+# наблюдением (тот же приём, что QD/AS/SHOP выше).
+const MDZ := preload("res://scripts/mini_dungeon.gd")
+const MZ := preload("res://scripts/mini_zone.gd")
+const AFX := preload("res://scripts/affixes.gd")
 const Classes := preload("res://scripts/classes_data.gd")  # t9 (25.11): боёеспособность нового класса после смерти
 
 # ---------------- вечное (переживает reload_current_scene) ----------------------
@@ -187,6 +194,14 @@ func zone_ctx() -> Dictionary:
 				"t2w": world.worldmap_grid.tile_to_world}
 		_:
 			var a := String(world.active_area)
+			if a.begins_with("mini_"):
+				# t22 (25.11, «Глубина v2 §5»): микро-подземелье — тот же контекст
+				# ходьбы, что у локаций (свой этаж MINI_Y, своя проходимость);
+				# без этой ветки A* плейта считал бы ход деревней.
+				var mz = world.mini_grids[a.substr(5)]
+				return {"base": Vector2(0.0, MDZ.mini_y(a.substr(5))),
+					"w": mz.map_w, "h": mz.map_h, "walk": mz.cell_walkable,
+					"t2w": mz.tile_to_world}
 			if a.begins_with("loc_"):
 				var g = world.biome_grids[a.substr(4)]
 				return {"base": Vector2(0.0, float(OW.LOC_OFFSET_Y[a.substr(4)])),
@@ -456,6 +471,10 @@ func _in_active_zone(e: Node) -> bool:
 			return y >= float(OW.WM_OFFSET_Y) - 200.0 and not _in_any_loc(e)
 		_:
 			var a := String(world.active_area)
+			if a.begins_with("mini_"):
+				# t22 (25.11): этаж микро-подземелья — своя полоса y (MINI_Y +
+				# шаг на биом, t19/t20); без ветки мини-босс считался бы «не здесь».
+				return y >= MDZ.mini_y(a.substr(5)) - 200.0
 			if a.begins_with("loc_"):
 				return y >= float(OW.LOC_OFFSET_Y[a.substr(4)]) - 200.0
 			return y < world.CAVE_OFFSET.y - 200.0
@@ -974,7 +993,8 @@ func _run() -> void:
 		stage_trail, stage_village_quests, stage_village_shops, stage_village_fight,
 		stage_nav_p206,
 		stage_village_done, stage_forest_poi, stage_cave, stage_ashen,
-		stage_worldmap_and_loc, stage_return_rest, stage_death,
+		stage_worldmap_and_loc, stage_belt1_mini, stage_return_rest, stage_belt1_board,
+		stage_death,
 	]
 	for f in seq:
 		if _aborted != "":
@@ -1845,3 +1865,377 @@ func _mats_sum() -> int:
 	for k in GameState.materials:
 		s += int(GameState.materials[k])
 	return s
+
+# ==================================================================================
+# t22 (25.11, «Глубина v2 §5»): маршрут «открыл локацию пояса -> ход в
+# микро-подземелье -> мини-босс -> реликтовый сундук -> сдал квест у доски».
+# ==================================================================================
+# Пояс 1 по реестру = BELT_CHAIN[0] = snow (Снежник): bq_snow_1 «Снежный долг»
+# (зачистить 4 сущности) и bq_snow_2 «Клад под снегом» (сундук биома +
+# гарантированный реликт). Формулировка задания сказала «открыл лес», но лес в
+# реестре — звено 6 (третий пояс); взят ровно ПЕРВЫЙ пояс, как заказано словом
+# «пояс 1», а лесной ход (t19) покрыт qa_world W11 (обход шести биомов).
+# Правка аддитивная: прежние стадии не тронуты, эконом-окна (stage_begin/
+# stage_end) у новых стадий нет — вилки LOOT/BALANCE прежних глав от новых
+# наград не съезжают (золото цепочки проверяется здесь отдельными дельтами).
+# Статы мини-босса — датированный пин замера t22 (формула t19: база яруса
+# x belt-множитель, затем x2.5 hp / x1.5 dmg мин.2 / x3 xp).
+const MINI_HP_PIN_SNOW := 35    # HP мини-босса Снежника — датированный пин (замер t22, сид 555001, пояс 1)
+const MINI_XP_PIN_SNOW := 45    # kill_xp мини-босса = база x MINI_XP_MULT (замер t22, тот же сид)
+
+## Снимок сумки снаряжения (мультимножество id -> количество).
+func _gear_snapshot() -> Dictionary:
+	var s := {}
+	for raw in GameState.owned_gear:
+		var id := String(raw)
+		s[id] = int(s.get(id, 0)) + 1
+	return s
+
+## Что прибавилось в сумке с момента снимка (порядок не важен).
+func _gear_added_since(before: Dictionary) -> Array:
+	var out: Array = []
+	var after := _gear_snapshot()
+	for raw_id in after:
+		var id := String(raw_id)
+		var d: int = int(after[raw_id]) - int(before.get(id, 0))
+		for k in maxi(0, d):
+			out.append(id)
+	return out
+
+## Независимое повторение выбора Loot.quest_relic (t18): пул минус «уже в
+## сумке» минус «не своей руке», индекс — shash("questrelic:<звень>:<сид>").
+## Нужно именно до выдачи: после выдачи сумка уже другая.
+func _expected_relic(link_id: String, pool: Array) -> String:
+	var free: Array = []
+	for p in pool:
+		var pid := String(p)
+		if not GameState.owned_gear.has(pid) \
+				and bool(GD.can_equip(String(GameState.class_id), pid).get("ok", true)):
+			free.append(pid)
+	if free.is_empty():
+		return ""
+	return String(free[OW.shash("questrelic:%s:%d" % [link_id, int(GameState.run_seed)]) % free.size()])
+
+## Стадия 1 маршрута: Снежник -> ход -> мини-босс -> реликтовый сундук -> выход.
+func stage_belt1_mini() -> void:
+	stage("belt1_mini_snow")
+	if _loc_chain_dead:
+		chk("belt1: цепочка биомов мертва — маршрут хода пропущен", false, "skip")
+		return
+	# --- 1. пояс открыт ногами, цели обоих звеньев закрыты честной главой биомов ---
+	var open_flag: Variant = GameState.get_flag("wm.open.snow", "")
+	chk("belt1: Снежник открыт ногами (t7 wm.open.snow=1)", String(open_flag) == "1",
+		"wm.open.snow=%s" % str(open_flag))
+	var bk := int(GameState.get_flag(QD.BK_PREFIX + "snow", 0))
+	chk("belt1: зачистка Снежника вошла в цепочку (q.bk.snow=%d >= 4)" % bk, bk >= 4, "bk=%d" % bk)
+	var bc := int(GameState.get_flag(QD.BC_PREFIX + "snow", 0))
+	chk("belt1: сундук Снежника вошёл в цепочку (q.bc.snow=%d == 1)" % bc, bc == 1, "bc=%d" % bc)
+	# --- 2. возврат в Снежник штатным порталом карты мира ---
+	var portal: Node = world.worldmap_grid.portal_nodes.get("snow", null)
+	if not chk("belt1: портал snow жив для маршрута хода", portal != null, "нет portal_node"):
+		return
+	perf_start("transition_enter_loc_snow_belt1")
+	var ok_in := await interact_with(portal, "belt1_to_snow",
+			(func() -> bool: return String(world.active_area) == "loc_snow"))
+	perf_end()
+	await settle()
+	if not chk("belt1: вход в Снежник (маршрут хода, active=loc_snow)",
+			String(world.active_area) == "loc_snow", "active=%s ok=%s" % [world.active_area, str(ok_in)]):
+		return
+	var grid = world.biome_grids.get("snow", null)
+	if grid == null:
+		chk("belt1: сетка Снежника на месте", false, "biome_grids.snow=nil")
+		return
+	# --- 3. ход: интерактор в локации стоит ровно там, где сказал генератор ---
+	# ВАЖНО (замер t22): игра зовёт pick_hole на СВОИХ рядах зоны —
+	# world._ensure_hole передаёт gz.map_rows (world.gd:1208), а не lm["grid"]:
+	# после постройки зоны ряды живут (створы/декор), и параллельный пересчёт
+	# по «сырому» loc_map даёт другую клетку ((12,28) против (9,24) на сиде
+	# плейта). Сверяемся с теми же входами, что у игры: ряды зоны + meta loc_map.
+	var hole: Node = world.mini_holes.get("snow", null)
+	if not chk("belt1: ход в микро-подземелье посажен (mini_holes.snow)", hole != null, "нет"):
+		return
+	var lm: Dictionary = OW.loc_map(int(GameState.run_seed), "snow")
+	var meta: Dictionary = lm.get("meta", {})
+	var sp: Array = meta.get("spawn", [21, OW.LOC_H - 4])
+	var po: Array = meta.get("portal_out", [22, OW.LOC_H - 3])
+	var ch: Array = meta.get("chest", [-1, -1])
+	var want_hole := MDZ.pick_hole(grid.map_rows,
+			Vector2i(int(sp[0]), int(sp[1])), Vector2i(int(ch[0]), int(ch[1])),
+			Vector2i(int(po[0]), int(po[1])), "snow")
+	var hole_cell := node_tile(hole, zone_ctx())
+	chk("belt1: клетка хода == pick_hole генератора на рядах этой же зоны (%s)" % str(want_hole),
+		hole_cell == want_hole, "факт=%s ждали=%s" % [str(hole_cell), str(want_hole)])
+	chk("belt1: клетка хода удовлетворяет правилу посадки (cheb: спавн/портал >= 9, сундук >= 7, нора примыкает к массе/скале)",
+			OW.cheb(hole_cell, Vector2i(int(sp[0]), int(sp[1]))) >= 9 \
+					and OW.cheb(hole_cell, Vector2i(int(po[0]), int(po[1]))) >= 9 \
+					and (int(ch[0]) < 0 or OW.cheb(hole_cell, Vector2i(int(ch[0]), int(ch[1]))) >= 7) \
+					and _hole_touches_rock(grid.map_rows, hole_cell),
+			"hole=%s cheb(спавн)=%d cheb(портал)=%d cheb(сундук)=%s у_скалы=%s" % [str(hole_cell),
+				OW.cheb(hole_cell, Vector2i(int(sp[0]), int(sp[1]))),
+				OW.cheb(hole_cell, Vector2i(int(po[0]), int(po[1]))),
+				str(-1 if int(ch[0]) < 0 else OW.cheb(hole_cell, Vector2i(int(ch[0]), int(ch[1])))),
+				str(_hole_touches_rock(grid.map_rows, hole_cell))])
+	# --- 4. спуск ---
+	await interact_with(hole, "belt1_hole", (func() -> bool: return String(world.active_area) == "mini_snow"))
+	await settle()
+	if not chk("belt1: ход -> микро-подземелье (active=mini_snow)",
+			String(world.active_area) == "mini_snow", "active=%s" % str(world.active_area)):
+		return
+	var mz = world.mini_grids.get("snow", null)
+	if not chk("belt1: сцена хода построена (mini_grids.snow)", mz != null, "nil"):
+		return
+	chk("belt1: карта хода %dx%d (обе оси >= вида — полос нет, t19)" % [int(mz.map_w), int(mz.map_h)],
+		int(mz.map_w) == int(MDZ.W) and int(mz.map_h) == int(MDZ.H),
+		"факт=%sx%s ждали=%sx%s" % [str(mz.map_w), str(mz.map_h), str(MDZ.W), str(MDZ.H)])
+	chk("belt1: босс и сундук в разных комнатах (дальняя — боссу)",
+		int(mz.boss_tile.x) >= 0 and int(mz.chest_tile.x) >= 0 and mz.boss_tile != mz.chest_tile,
+		"boss=%s chest=%s" % [str(mz.boss_tile), str(mz.chest_tile)])
+	# t22 (25.11): ЧЕСТНАЯ ПОМЕТКА ВМЕСТО CHECKPOINT-а внутри хода. Сейв+резюме в
+	# микро-подземелье — НЕ РАБОТАЕТ (воспроизведено голым зондом
+	# diag-t22/mini_save_probe.gd, лог diag-t22/mini_save_probe.log): до сейва
+	# active=area=«mini_snow», после do_quickload() — active=area=«loc_dungeon»
+	# при прежней позе (328, 62698), т.е. герой стоит на этаже хода, мир считает
+	# его Подземельем, сцена хода снята с физики. Причина по чтению world.gd:
+	# do_quickload() сначала зовёт apply_zone(in_cave=false) -> apply_area(«village»)
+	# затирает GameState.area (world.gd:1809), и лишь потом _place_resumed_player()
+	# читает ключ (world.gd:1703) — ключ уже «village», а y-полосы (19200..43200)
+	# не знают этажей MINI_Y=48000 и отдают верхнюю полосу loc_dungeon.
+	# Кликабельный P1 для t19/t20 (заявка «сейв внутри хода переживает рестарт»
+	# не выполняется). CHECKPOINT здесь дал бы КРАСНЫЙ плейт и заблокировал волну
+	# без пользы для фикса, поэтому дефект оформлен находкой, а не пином;
+	# стендовый чек появится вместе с фиксом (капитан решает).
+	finding("save_mini", "сейв+резюме в micro-подземелье выбрасывает в loc_dungeon "
+			+ "(mini_save_probe: было mini_snow -> стало loc_dungeon при y=62698; "
+			+ "do_quickload затирает GameState.area до чтения ключа резюме)")
+	await frames(10)
+	mz = world.mini_grids.get("snow", null)
+	if mz == null or mz.boss_node == null:
+		chk("belt1: ход цел после входа (сцена+босс)", false, "mz=%s" % str(mz))
+		return
+	chk("belt1: ход цел после входа (сцена+босс жив)", not bool(mz.boss_node.get("dying")),
+		"hp=%s" % str(mz.boss_node.get("hp")))
+	# --- 5. мини-босс: честный бой ногами, статы по формуле (пин t22) ---
+	var boss: Node = mz.boss_node
+	var fam := String(MZ.BOSS_FAM.get("snow", "brute"))
+	var script_path := String(boss.get_script().resource_path)
+	chk("belt1: мини-босс Снежника — remap семейства «%s» (BOSS_FAM/FAM_SCRIPTS, не новая сущность)" % fam,
+		script_path == String(MZ.FAM_SCRIPTS[fam]), "script=%s ждали=%s" % [script_path, String(MZ.FAM_SCRIPTS[fam])])
+	var boss_flag: bool = ("boss" in boss) and bool(boss.get("boss"))
+	chk("belt1: мини-босс не помечен Громом (поле boss где есть = false; гром-механики не затронуты)",
+		not boss_flag, "boss=%s" % str(boss.get("boss")))
+	chk("belt1: HP мини-босса синхронизирован с max_hp (множитель применён до границы HP, t20)",
+			not ("max_hp" in boss) or int(boss.get("hp")) == int(boss.get("max_hp")),
+			"hp=%s max_hp=%s" % [str(boss.get("hp")), str(boss.get("max_hp"))])
+	var dmg_note := "dmg=" + str(boss.get("dmg"))
+	if not ("dmg" in boss):
+		dmg_note = "dmg_mult x%.2f" % float(boss.get("dmg_mult"))
+	var leash_note := "leash=" + str(boss.get("boss_leash"))
+	if not ("boss_leash" in boss):
+		leash_note = "leash=MiniBossWatch (у property нет)"
+	chk("belt1: статы мини-босса Снежника = датированный пин t22 (hp=%d, xp=%d; формула t19: база x belt, затем x2.5 hp / x3 xp)"
+			% [MINI_HP_PIN_SNOW, MINI_XP_PIN_SNOW],
+		int(boss.get("hp")) == MINI_HP_PIN_SNOW and int(boss.get("kill_xp")) == MINI_XP_PIN_SNOW,
+		"hp=%s xp=%s %s %s (пины %d/%d; база wraith hp=8 xp=15, belt=3 -> 8x1.75=14 -> x2.5=35)" % [
+			str(boss.get("hp")), str(boss.get("kill_xp")), dmg_note, leash_note,
+			MINI_HP_PIN_SNOW, MINI_XP_PIN_SNOW])
+	var lvl0: int = GameState.level
+	var fr := await fight(boss, "belt1_mini_boss", 5400)
+	chk("belt1: мини-босс убит честным боем (A*-подход + attack_at)", fr == "killed", "rc=%s" % fr)
+	if fr == "died":
+		unexpected_death("belt1_mini")
+		return
+	await frames(30)
+	chk("belt1: смерть мини-босса = «ход закрыт» (q.bm.snow=1)",
+		int(GameState.get_flag(QD.BM_PREFIX + "snow", 0)) == 1,
+		"q.bm.snow=%s" % str(GameState.get_flag(QD.BM_PREFIX + "snow", 0)))
+	chk("belt1: опыт мини-босса дошёл до героя (уровень %d -> %d)" % [lvl0, GameState.level],
+		GameState.level >= lvl0, "lvl=%d" % GameState.level)
+	# --- 6. реликтовый сундук хода: гарантированные 2 аффикса, бит-в-бит ---
+	if mz.chest_node == null:
+		chk("belt1: сундук хода существует", false, "chest_node=nil")
+		return
+	var pool: Array = mz._relic_pool()
+	var want_relic := _expected_relic("mini_snow", pool)   # ДО выдачи (сумка ещё чистая)
+	var gear_before := _gear_snapshot()
+	var ch_used0: int = GameState.chests_used.size()
+	await interact_with(mz.chest_node, "belt1_mini_chest",
+			(func() -> bool: return GameState.chests_used.size() > ch_used0))
+	chk("belt1: реликтовый сундук хода открыт", GameState.chests_used.size() > ch_used0,
+		"chests=%d" % GameState.chests_used.size())
+	var added: Array = _gear_added_since(gear_before)
+	var ord_after: int = int(GameState.owned_gear.size())
+	if want_relic == "":
+		chk("belt1: пул хода исчерпан -> честное серебро (+40)", added.is_empty(), "added=%s" % str(added))
+	else:
+		chk("belt1: награда хода == независимый повтор Loot.quest_relic («%s»)" % want_relic,
+			added.size() == 1 and String(added[0]) == want_relic,
+			"added=%s ждали=%s" % [str(added), want_relic])
+		var rid := want_relic
+		var affs: Array = GameState.affixes.get(rid, []) as Array
+		chk("belt1: награда хода — реликтовая (2 аффикса, force_relic t17)", affs.size() == 2,
+			"affixes=%s" % str(affs))
+		var again: Array = AFX.affix_roll(int(GameState.run_seed), "quest:mini_snow", ord_after, true)
+		chk("belt1: аффиксы реликта бит-в-бит с Affixes.affix_roll(seed, «quest:mini_snow», ordinal)",
+				again == affs, "факт=%s ролл=%s" % [str(affs), str(again)])
+		chk("belt1: награда «по руке» воину (can_equip ok; отсутствующий ключ = провал, не vacuous pass)",
+			bool(GD.can_equip(String(GameState.class_id), rid).get("ok", false)), rid)
+	# --- 7. выход тем же ходом + повторный вход не дублирует реликт ---
+	var hole_pos: Vector2 = hole.get_global_position()
+	if mz.exit_node != null:
+		await interact_with(mz.exit_node, "belt1_mini_exit",
+				(func() -> bool: return String(world.active_area) == "loc_snow"))
+		await settle()
+		chk("belt1: выход = тот же интерактор (герой на клетке хода)",
+			String(world.active_area) == "loc_snow" \
+					and world.player.global_position.distance_to(hole_pos) < 24.0,
+			"active=%s сдвиг %.1f px" % [str(world.active_area), world.player.global_position.distance_to(hole_pos)])
+	else:
+		chk("belt1: стойка выхода хода существует (exit_node)", false, "nil")
+		return
+	var chest_uid := String(mz.chest_node.get("uid"))
+	var gear2 := _gear_snapshot()
+	if hole != null and is_instance_valid(hole):
+		await interact_with(hole, "belt1_reenter",
+				(func() -> bool: return String(world.active_area) == "mini_snow"))
+		await settle()
+		if String(world.active_area) == "mini_snow":
+			var mz2 = world.mini_grids.get("snow", null)
+			var again_used: bool = mz2 != null and mz2.chest_node != null and bool(mz2.chest_node.get("used"))
+			chk("belt1: повторный вход в закрытый ход — сундук уже открыт (%s)" % chest_uid,
+				again_used and GameState.chests_used.has(chest_uid), "used=%s" % str(again_used))
+			if mz2 != null and mz2.chest_node != null:
+				# Замер t22: открытый сундук остаётся живой нодой, но уходит из
+				# world.near[] — подсказки E больше нет. interact_with сюда звать
+				# нельзя: он ждёт near[] и выдал бы ложный softlock-finding,
+				# поэтому подход — штатный walk_to, а E жмём прямо у цели.
+				var wr := await walk_to(mz2.chest_node, "belt1_chest_double")
+				await frames(6)
+				chk("belt1: к открытому сундку можно подойти (walk_to привёл)", wr == 0, "walk=%d" % wr)
+				chk("belt1: открытый сундук не в near[] — фантомной подсказки E нет",
+					not world.near.has(mz2.chest_node), "near=%d" % int(world.near.size()))
+				var gold3: int = GameState.gold
+				push_key(KEY_E)
+				await frames(20)
+				chk("belt1: E у открытого сундука ничего не выдаёт и не списывает (реликт не задваивается)",
+						_gear_added_since(gear2).is_empty() and GameState.gold == gold3,
+						"added=%s gold=%d->%d" % [str(_gear_added_since(gear2)), gold3, GameState.gold])
+			else:
+				chk("belt1: узел сундука хода жив после повторного входа", false, "chest_node=nil")
+			await interact_with(mz2.exit_node, "belt1_reenter_exit",
+					(func() -> bool: return String(world.active_area) == "loc_snow"))
+			await settle()
+	# --- 8. выход локации на карту мира (к прежнему маршруту плейта) ---
+	var grid_out = world.biome_grids.get("snow", null)
+	if grid_out != null and grid_out.portal_out_node != null:
+		await interact_with(grid_out.portal_out_node, "belt1_exit_loc",
+				(func() -> bool: return String(world.active_area) == "worldmap"))
+		await settle()
+	chk("belt1: выход из Снежника на карту мира (плейт вернулся в прежнее русло)",
+		String(world.active_area) == "worldmap", "active=%s" % str(world.active_area))
+
+## Клетка «хода» обязана примыкать к массе/скале ('#'/'M') — то же условие, что
+## в MiniDungeon.pick_hole (mini_dungeon.gd:168-175): нора в гуще, не посреди
+## поляны. Проверяем по рядам самой зоны (ими же ход и сажали).
+func _hole_touches_rock(rows, t: Vector2i) -> bool:
+	for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
+		var n: Vector2i = t + d
+		if n.y >= 0 and n.y < rows.size():
+			var cell_ch := String(String(rows[n.y])[n.x])
+			if cell_ch == "#" or cell_ch == "M":
+				return true
+	return false
+
+## Стадия 2 маршрута: доска старейшины — взять/сдать оба звена пояса 1,
+## награды, идемпотентность и строки журнала (клавиша J).
+func stage_belt1_board() -> void:
+	stage("belt1_board")
+	if String(world.active_area) != "village":
+		chk("belt1: доска — в деревне (мы вернулись домой)", false, "active=%s" % str(world.active_area))
+		return
+	var board := village_interactor(Vector2i(12, 8))
+	if not chk("belt1: доска объявлений стоит на клетке (12,8)", board != null, "нет Area2D на 12,8"):
+		return
+	var i0 := QD.belt_current(GameState)
+	chk("belt1: первое несданное звено — bq_snow_1 (индекс 0 реестра)",
+		i0 == 0 and String(QD.belt_link(0).get("id", "")) == "bq_snow_1", "i=%d" % i0)
+	# звено 1: взять и сдать (цель закрыта главой биомов)
+	await interact_with(board, "belt1_board_take1",
+			(func() -> bool: return QD.belt_status(GameState, 0) == QD.STATUS_ACTIVE))
+	chk("belt1: «Снежный долг» взят у доски (q.bq.bq_snow_1=1)",
+		QD.belt_status(GameState, 0) == QD.STATUS_ACTIVE,
+		"st=%d" % QD.belt_status(GameState, 0))
+	var g0: int = GameState.gold
+	await interact_with(board, "belt1_board_turn1",
+			(func() -> bool: return QD.belt_status(GameState, 0) == QD.STATUS_DONE))
+	var rw0: int = int(QD.belt_link(0).get("gold", 0))
+	chk("belt1: «Снежный долг» сдан, выплата = награда реестра (bq_snow_1 gold=30, пин t22)",
+		QD.belt_status(GameState, 0) == QD.STATUS_DONE and rw0 == 30 and GameState.gold == g0 + rw0,
+		"gold %d->%d, реестр=%d" % [g0, GameState.gold, rw0])
+	# звено 2: сундук + гарантированный реликт
+	await interact_with(board, "belt1_board_take2",
+			(func() -> bool: return QD.belt_status(GameState, 1) == QD.STATUS_ACTIVE))
+	chk("belt1: «Клад под снегом» взят у доски", QD.belt_status(GameState, 1) == QD.STATUS_ACTIVE,
+		"st=%d" % QD.belt_status(GameState, 1))
+	var pool2: Array = QD.belt_link(1).get("relic_pool", []) as Array
+	var want2 := _expected_relic("bq_snow_2", pool2)   # ДО сдачи
+	var gear1 := _gear_snapshot()
+	var gold1: int = GameState.gold
+	await interact_with(board, "belt1_board_turn2",
+			(func() -> bool: return QD.belt_status(GameState, 1) == QD.STATUS_DONE))
+	var rw1: int = int(QD.belt_link(1).get("gold", 0))
+	var want_delta: int = rw1 + (40 if want2 == "" else 0)   # 40 — «реликтовое серебро» при исчерпанном пуле
+	var name2 := "belt1: «Клад под снегом» сдан, выплата = награда реестра (bq_snow_2 gold=45, пин t22" \
+			+ ("" if want2 != "" else " + 40 серебра вместо реликта") + ")"
+	chk(name2,
+		QD.belt_status(GameState, 1) == QD.STATUS_DONE and rw1 == 45 and GameState.gold == gold1 + want_delta,
+		"gold %d->%d (ждали +%d)" % [gold1, GameState.gold, want_delta])
+	var added2: Array = _gear_added_since(gear1)
+	var ord2: int = int(GameState.owned_gear.size())
+	if want2 == "":
+		chk("belt1: пул пояса исчерпан — вещь не выдана, расплата золотом (серебро уже в дельте выше)",
+				added2.is_empty(), "added=%s" % str(added2))
+	else:
+		chk("belt1: награда пояса == независимый повтор Loot.quest_relic («%s»)" % want2,
+			added2.size() == 1 and String(added2[0]) == want2, "added=%s ждали=%s" % [str(added2), want2])
+		var affs2: Array = GameState.affixes.get(want2, []) as Array
+		chk("belt1: награда пояса — реликтовая (2 аффикса)", affs2.size() == 2, "affixes=%s" % str(affs2))
+		var again2: Array = AFX.affix_roll(int(GameState.run_seed), "quest:bq_snow_2", ord2, true)
+		chk("belt1: аффиксы награды пояса бит-в-бит с роллом канона", again2 == affs2,
+			"факт=%s ролл=%s" % [str(affs2), str(again2)])
+	# журнал (в игре открывается на J — journal.gd:317; «Q» в задании — неточность):
+	# belt-строки живут общим языком журнала (t18) — здесь
+	# слой данных, живой кадр окна снят отдельно (diag-t22/frames/journal_J.png)
+	var ent: Array = QD.entries(GameState)
+	var seen := {}
+	for e in ent:
+		seen[String(e.get("id", ""))] = int(e.get("status", 0))
+	chk("belt1: журнал (J) показывает оба сданных звена цепочки",
+		int(seen.get("bq_snow_1", 0)) == QD.STATUS_DONE and int(seen.get("bq_snow_2", 0)) == QD.STATUS_DONE,
+		"bq_snow_1=%s bq_snow_2=%s всего строк=%d" % [str(seen.get("bq_snow_1")), str(seen.get("bq_snow_2")), ent.size()])
+	var j: int = QD.belt_current(GameState)
+	chk("belt1: после пояса 1 цепочка указывает на звено 2 (Пустошь)",
+		j == 2 and String(QD.belt_link(j).get("zone", "")) == "desert",
+		"belt_current=%d zone=%s" % [j, String(QD.belt_link(j).get("zone", ""))])
+	# гейт «по мере открытия поясов» (t18): звено следующего пояса берётся
+	# только когда пояс открыт ногами; Пустошь плейт прошёл — брать можно.
+	var desert_open := String(GameState.get_flag("wm.open.desert", "")) == "1"
+	chk("belt1: гейт t18 — звено Пустоши предлагается ровно когда Пустошь открыта ногами",
+		QD.belt_can_offer(GameState, j) == desert_open,
+		"wm.open.desert=%s can_offer=%s" % [str(desert_open), str(QD.belt_can_offer(GameState, j))])
+	# идемпотентность: последний тычок доски после закрытого пояса 1 не платит
+	# повторно (максимум — предлагает звено 2, и это тоже без наград).
+	# Предикат — «пояс 1 всё ещё сдан» (истина и до, и после): заведомо ложный
+	# предикат заставлял interact_with выдавать finding «E нажат, состояние не
+	# наступило», хотя именно это от тычка и требовалось (замер t22).
+	var g2: int = GameState.gold
+	var gear2 := _gear_snapshot()
+	var ach2 := _ach_flags_count()
+	await interact_with(board, "belt1_board_after",
+			(func() -> bool: return QD.belt_status(GameState, 1) == QD.STATUS_DONE))
+	await frames(20)
+	chk("belt1: доска после закрытой цепочки пояса 1 ничего не выдаёт (золото/сумка/ачивки)",
+		GameState.gold == g2 and _gear_added_since(gear2).is_empty() and ach2 == _ach_flags_count(),
+		"gold %d->%d added=%s status2=%s" % [g2, GameState.gold, str(_gear_added_since(gear2)),
+			str(QD.belt_status(GameState, 2))])
+

@@ -435,6 +435,18 @@ const LOOT := {
 		{"mat": "whet", "chance": 0.35, "qty": 1},
 		{"gear": "nordsword", "chance": 0.05},
 	],
+	# t24 (25.11): закрывает легаси-дыру t3 — belt-1 бруты зон несли kind
+	# "brute_t1@b1", строки не было: pre-existing warning + молчаливый ноль
+	# дропа (вилка qa_c1 платила ожидания, игра — нет). Каналы зеркалят
+	# канонический "brute" — ступени лестницы тир1 [6,9] → тир2 [8,12] →
+	# тир3 [10,15]; золото пояс множит "@b1" как обычно (строка 24 OPEN_WORLD).
+	"brute_t1": [
+		{"gold": [6, 9], "chance": 0.9},
+		{"item": "potion", "chance": 0.12, "qty": 1},
+		{"mat": "sinew", "chance": 1.0, "qty": 1},
+		{"mat": "whet", "chance": 0.35, "qty": 1},
+		{"gear": "nordsword", "chance": 0.05},
+	],
 	"brute_t2": [
 		{"gold": [8, 12], "chance": 0.9},
 		{"item": "potion", "chance": 0.12, "qty": 1},
