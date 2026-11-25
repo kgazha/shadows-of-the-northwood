@@ -388,6 +388,26 @@ func _run() -> void:
 	print("S1 DONE")
 
 
+## t10 (Оружие v1, 25.11): витрина гриимова двора выросла (щиты/посох), и
+## нескролленый список честно выше окна — строки за фолдом живут внутри
+## ScrollContainer и достижимы колесом/полосой (скролл проверен тестом выше).
+## Raw-прямоугольник такой строки за полем — НЕ «элемент за экраном»: правило
+## t30 про недоступность, а скроллированное доступно. Клиппинг учитываем здесь,
+## всё остальное (панель, close, диалоги) по-прежнему ловится.
+func _scroll_clipped(ca: Control, r: Rect2, dy: float) -> bool:
+	if shop == null or not (shop.scroll is ScrollContainer):
+		return false
+	var vr: Rect2 = shop.scroll.get_global_rect()
+	if r.position.y >= vr.position.y + dy - 1.0 and r.end.y <= vr.end.y + dy + 1.0:
+		return false  # целиком в окне витрины — обычно, не мы
+	var p: Node = ca
+	while p != null:
+		if p == shop.scroll:
+			return r.end.y > vr.end.y + dy + 1.0  # ниже фолда => скролл
+		p = p.get_parent()
+	return false
+
+
 ## t34 V-06: сколько элементов лавки висит за каноническим полем 640×360.
 ## dy — сдвиг «панель отцентрована в поле 360» (в headless окно другое, см. T18).
 func _offscreen_count(dy: float) -> int:
@@ -407,6 +427,8 @@ func _offscreen_count(dy: float) -> int:
 			continue
 		if r.get_area() >= CANON.x * CANON.y * 0.95:
 			continue  # полноэкранные dim/center/root — не «элемент за экраном»
+		if _scroll_clipped(ca, r, dy):
+			continue
 		if r.position.x < -1.0 or r.position.y < -1.0 or r.end.x > CANON.x + 1.0 or r.end.y > CANON.y + 1.0:
 			n += 1
 	return n
@@ -427,6 +449,8 @@ func _offscreen_list(dy: float) -> String:
 		var r: Rect2 = ca.get_global_rect()
 		r = Rect2(r.position + Vector2(0, dy), r.size)
 		if r.size.x < 2.0 or r.size.y < 2.0 or r.get_area() >= CANON.x * CANON.y * 0.95:
+			continue
+		if _scroll_clipped(ca, r, dy):
 			continue
 		if r.position.x < -1.0 or r.position.y < -1.0 or r.end.x > CANON.x + 1.0 or r.end.y > CANON.y + 1.0:
 			out.append("%s@%s" % [ca.name, r])

@@ -107,9 +107,24 @@ var input_locked := false
 ## Хранилище здесь; реестр предметов (id -> слот/цена/статы) — scripts/gear_data.gd
 ## (фича экономики), справочник квестов — scripts/quests_data.gd (фича квестов).
 var gold := 0
-## Снаряжение: слот ("weapon"/"armor"/"relic") -> item id, "" — пусто.
+## Снаряжение: слот ("weapon"/"armor"/"shield"/"relic") -> item id, "" — пусто.
 ## g20b (вердикт 17.11 «давай оружие, броня + оберег»): третий слот relic.
-var gear := {"weapon": "", "armor": "", "relic": ""}
+## t10 (вердикт 25.11 «магу посохи, лучнику луки, воину мечи и щиты»):
+## четвёртый слот shield. Сейв-ключ "gear" — словарь: аддитивно, старые
+## сейвы получают shield:"" (из gear.duplicate() ключ просто берётся).
+var gear := {"weapon": "", "armor": "", "shield": "", "relic": ""}
+## t10 (вердикт 25.11): ОДНОРАЗОВОЕ пояснение legacy-гейта (from_dict снял
+## чужое — мир прочитает и покажет тост, когда HUD уже слушает; в сейв НЕ
+## пишется: после первого снятия слот чист, повторного тоста не будет).
+var gear_gate_note := ""
+
+## Выдать накопленное пояснение гейта тостом и погасить ( идемпотентно:
+## пустая заметка — молчаливый no-op). Зовёт world.gd после постройки HUD
+## (бут-лоад) и после успешной F9-загрузки.
+func flush_gear_gate_note() -> void:
+	if gear_gate_note != "":
+		toast.emit(gear_gate_note)
+		gear_gate_note = ""
 ## Сумка снаряжения (g20b): список id ЭКИПИРУЕМОГО, которым владеет герой
 ## (включая надетое — слоты gear ссылаются в него же). Предмет уникален,
 ## стопок нет. Пустой id/чужой id в сумму не попадает (ensure_gear).
@@ -253,16 +268,28 @@ func can_afford(n: int) -> bool:
 
 ## Надеть item id в слот; возвращает id ранее надетого предмета (или "").
 ## legacy-флаг has_sword держится в синхроне ("sword"/"") до канона gear_data.gd.
+## t10 (вердикт 25.11): МАТРИЦА КАНОНА на входе — экипировка чужого типа
+## запрещена ЗДЕСЬ (GearData.can_equip), с штатной причиной в тосте, не молча.
+## Отказ возвращает прежний предмет слота, слот не трогается (ни has_sword,
+## ни статы). class_id == "" (безкласса, t9) — матрица молчит.
 func equip_item(slot: String, item_id: String) -> String:
 	if not gear.has(slot):
 		push_warning("Неизвестный слот: %s" % slot)
 		return ""
 	var prev := String(gear[slot])
+	if item_id != "":
+		var gate: Dictionary = GearData.can_equip(class_id, item_id)
+		if not bool(gate.get("ok", true)):
+			toast.emit(String(gate.get("reason", "Не твоя рука.")))
+			return prev
 	gear[slot] = item_id
 	if slot == "weapon":
 		# M1 (QA): флаг синхронизируется ЖЁСТКО — любой другой id (топор, клинок)
 		# обязан гасить has_sword, иначе при очистке слота остаётся «призрачный меч» x2.
 		has_sword = (item_id == "sword")
+		# t10: мана-потолок от посоха пересчитывается вместе с оружием
+		# (recalc_max_mana сам эмитит stats_changed).
+		recalc_max_mana()
 		stats_changed.emit()
 	return prev
 
@@ -272,7 +299,7 @@ func ensure_gear(id: String) -> bool:
 	if id == "" or owned_gear.has(id):
 		return false
 	var sl := String(GearData.item(id).get("slot", ""))
-	if sl != "weapon" and sl != "armor" and sl != "relic":
+	if sl != "weapon" and sl != "armor" and sl != "relic" and sl != "shield":
 		push_warning("ensure_gear: не экипируемый id: %s" % id)
 		return false
 	owned_gear.append(id)
@@ -369,9 +396,11 @@ func recalc_max_hp() -> void:
 		hp = max_hp
 	stats_changed.emit()
 
-## Пересчёт макс. маны из класса (0 у не-магов); mana поджимается под потолок.
+## Пересчёт макс. маны из класса (0 у не-магов) + мана-потолок надетого
+## посоха (t10, вердикт 25.11: «магу посохи» — посох даёт урон И ману);
+## mana поджимается под потолок.
 func recalc_max_mana() -> void:
-	max_mana = int(Classes.class_data(class_id).get("mana", 0))
+	max_mana = int(Classes.class_data(class_id).get("mana", 0)) + GearData.mana_bonus(self)
 	if mana > max_mana:
 		mana = max_mana
 	stats_changed.emit()
@@ -546,7 +575,7 @@ func from_dict(d: Dictionary) -> void:
 			if typeof(gid) == TYPE_STRING and not owned_gear.has(String(gid)) \
 					and owned_gear.size() < 12:  # physically: 6 free bag cells + slots
 				var gsl := String(GearData.item(String(gid)).get("slot", ""))
-				if gsl == "weapon" or gsl == "armor" or gsl == "relic":
+				if gsl == "weapon" or gsl == "armor" or gsl == "relic" or gsl == "shield":
 					owned_gear.append(String(gid))
 	# ensure_gear НЕ используем: он эмитит автосейв на каждый предмет, лоад
 	# обязан быть без сайв-побочки (паттерн всех полей from_dict).
@@ -581,7 +610,7 @@ func from_dict(d: Dictionary) -> void:
 				chest_mark_used(String(cid))
 	# --- v2: золото/шестерня/флаги (старые сейвы => чистые значения) ---
 	gold = maxi(0, _num(d.get("gold", 0), 0))
-	gear = {"weapon": "", "armor": "", "relic": ""}
+	gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
 	var gd: Variant = d.get("gear", {})
 	if typeof(gd) == TYPE_DICTIONARY:
 		for slot in gear:
@@ -594,6 +623,29 @@ func from_dict(d: Dictionary) -> void:
 	# ("has_sword":true + weapon:"axe" — «призрачный меч») не переживают лоад;
 	# прежняя M2-обратная синхронизация покрывается этой же строкой.
 	has_sword = String(gear["weapon"]) == "sword"
+	# t10 (вердикт пользователя 25.11, матрица CLASS_WEAPONS): LEGACY-ГЕЙТ —
+	# старые сейвы не знали, что «магу посохи, лучнику луки, воину мечи+щиты».
+	# При загрузке предмет чужого класса СНИМАЕТСЯ с слота в сумку (инвентарь
+	# сохраняется: «предмет — товар будущего круга/перерождения», рынок живёт)
+	# с ОДНОРАЗОВЫМ тостом-пояснением (gear_gate_note — одноразово, потому что
+	# F9 без гейта больше не повторит: после первого снятия слот чист).
+	# has_sword пересинхронизируется ПОСЛЕ снятия: LEGACY_SWORD_MULT остаётся
+	# только за честным «пустой слот + флаг» (старый меч воина не трогается —
+	# warrior/sword матрицей разрешён).
+	gear_gate_note = ""
+	var stripped: Array = []
+	for gslot in ["weapon", "shield"]:
+		var ggid := String(gear[gslot])
+		if ggid == "":
+			continue
+		if not bool(GearData.can_equip(class_id, ggid).get("ok", true)):
+			gear[gslot] = ""
+			if not owned_gear.has(ggid) and owned_gear.size() < 12:
+				owned_gear.append(ggid)
+			stripped.append(String(GearData.item(ggid).get("name", ggid)))
+	has_sword = String(gear["weapon"]) == "sword"
+	if not stripped.is_empty():
+		gear_gate_note = "Привычка прежних дней: %s снят — не твоя рука. В сумке." % ", ".join(stripped)
 	# g20b: инвариант сумки — НАДЕТОЕ всегда во владении. Старые сейвы (v≤3)
 	# не знали bag: меч из лавки/сундука и ВЕЧНЫЙ Амулет Леса (has_amulet —
 	# сюжетный флаг, переживает забег) доезжают в сумку миграцией при лоаде.
@@ -919,8 +971,9 @@ func start_new_run() -> void:
 	level = 1
 	xp = 0
 	xp_next = 20
-	gear = {"weapon": "", "armor": "", "relic": ""}
+	gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
 	has_sword = false
+	gear_gate_note = ""  # t10: у нового круга чужих снятий не было
 	# g20b: нажитое в забеге сгорает целиком — сумка и заточка тоже (вечный
 	# Амулет Леса вернётся миграцией has_amulet при следующем лоаде).
 	owned_gear = []
@@ -961,8 +1014,9 @@ func start_fresh_game() -> void:
 	level = 1
 	xp = 0
 	xp_next = 20
-	gear = {"weapon": "", "armor": "", "relic": ""}
+	gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
 	has_sword = false
+	gear_gate_note = ""  # t10: свежий круг NG+ — заметок гейта не копим
 	owned_gear = []   # g20b: та же логика, что в start_new_run
 	sharpen = {}
 	class_id = ""

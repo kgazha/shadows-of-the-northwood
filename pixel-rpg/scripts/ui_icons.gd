@@ -818,6 +818,174 @@ static func _ic_hero_silhouette() -> void:
 	_P(12, 3, "IRON", _L)
 	_hl(11, 13, 11, "BRONZE", _M)
 
+# ================== t10 (25.11): канон оружия — посохи/луки/щиты ==================
+# Ряд тот же, что у g20b: LIGHT — верх/лево открытой грани, DARK — правый бок,
+# OUTLINE — низ/кромка; материалы только PixelPalette (BARK — древки/луковицы,
+# IRON — оковка и боссы, CLOTH — тетивы/обмотки, CRYSTAL — руны, CHAR — вороново
+# крыло, BONE — клюв/прожилки). Дословный двойник рисовалок листа
+# tools_art/sheet_weapons_v1.gd (equality-пин в его самопроверке и в qa_gear).
+
+## staff_apprentice — «Ученический посох»: суковатая палка, один сук, срез светлый.
+static func _ic_item_staff_apprentice() -> void:
+	# древко по диагонали (низ-лево -> верх-право)
+	_diag([[3, 13], [4, 12], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [11, 5], [12, 4]], "BARK", _M)
+	_diag([[2, 13], [3, 12], [4, 11], [5, 10], [6, 9], [7, 8], [8, 7], [9, 6], [10, 5], [11, 4]], "BARK", _L)
+	_diag([[3, 14], [4, 13], [5, 12], [6, 11], [7, 10], [8, 9], [9, 8], [10, 7], [11, 6], [12, 5]], "BARK", _O)
+	# сук вправо-вверх
+	_diag([[8, 8], [9, 7], [10, 6]], "BARK", _D)
+	_P(11, 5, "BARK", _L)
+	# сучок-зазубрина влево
+	_P(5, 9, "BARK", _D)
+	# светлый срез макушки и комля
+	_P(12, 3, "BONE", _L)
+	_P(13, 3, "BARK", _O)
+	_P(2, 14, "BARK", _O)
+
+## staff_oak — «Крепкий посох»: прямое древко, железный набалдашник и окова.
+static func _ic_item_staff_oak() -> void:
+	_vl(7, 4, 12, "BARK", _L)
+	_vl(8, 4, 12, "BARK", _M)
+	_vl(9, 5, 12, "BARK", _D)
+	# железный набалдашник
+	_hl(6, 10, 3, "IRON", _M)
+	_hl(7, 9, 2, "IRON", _L)
+	_P(6, 3, "IRON", _L)
+	_P(10, 3, "IRON", _O)
+	_P(7, 1, "IRON", _O)
+	# оковка комля и низ
+	_hl(6, 10, 13, "IRON", _M)
+	_hl(6, 10, 14, "IRON", _O)
+	_P(6, 13, "IRON", _L)
+	# связка обмотки под набалдашником
+	_hl(7, 9, 5, "CLOTH", _D)
+
+## staff_rune — «Рунный посох»: тёмное древко, кристальный узел, руны синевой.
+static func _ic_item_staff_rune() -> void:
+	_vl(7, 7, 13, "BARK", _M)
+	_vl(8, 7, 13, "BARK", _D)
+	_vl(6, 8, 12, "BARK", _L)
+	_hl(6, 9, 14, "BARK", _O)
+	# кристальный узел на макушке (свет слева, тень справа, ядро)
+	_hl(6, 9, 3, "CRYSTAL", _L)
+	_hl(5, 10, 4, "CRYSTAL", _M)
+	_hl(5, 10, 5, "CRYSTAL", _M)
+	_hl(6, 9, 6, "CRYSTAL", _D)
+	_P(5, 4, "CRYSTAL", _L)
+	_P(10, 4, "CRYSTAL", _D)
+	_P(10, 5, "CRYSTAL", _O)
+	_F(7, 4, "FIRE_HOT")
+	# руны на древке (северная синь)
+	_P(7, 9, "UI_BLUE", _L)
+	_P(8, 10, "UI_BLUE", _M)
+	_P(7, 11, "UI_BLUE", _M)
+	_P(6, 10, "UI_BLUE", _D)
+	# оплечье-чашечка под кристаллом
+	_hl(5, 10, 7, "IRON", _M)
+	_P(5, 7, "IRON", _L)
+	_P(10, 7, "IRON", _O)
+
+## bow_hunter — «Охотничий лук»: ясеневая дуга, тетива натянута, обмотка посредине.
+static func _ic_item_bow_hunter() -> void:
+	# дуга (правый край), рога к центру
+	_vl(10, 3, 4, "BARK", _M)
+	_vl(11, 5, 9, "BARK", _M)
+	_vl(10, 10, 12, "BARK", _M)
+	_vl(9, 13, 13, "BARK", _D)
+	_vl(11, 4, 4, "BARK", _D)
+	_vl(12, 6, 8, "BARK", _D)
+	_vl(9, 5, 6, "BARK", _L)
+	_vl(9, 10, 11, "BARK", _L)
+	# кончики и захваты
+	_P(10, 2, "BARK", _O)
+	_P(10, 13, "BARK", _O)
+	_hl(9, 10, 7, "CLOTH", _D)
+	_hl(9, 10, 8, "CLOTH", _D)
+	# тетива — прямая левая линия с провесом к рукояти
+	_vl(6, 3, 6, "CLOTH", _L)
+	_vl(6, 9, 12, "CLOTH", _L)
+	_diag([[6, 7], [7, 7]], "CLOTH", _L)
+	_diag([[6, 8], [7, 8]], "CLOTH", _L)
+	_vl(6, 7, 8, "CLOTH", _O)
+	# наконечники стрелков на рогах
+	_P(9, 3, "BONE", _L)
+	_P(9, 12, "BONE", _M)
+
+## bow_heavy — «Тяжёлый лук»: толстая дуга с железными усилителями на рогах.
+static func _ic_item_bow_heavy() -> void:
+	# дуга в два столбца (толще охотничьего)
+	_vl(10, 2, 4, "BARK", _M)
+	_vl(11, 2, 4, "BARK", _D)
+	_vl(11, 5, 10, "BARK", _M)
+	_vl(12, 5, 10, "BARK", _D)
+	_vl(10, 11, 13, "BARK", _M)
+	_vl(11, 11, 13, "BARK", _D)
+	_vl(9, 5, 6, "BARK", _L)
+	_vl(9, 10, 10, "BARK", _L)
+	# железные накладки на рогах
+	_hl(10, 12, 3, "IRON", _M)
+	_hl(10, 12, 12, "IRON", _M)
+	_P(10, 3, "IRON", _L)
+	_P(10, 12, "IRON", _L)
+	# рукоять в двойной обмотке
+	_vl(9, 7, 8, "CLOTH", _D)
+	_vl(10, 7, 8, "CLOTH", _O)
+	# тетива
+	_vl(6, 3, 6, "CLOTH", _L)
+	_vl(6, 9, 12, "CLOTH", _L)
+	_diag([[6, 7], [7, 7], [8, 7]], "CLOTH", _L)
+	_diag([[6, 8], [7, 8], [8, 8]], "CLOTH", _L)
+# оселковая отметина силы
+	_P(12, 7, "VIOLET", _M)
+	_P(12, 8, "VIOLET", _D)
+
+## shield_iron — «Крепкий щит»: кованая чаша, бронзовый босс, заклёпки.
+static func _ic_item_shield_iron() -> void:
+	# щит-«капля»: верх широкий, книзу сужается (ряд 5..12 — по центру слота)
+	_hl(4, 11, 5, "IRON", _L)
+	_hl(3, 12, 6, "IRON", _M)
+	_hl(3, 12, 7, "IRON", _M)
+	_hl(3, 12, 8, "IRON", _M)
+	_hl(4, 11, 9, "IRON", _M)
+	_hl(4, 11, 10, "IRON", _D)
+	_hl(5, 10, 11, "IRON", _D)
+	_hl(6, 9, 12, "IRON", _D)
+	_hl(7, 8, 13, "IRON", _O)
+	# блик левой грани и тень правой
+	_vl(4, 6, 8, "IRON", _L)
+	_vl(11, 6, 8, "IRON", _D)
+	_vl(12, 6, 7, "IRON", _O)
+	# босс и заклёпки
+	_P(7, 8, "BRONZE", _L)
+	_P(8, 8, "BRONZE", _M)
+	_P(7, 9, "BRONZE", _M)
+	_P(8, 9, "BRONZE", _D)
+	_P(5, 7, "BRONZE", _M)
+	_P(10, 7, "BRONZE", _D)
+	_P(8, 11, "BRONZE", _D)
+
+## shield_raven — «Вороний щит»: вороново крыло, костяной клюв, сталь по канту.
+static func _ic_item_shield_raven() -> void:
+	# та же чаша (ряд 5..13), но оперение (тёмный канал CHAR)
+	_hl(4, 11, 5, "IRON", _M)
+	_hl(3, 12, 6, "CHAR", _M)
+	_hl(3, 12, 7, "CHAR", _M)
+	_hl(3, 12, 8, "CHAR", _D)
+	_hl(4, 11, 9, "CHAR", _D)
+	_hl(4, 11, 10, "CHAR", _D)
+	_hl(5, 10, 11, "CHAR", _O)
+	_hl(6, 9, 12, "CHAR", _O)
+	_hl(7, 8, 13, "CHAR", _O)
+	# перья — косые световые прожилки
+	_diag([[5, 7], [6, 8], [7, 9]], "BONE", _D)
+	_diag([[8, 6], [9, 7], [10, 8]], "BONE", _O)
+	_diag([[5, 10], [6, 11]], "BONE", _O)
+	# стальной кант верха
+	_hl(4, 11, 5, "IRON", _L)
+	# клюв-босс
+	_diag([[6, 8], [7, 8], [8, 9]], "HUD_GOLD", _L)
+	_P(8, 8, "HUD_GOLD", _M)
+	_P(9, 9, "HUD_GOLD", _D)
+
 # ---------- низкоуровневая графика (предметы/таланты — легаси-примитивы) ----
 
 static func _px(img: Image, x: int, y: int, c: Color) -> void:
@@ -904,6 +1072,21 @@ static func _stamp_item(img: Image, id: String) -> void:
 				"leather": _ic_item_leather()
 				"chain": _ic_item_chain()
 				"hero": _ic_hero_silhouette()
+			_cv = null
+			_cv_ox = 0
+		"staff_apprentice", "staff_oak", "staff_rune", "bow_hunter", "bow_heavy", "shield_iron", "shield_raven":
+			# t10 (25.11): канон оружия — посохи/луки/щиты (двойник листа
+			# tools_art/sheet_weapons_v1.gd, equality-пин в qa_gear).
+			_cv = img
+			_cv_ox = 0
+			match id:
+				"staff_apprentice": _ic_item_staff_apprentice()
+				"staff_oak": _ic_item_staff_oak()
+				"staff_rune": _ic_item_staff_rune()
+				"bow_hunter": _ic_item_bow_hunter()
+				"bow_heavy": _ic_item_bow_heavy()
+				"shield_iron": _ic_item_shield_iron()
+				"shield_raven": _ic_item_shield_raven()
 			_cv = null
 			_cv_ox = 0
 		_:

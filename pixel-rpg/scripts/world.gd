@@ -307,6 +307,9 @@ func _ready() -> void:
 	_load_cursors()
 	hud = load("res://scripts/hud.gd").new()
 	add_child(hud)
+	# t10 (вердикт 25.11): HUD уже слушает toast — выдать одноразовое
+	# пояснение legacy-гейта, если бут-лоад снял чужую вещь с слота.
+	GameState.flush_gear_gate_note()
 	hud.setup(self)
 	# t19 (P0-2Б): мировая стрелка цели квеста — отдельный слой (указание капитана:
 	# на время t23 в hud.gd не входить). Добавляемся сразу за hud, тот же layer 1.
@@ -1543,6 +1546,7 @@ func do_quickload() -> void:
 		_apply_chest_states()  # сундуки после F9-загрузки (фикс T2)
 		GameAudio.sfx("ui_confirm")  # F9-успех (аудио-аудит)
 		GameState.toast.emit("Игра загружена (F9)")
+		GameState.flush_gear_gate_note()  # t10: пояснение legacy-гейта (одноразово)
 	else:
 		GameState.toast.emit("Сохранение не найдено")
 

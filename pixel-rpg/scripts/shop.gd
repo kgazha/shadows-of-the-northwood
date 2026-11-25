@@ -245,7 +245,7 @@ func _build() -> void:
 	list_vb.add_child(craft_btn)
 	sell_head = _section_label("Скупка (сдам надетое вдвое дешевле):")
 	list_vb.add_child(sell_head)
-	for slot in ["weapon", "armor"]:
+	for slot in ["weapon", "shield", "armor"]:  # t10: щит — тоже скупаем (слот рядом с оружием)
 		var sbtn := Button.new()
 		sbtn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		sbtn.pressed.connect(_on_sell.bind(String(slot)))
@@ -541,6 +541,20 @@ func _on_buy(id: String) -> void:
 		GameAudio.sfx("ui_deny")  # тост «Не хватает золота...» — внутри spend_gold
 		refresh()
 		return
+	# t10 (вердикт пользователя 25.11): ПОКУПКА чужого класса РАЗРЕШЕНА —
+	# предмет — товар будущего круга/перерождения, рынку всё равно, кому
+	# продавать. Запрет только на ЭКИПИРОВКУ (гейт в equip_item; витрина
+	# серит «не твоя рука»). Чужое лёгкое в сумку без надевания.
+	var gate: Dictionary = GearData.can_equip(GameState.class_id, id)
+	if slot != "" and not bool(gate.get("ok", true)):
+		GameState.ensure_gear(id)
+		GameState.save_game()  # трата переживает выход (P1)
+		Sfx.play("coin")
+		Achv.on_buy()
+		GameState.toast.emit("Куплено: %s. %s В сумке — наденет тот, кому рука." % [
+			String(it.get("name", id)), String(gate.get("reason", "Не твоя рука."))])
+		refresh()
+		return
 	# Надеть: сначала освободить слот — это синхронизирует legacy has_sword
 	# (equip_item чистит флаг на ""), затем положить новую вещь.
 	GameState.equip_item(slot, "")
@@ -722,9 +736,16 @@ func refresh() -> void:
 		var tail := "  [надето]" if equipped else ""
 		if slot == "tool" and GameState.torches > 0:
 			tail = "  [у тебя: %d]" % GameState.torches
+		# t10 (вердикт 25.11): «не твоя рука» — серая позиция с подсказкой,
+		# НО покупка разрешена (товар будущего круга): disabled НЕ трогаем.
+		var off_hand := false
+		if (slot == "weapon" or slot == "shield") and not equipped:
+			off_hand = not bool(GearData.can_equip(GameState.class_id, String(id)).get("ok", true))
 		btn.text = "%s — %d зол.%s" % [String(it.get("name", id)), price, tail]
 		btn.tooltip_text = String(it.get("desc", ""))
-		btn.modulate = Color.WHITE if equipped or GameState.can_afford(price) else Color(0.6, 0.6, 0.66)
+		if off_hand:
+			btn.tooltip_text += "\nНе твоя рука — надеть не получится. Купить можно: пригодится в будущем круге."
+		btn.modulate = Color.WHITE if (equipped or (GameState.can_afford(price) and not off_hand)) else Color(0.6, 0.6, 0.66)
 	# g13: крафт-ряд кузницы (для чужих витрин скрыт _apply_vendor'ом).
 	if craft_btn != null and craft_head.visible:
 		var have := GameState.mat_count("smola")

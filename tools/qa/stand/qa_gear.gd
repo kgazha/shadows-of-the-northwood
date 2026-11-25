@@ -22,7 +22,12 @@ extends Node
 ##     редкости, силуэт и три слота на месте;
 ##  G6 торговцы: прилавок Геральда (базовый сет), Дран после сделки, у
 ##     Гриима кольчуга как была; покупка -> сумка, legacy-флаг не горит;
-##  G7 сейв: bag/sharpen в v4 без версии-банпа, миграция legacy, адверсариал.
+##  G7 сейв: bag/sharpen в v4 без версии-банпа, миграция legacy, адверсариал;
+##  G8 канон оружия (t10, вердикт 25.11 «магу посохи, лучнику луки, воину
+##     мечи и щиты»): матрица 3x3, слот shield, гейт экипировки с причиной,
+##     «не твоя рука» покупается но не надевается, легаси-сейв снимает чужое
+##     одноразовым тостом, щит = плоская броня, мана-потолок посохов,
+##     FNV-иконки листа tools_art/sheet_weapons_v1.gd.
 
 const MAIN_SCENE := "res://scenes/main.tscn"
 const SAVE := "user://save_morkheim.json"
@@ -34,6 +39,12 @@ var hud = null
 var player: Node = null
 var invn = null
 var shopn = null
+## t10 (Оружие v1, 25.11): счётчик тостов для гейта «не твоя рука» —
+## проверяем и причину (не молча), и однократность (легаси-флеш, клик в сумке).
+var _toasts: Array = []
+
+func _toast_g8(msg: String) -> void:
+	_toasts.append(msg)
 
 func _ready() -> void:
 	_wipe_saves()
@@ -51,6 +62,7 @@ func _ready() -> void:
 	await _g5_ui()
 	await _g6_vendors()
 	await _g7_save()
+	await _g8_canon()
 	print("QA GEAR: %d проверок" % (passes + fails))
 	print("QA_GEAR_RESULT %d/%d fails=%s" % [passes, passes + fails, "none" if fails == 0 else "see above"])
 	get_tree().quit(0 if fails == 0 else 1)
@@ -124,11 +136,13 @@ func _boot() -> void:
 
 ## Чистая экипировка для детерминизма блоков.
 func _empty_gear() -> void:
-	GameState.gear = {"weapon": "", "armor": "", "relic": ""}
+	# t10 (Оружие v1, 25.11): слот shield добавлен (было 3 ключа)
+	GameState.gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}
 	GameState.owned_gear = []
 	GameState.sharpen = {}
 	GameState.has_sword = false
 	GameState.has_amulet = false
+	GameState.gear_gate_note = ""  # t10: заметка легаси-гейта не наследуется
 	GameState.materials = {"suhotsvet": 0, "zhim": 0, "smola": 0, "hide": 0, "sinew": 0, "whet": 0}
 	GameState.flags["meta.master"] = 0
 	Loot.test_roll = -1.0
@@ -171,8 +185,10 @@ func _g0_data() -> void:
 			"G0: кольчуга — редкий (вердикт 16.11 22:56: синий)")
 	_check(String(am.get("slot", "")) == "relic",
 			"G0: Амулет Леса — экипируемый оберег (слот relic, вердикт §2)")
-	_check(GameState.gear.has("relic") and GameState.gear.size() == 3,
-			"G0: слоты GameState — weapon/armor/relic")
+	# t10 (Оружие v1, 25.11): +shield — было 3 (weapon/armor/relic)
+	_check(GameState.gear.has("relic") and GameState.gear.has("shield") \
+			and GameState.gear.size() == 4,
+			"G0: слоты GameState — weapon/shield/armor/relic (канон 25.11)")
 	# легендарный — только инфраструктура цвета (вердикт: предмета пока нет)
 	_check(GearData.RARITY_COLORS.has("legend") and GearData.RARITY_NAMES.has("legend"),
 			"G0: оранжевый «легендарный» — инфраструктура готова")
@@ -403,8 +419,9 @@ func _g5_ui() -> void:
 	Inventory.open()
 	await _fr(2)
 	_check(invn.hero_img.texture != null, "G5: силуэт героя в правой колонке (нарисован)")
-	_check(invn.slot_btns.size() == 3 and invn.slot_btns.has("relic"),
-			"G5: три карточки слотов: Оружие/Броня/Оберег (вердикт §2 «справа от сетки»)")
+	# t10 (Оружие v1, 25.11): четыре карточки — было 3 (Оружие/Броня/Оберег)
+	_check(invn.slot_btns.size() == 4 and invn.slot_btns.has("relic") and invn.slot_btns.has("shield"),
+			"G5: карточки слотов: Оружие/Щит/Броня/Оберег (вердикт §2 + канон 25.11 «щиты воину»)")
 	_check(invn.sharpen_btn != null and invn.bag_cells.size() == 12,
 			"G5: сумка снаряжения 6×2 + кнопка «Точить» построены")
 	# клик по пустому слоту — отказ-подсказка, ничего не ломается
@@ -546,7 +563,7 @@ func _g7_save() -> void:
 	_check(iv.has("bag") and iv.has("sharpen"), "G7: inv.bag и inv.sharpen — в контейнере v4")
 	GameState.owned_gear = []
 	GameState.sharpen = {}
-	GameState.gear = {"weapon": "", "armor": "", "relic": ""}
+	GameState.gear = {"weapon": "", "armor": "", "shield": "", "relic": ""}  # t10: +shield
 	_check(GameState.load_game(), "G7: загрузка прошла")
 	_check(GameState.owned_gear.has("nordsword") and GameState.owned_gear.has("chain") \
 			and GearData.equipped_id(GameState, "weapon") == "nordsword" \
@@ -579,3 +596,288 @@ func _g7_save() -> void:
 	_check(GameState.owned_gear.is_empty() and GameState.sharpen.is_empty() \
 			and String(GameState.gear.get("weapon", "x")) == "",
 			"G7: новый забег — снаряжение и заточка сгорели (вечный амулет вернётся флагом)")
+
+# ---------------- G8 канон оружия (t10, вердикт пользователя 25.11) ----------------
+# «магу посохи, а не мечи или лук; лучнику только луки; воину только мечи
+# и щиты». Таксономия weapon_type + слот shield + матрица + гейт экипировки +
+# «не твоя рука» покупается, но не надевается + легаси-сейв снимает чужое.
+# Лист-двойник иконок: tools_art/sheet_weapons_v1.gd (FNV-пины ниже).
+
+## Смена класса в тесте: set_class отказывает на уже выбранном (канон t9),
+## поэтому честный «новый герой» = обнулить и выбрать.
+func _set_cls(cid: String) -> void:
+	GameState.class_id = ""
+	if cid != "":
+		GameState.set_class(cid)
+	GameState.gear_gate_note = ""
+	_toasts = []
+
+## FNV-1a 32 по PNG-байтам (тот же рецепт, что cave_paint/sheet-инструменты).
+func _fnv32_hex(img: Image) -> String:
+	var h := 2166136261
+	for b in img.save_png_to_buffer():
+		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
+	return "%08X" % h
+
+func _g8_canon() -> void:
+	print("== G8: канон оружия 25.11 — матрица, гейт, щиты, рынок, легаси ==")
+	_empty_gear()
+	GameState.toast.connect(_toast_g8)
+
+	# --- W8.1 реестр: таксономия и семь новых позиций ---
+	_check(GearData.weapon_type("sword") == "sword" and GearData.weapon_type("rune_blade") == "sword",
+			"W: старая линейка — оружие типа sword (без поля = меч, канон weapon_type)")
+	_check(GearData.weapon_type("axe") == "sword",
+			"W: топор в группе sword при AXE_AS_SWORD=true (одна константа, ждёт вердикт)")
+	var gsrc := FileAccess.get_file_as_string("res://scripts/gear_data.gd")
+	_check(gsrc.contains("const AXE_AS_SWORD := true"),
+			"W: AXE_AS_SWORD=true в источнике (false => топор не наденет никто — одна строка)")
+	_check(GearData.weapon_type("bow_hunter") == "bow" and GearData.weapon_type("staff_rune") == "staff",
+			"W: лук/посох размечены своими типами")
+	_check(GearData.weapon_type("leather") == "", "W: не-оружие — пустой weapon_type")
+	_check(GearData.CLASS_WEAPONS == {"warrior": ["sword"], "archer": ["bow"], "mage": ["staff"]} \
+			and GearData.CLASS_SHIELDS == ["warrior"],
+			"W: матрица канона 3x3 + щит только воину (вердикт дословно)")
+	var specs := [
+		["staff_apprentice", "weapon", 60, 2, 5, ""],
+		["staff_oak", "weapon", 150, 4, 10, ""],
+		["staff_rune", "weapon", 300, 6, 15, "rare"],
+		["bow_hunter", "weapon", 80, 2, 0, ""],
+		["bow_heavy", "weapon", 200, 4, 0, "rare"],
+		["shield_iron", "shield", 70, 0, 0, ""],
+		["shield_raven", "shield", 220, 0, 0, "rare"],
+	]
+	var reg_ok := true
+	for s in specs:
+		var it: Dictionary = GearData.item(String(s[0]))
+		var want_ab: int = 1 if s[0] == "shield_iron" else (2 if s[0] == "shield_raven" else 0)
+		if String(it.get("slot", "")) != String(s[1]) or int(it.get("price", -1)) != int(s[2]) \
+				or int(it.get("dmg_bonus", 0)) != int(s[3]) or int(it.get("mana_bonus", 0)) != int(s[4]) \
+				or int(it.get("armor_bonus", 0)) != want_ab \
+				or String(it.get("rarity", "")) != String(s[5]):
+			reg_ok = false
+	_check(reg_ok, "W: семь позиций реестра — цена/бонусы/манаредкость по BALANCE-строкам 15–21")
+	_check("staff_apprentice" in GearData.VENDOR_STOCK["hermit"] \
+			and "bow_hunter" in GearData.VENDOR_STOCK["merchant"] \
+			and "bow_heavy" in GearData.VENDOR_STOCK["merchant"] \
+			and "staff_rune" in GearData.VENDOR_STOCK["merchant"] \
+			and "staff_oak" in GearData.VENDOR_STOCK["smith"] \
+			and "shield_iron" in GearData.VENDOR_STOCK["smith"] \
+			and "shield_raven" in GearData.VENDOR_STOCK["smith"],
+			"W: витрины — посох Геральда, лучная линия Драна, железо посохов/щитов у Гриима")
+	var ssrc := FileAccess.get_file_as_string("res://scripts/shop.gd")
+	_check(ssrc.contains('for slot in ["weapon", "shield", "armor"]'),
+			"W: скупка лавки принимает щиты (строка продажи расширена)")
+	var gssrc := FileAccess.get_file_as_string("res://scripts/game_state.gd")
+	_check(gssrc.contains("flush_gear_gate_note") and gssrc.contains("gear_gate_note"),
+			"W: легаси-гейт сейва и одноразовая заметка живут в GameState (не только в UI)")
+
+	# --- W8.2 матрица 3x3 (чистый can_equip, все девять пар) ---
+	var matrix := {
+		"warrior": {"sword": true, "bow_hunter": false, "staff_oak": false},
+		"archer": {"sword": false, "bow_hunter": true, "staff_oak": false},
+		"mage": {"sword": false, "bow_hunter": false, "staff_oak": true},
+	}
+	for cid in ["warrior", "archer", "mage"]:
+		for iid in ["sword", "bow_hunter", "staff_oak"]:
+			var g: Dictionary = GearData.can_equip(String(cid), String(iid))
+			_check(bool(g.get("ok", false)) == bool(matrix[cid][iid]),
+					"W: матрица %s x %s => %s" % [cid, iid, "надеть" if matrix[cid][iid] else "отказ"])
+	# щиты трём классам + «не оружие» всем + безмолвие без класса
+	_check(bool(GearData.can_equip("warrior", "shield_iron").get("ok", false)) \
+			and not bool(GearData.can_equip("archer", "shield_iron").get("ok", false)) \
+			and not bool(GearData.can_equip("mage", "shield_raven").get("ok", false)),
+			"W: щит — только воину (все три класса проверены)")
+	var soft_ok := true
+	for cid in ["warrior", "archer", "mage"]:
+		if not bool(GearData.can_equip(String(cid), "leather").get("ok", true)) \
+				or not bool(GearData.can_equip(String(cid), "amulet").get("ok", true)):
+			soft_ok = false
+	_check(soft_ok, "W: доспех/оберег — вне матрицы (гейт их не трогает)")
+	_check(bool(GearData.can_equip("", "staff_rune").get("ok", true)) \
+			and bool(GearData.can_equip("", "shield_raven").get("ok", true)),
+			"W: class_id \"\" (без класса после смерти, t9) — гейт молчит")
+
+	# --- W8.3 живое поведение equip_item + причина тоста ---
+	_set_cls("archer")
+	_empty_gear()
+	GameState.equip_item("weapon", "bow_hunter")
+	_check(GearData.equipped_id(GameState, "weapon") == "bow_hunter" and GameState.damage == 4,
+			"W: лучник натянул охотничий лук — урон 2+2 (лук платит в damage как меч)")
+	_toasts = []
+	GameState.equip_item("weapon", "sword")
+	_check(GearData.equipped_id(GameState, "weapon") == "bow_hunter" \
+			and _toasts.size() == 1 and String(_toasts[0]).contains("носят воины"),
+			"W: меч лучнику — отказ ОДНИМ тостом с причиной (не молча), слот цел")
+	_toasts = []
+	_set_cls("mage")
+	_empty_gear()
+	GameState.equip_item("weapon", "bow_hunter")
+	_check(GearData.equipped_id(GameState, "weapon") == "" \
+			and _toasts.size() == 1 and String(_toasts[0]).contains("носят лучники"),
+			"W: лук магу — отказ с причиной («лук носят лучники»)")
+	GameState.equip_item("weapon", "staff_oak")
+	_check(GearData.equipped_id(GameState, "weapon") == "staff_oak" and GameState.max_mana == 40,
+			"W: маг взял крепкий посох — урон есть, мана 30+10=40 (потолок, не реген)")
+	GameState.equip_item("weapon", "staff_rune")
+	_check(GameState.max_mana == 45 and GameState.damage == 3 + 6,
+			"W: рунный посох — мана 45, урон 3+6 (формула читает weapon slot)")
+	GameState.equip_item("weapon", "")
+	_check(GameState.max_mana == 30, "W: посох снят — потолок маны вернулся к 30")
+	_set_cls("archer")
+	_toasts = []
+	GameState.equip_item("shield", "shield_iron")
+	_check(GearData.equipped_id(GameState, "shield") == "" \
+			and String(_toasts[0]).contains("ноша воина"),
+			"W: щит лучнику — отказ «ноша воина» (слот shield тоже под матрицей)")
+	_set_cls("warrior")
+	GameState.equip_item("shield", "shield_iron")
+	_check(GearData.equipped_id(GameState, "shield") == "shield_iron",
+			"W: воин поднял щит — слот shield живой")
+	GameState.ensure_gear("axe")
+	GameState.equip_item("weapon", "axe")
+	_check(GearData.equipped_id(GameState, "weapon") == "axe",
+			"W: боевой топор воину разрешён (AXE_AS_SWORD, ждёт уточнения пользователя)")
+	# без класса — надевание молча проходит (t9-флоу смерти)
+	_set_cls("")
+	_empty_gear()
+	_toasts = []
+	GameState.equip_item("weapon", "staff_oak")
+	_check(GearData.equipped_id(GameState, "weapon") == "staff_oak" and _toasts.is_empty(),
+			"W: без класса — надевание без тоста (гейт молчит, модалка класса впереди)")
+
+	# --- W8.4 щит в бою: плоский armor_bonus, не рандум-блок ---
+	_set_cls("warrior")
+	_empty_gear()
+	_check(GearData.absorb(GameState, 4) == 4, "W: голый воин — 4 проходит целиком")
+	_give("leather", "armor")
+	GameState.equip_item("shield", "shield_iron")
+	_check(GearData.armor_bonus(GameState) == 2 and GearData.absorb(GameState, 4) == 2,
+			"W: кожа+щит = броня 2 (щит плоский, «съедает» 1; детерминизм absorb)")
+	_give("boarhide", "armor")
+	GameState.equip_item("shield", "shield_raven")
+	_check(GearData.armor_bonus(GameState) == 5 and GearData.absorb(GameState, 8) == 3,
+			"W: шкура вепря+вороний щит = 5, урон 8->3")
+	_check(GearData.absorb(GameState, 1) == 1, "W: «минимум 1» непреломен и с двумя щитами брони")
+
+	# --- W8.5 лавка: чужое видно серым, покупается, не надевается ---
+	_set_cls("archer")
+	_empty_gear()
+	GameState.gold = 1000
+	Shop.open("smith")
+	await _fr(2)
+	var sword_btn: Button = shopn.buy_btns.get("sword", null)
+	_check(sword_btn != null and sword_btn.visible and sword_btn.modulate == Color(0.6, 0.6, 0.66) \
+			and String(sword_btn.tooltip_text).contains("Не твоя рука"),
+			"W: витрина — меч лучнику серый с подсказкой, но НЕ disabled (товар будущего круга)")
+	var gold0: int = GameState.gold
+	_toasts = []
+	shopn._on_buy("sword")
+	await _fr(2)
+	var buy_ok := GameState.gold == gold0 - GearData.price("sword") \
+			and GameState.owned_gear.has("sword") \
+			and GearData.equipped_id(GameState, "weapon") == ""
+	var toast_found := false
+	for t in _toasts:
+		if String(t).contains("Куплено: Железный меч") and String(t).contains("носят воины"):
+			toast_found = true
+	_check(buy_ok and toast_found,
+			"W: покупка чужого РАЗРЕШЕНА — золото списано, меч в сумке, слот пуст, тост честный (золото %d->%d, сумка %s, слот '%s', тосты %s)" % [
+				gold0, GameState.gold, str(GameState.owned_gear),
+				GearData.equipped_id(GameState, "weapon"), str(_toasts)])
+	# мирная покупка «не своей» ветки у своего торговца (воин и посох)
+	Shop.close()
+	await _fr(2)
+	_set_cls("warrior")
+	_empty_gear()
+	GameState.gold = 1000
+	Shop.open("hermit")
+	await _fr(2)
+	_toasts = []
+	shopn._on_buy("staff_apprentice")
+	_check(GameState.owned_gear.has("staff_apprentice") \
+			and GearData.equipped_id(GameState, "weapon") == "",
+			"W: воин купил ученический посох — в сумку, не на спину (auto-equip лавки исправлен) (сумка %s, оружие '%s', золото %d, тосты %s)" % [
+				str(GameState.owned_gear), GearData.equipped_id(GameState, "weapon"), GameState.gold, str(_toasts)])
+	# своё — как раньше: покупка + надевание + белый цвет витрины
+	Shop.close()
+	await _fr(2)
+	Shop.open("smith")
+	await _fr(2)
+	shopn.refresh()
+	await _fr(2)
+	var sword_btn2: Button = shopn.buy_btns.get("sword", null)
+	_check(sword_btn2.modulate == Color.WHITE, "W: тому же классу — тот же меч белым по белому")
+	gold0 = GameState.gold
+	shopn._on_buy("shield_iron")
+	await _fr(2)
+	_check(GearData.equipped_id(GameState, "shield") == "shield_iron" \
+			and gold0 - GameState.gold == GearData.price("shield_iron"),
+			"W: воин купил щит — надет в shield-слот, цена 70 списана")
+	Shop.close()
+	await _fr(2)
+	# клик чужого в сумке — пред-проверка UI: один тост, слот цел
+	_set_cls("archer")
+	_empty_gear()
+	GameState.ensure_gear("sword")
+	Inventory.open()
+	await _fr(2)
+	_check(invn.slot_btns.has("shield") and String(Inventory.SLOT_NAMES["shield"]) == "Щит",
+			"W: карточка слота «Щит» построена (SLOT_ORDER t10)")
+	_toasts = []
+	invn._on_bag_pressed(Inventory.gear_view_ids().find("sword"))
+	await _fr(2)
+	_check(GearData.equipped_id(GameState, "weapon") == "" and _toasts.size() == 1,
+			"W: клик чужого меча из сумки — ОДИН отказной тост (двойного нет), не наделось")
+	Inventory.close()
+	await _fr(2)
+
+	# --- W8.6 легаси-сейв: чужое снимается при загрузке с одноразовым тостом ---
+	_write_raw(JSON.stringify({
+		"v": 4, "class_id": "mage", "level": 2, "seen_intro": true,
+		"gear": {"weapon": "sword", "armor": "", "shield": "shield_raven", "relic": ""},
+		"inv": {"bag": [], "sharpen": {}},
+	}))
+	_check(GameState.load_game(), "W: маг-сейв с мечом и щитом прочитан")
+	_check(GearData.equipped_id(GameState, "weapon") == "" \
+			and GearData.equipped_id(GameState, "shield") == "" \
+			and GameState.owned_gear.has("sword") and GameState.owned_gear.has("shield_raven") \
+			and not GameState.has_sword,
+			"W: гейт при загрузке снял чужое в сумку, has_sword пересинхронизирован (x2 из воздуха не выросло)")
+	_check(GameState.gear_gate_note.contains("Железный меч") and GameState.gear_gate_note.contains("Вороний щит"),
+			"W: заметка называет снятые вещи («Привычка прежних дней…») — не молча")
+	_toasts = []
+	GameState.flush_gear_gate_note()
+	_check(_toasts.size() == 1 and String(_toasts[0]).contains("не твоя рука") \
+			and GameState.gear_gate_note == "",
+			"W: флеш — ровно один тост при входе в мир")
+	_toasts = []
+	GameState.flush_gear_gate_note()
+	_check(_toasts.is_empty(), "W: повторный флеш молчит (одноразовость)")
+	# маг не потерял потолок маны из-за переполоха: посох из сумки встал бы законно
+	_check(GameState.max_mana == 30, "W: без посоха потолок маны мага честные 30")
+	_write_raw(JSON.stringify({
+		"v": 4, "class_id": "warrior", "level": 2, "seen_intro": true,
+		"gear": {"weapon": "sword", "armor": "", "shield": "shield_raven", "relic": ""},
+		"inv": {"bag": [], "sharpen": {}},
+	}))
+	_check(GameState.load_game() \
+			and GearData.equipped_id(GameState, "weapon") == "sword" \
+			and GearData.equipped_id(GameState, "shield") == "shield_raven" \
+			and GameState.has_sword and GameState.gear_gate_note == "",
+			"W: воин с тем же сейвом — всё на месте, legacy x2 жив, заметки нет")
+
+	# --- W8.7 иконки: FNV-пины листа tools_art/sheet_weapons_v1.gd (25.11) ---
+	var icon_pins := {
+		"staff_apprentice": "F2F43024", "staff_oak": "77E1791A", "staff_rune": "E3AA1E97",
+		"bow_hunter": "D4BD2538", "bow_heavy": "F9477B26",
+		"shield_iron": "662DEA71", "shield_raven": "0129D820",
+	}
+	for iid in icon_pins:
+		_check(_fnv32_hex(UiIcons.item_icon(String(iid)).get_image()) == String(icon_pins[iid]),
+				"W: иконка %s — байт-в-байт листу (код-арт, ноль растровов)" % iid)
+
+	# Hygiene: возврат к бойлерплейт-состоянию других секций не нужен (стенд
+	# умирает), но класс почистим — вдруг следующий автосейв дёрнется
+	GameState.class_id = ""
+	GameState.toast.disconnect(_toast_g8)

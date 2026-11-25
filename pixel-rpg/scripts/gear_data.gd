@@ -23,11 +23,72 @@ const PRICE_POTION := 30   # BALANCE строка 8: крепкое зелье (
 ## «сплету даром, печь моя») дешевле готового ровно на 10. Разницу менять нельзя.
 const CRAFT_SAVING := 10
 
-## id -> данные: name, slot ("weapon"/"armor"), price (золото, покупка), desc,
-## dmg_mult (множитель урона для оружия) или armor_bonus (единиц урона мимо брони).
+## id -> данные: name, slot ("weapon"/"armor"/"shield"/"relic"), price (золото,
+## покупка), desc, dmg_mult (множитель урона для оружия) или armor_bonus
+## (единиц урона мимо брони). Оружие carry маркер weapon_type (t10, 25.11):
+## "sword"/"bow"/"staff" — матрица канона «воину мечи+щиты, лучнику луки,
+## магу посохи» (см. CLASS_WEAPONS ниже).
 ## g13: неснаряжаемые позиции торгуются через те же кнопки лавки, но slot —
 ## "mat" (материал в рюкзак), "charge" (заряд крепкого зелья), "tool" (факел);
 ## vendor — чей прилавок ("smith" — кузница, "merchant" — Дран, "uta" — Ута).
+
+## t10 (вердикт пользователя 25.11, ОЖИДАЕТ УТОЧНЕНИЯ): «воину только мечи»
+## читаем буквально, но melee-топор Гриима жив: ОДНА строка константы решает
+## судьбу топоров. true (нынешний канон) — топор в группе "sword" и воину
+## разрешён; false — топор отдельный тип "axe", который ныне не наденет
+## никто (до указания пользователя). Меняется ОДНОЙ строкой.
+const AXE_AS_SWORD := true
+
+## Матрица канона 25.11: класс -> допустимые weapon_type. class_id == ""
+## (безкласса после смерти, t9) — гейт молчит: класс ещё не выбран, модалка
+## впереди; запрет начинается с выбранного класса.
+const CLASS_WEAPONS := {
+	"warrior": ["sword"],
+	"archer": ["bow"],
+	"mage": ["staff"],
+}
+## Щит — тоже оружие воина («мечи и щиты»): слот shield открыт только воину.
+const CLASS_SHIELDS := ["warrior"]
+
+## Тип оружия предмета ("" — не оружие). Без поля в реестре оружие — "sword"
+## (старая линейка старше таксономии; явно размечены луки/посохи/топор).
+static func weapon_type(id: String) -> String:
+	var it := item(id)
+	if String(it.get("slot", "")) != "weapon":
+		return ""
+	if it.has("weapon_type"):
+		var wt := String(it["weapon_type"])
+		# Единственная точка, где живёт AXE_AS_SWORD (сверху файла): «ложь»
+		# делает топор типом "axe" — его не наденет ни один класс матрицы.
+		if wt == "axe":
+			return "sword" if AXE_AS_SWORD else "axe"
+		return wt
+	return "sword"
+
+## Матрица «надеть нельзя» на входе: {ok, reason}. Причина — готовый текст
+## тоста (вердикт: «штатная причина, не молча»). Реликвии/броня — вне матрицы.
+static func can_equip(class_id: String, id: String) -> Dictionary:
+	var it := item(id)
+	var slot := String(it.get("slot", ""))
+	if class_id == "" or id == "":
+		return {"ok": true, "reason": ""}
+	if slot == "shield" and not (class_id in CLASS_SHIELDS):
+		return {"ok": false, "reason": "Щит — ноша воина. %s он только мешает." % String(Classes.class_data(class_id).get("name", "Герою"))}
+	if slot == "weapon":
+		var allowed: Array = CLASS_WEAPONS.get(class_id, [])
+		var wt := weapon_type(id)
+		if wt != "" and not (wt in allowed):
+			# «кто носит» — по типу ПРЕДМЕТА (грамматично при любом зрителе:
+			# лучник с мечом слышит «меч носят воины», а не абсурд «меч носят луки»)
+			var hands := ""
+			match wt:
+				"sword": hands = "воины"
+				"bow": hands = "лучники"
+				"staff": hands = "маги"
+				_: hands = "никто"  # осиротевший тип (AXE_AS_SWORD=false) — правда
+			return {"ok": false, "reason": "Не твоя рука: %s носят %s." % [String(it.get("name", id)), hands]}
+	return {"ok": true, "reason": ""}
+
 const ITEMS := {
 	"sword": {
 		"name": "Железный меч", "slot": "weapon", "price": 80,
@@ -35,7 +96,7 @@ const ITEMS := {
 		"dmg_mult": 2.0, "vendor": "smith",
 	},
 	"axe": {
-		"name": "Боевой топор", "slot": "weapon", "price": 160,
+		"name": "Боевой топор", "slot": "weapon", "price": 160, "weapon_type": "axe",
 		"desc": "Медленнее меча в руках, зато бьёт в два с половиной раза больнее. Урон x2.5.",
 		"dmg_mult": 2.5, "vendor": "smith",
 	},
@@ -108,18 +169,70 @@ const ITEMS := {
 		"name": "Амулет Леса", "slot": "relic", "price": 0,
 		"desc": "Радиус подсветки и +1 к урону. Работает и без слота — как привык.",
 	},
+	# --- t10 (вердикт пользователя 25.11): канон оружия — посохи магу, луки
+	# лучнику, мечи+щиты воину. Таксономия weapon_type + новый слот "shield".
+	# Числа (BALANCE §«Оружие v1», строки 15–21): линейка dmg_bonus/цены —
+	# симметрия мечевой лестницы (60/150/300 ~ 60/160/320 без перекоса).
+	# Мана-бонус посоха симметричен «луку как классовому оружию» мага: маг
+	# платит местом под плоский урон — получает потолок маны (recalc_max_mana).
+	# Щиты — armor_bonus, а НЕ блок-модификатор: боевая формула absorb() —
+	# детерминированное плоское «съедание» с минимумом 1; процентный блок
+	# потребовал бы нового рандума в получении урона (вердиктом не утверждён),
+	# плоский канал честен и виден в подсказке — тот же язык, что у брони.
+	# Покупка чужого класса РАЗРЕШЕНА (товар будущего круга/перерождения —
+	# рынок живёт), запрещена только ЭКИПИРОВКА (гейт equip_item).
+	"staff_apprentice": {
+		"name": "Ученический посох", "slot": "weapon", "price": 60, "weapon_type": "staff",
+		"dmg_bonus": 2, "mana_bonus": 5, "vendor": "hermit",
+		"desc": "Суковатая палка Геральда: рука сама знает, куда её девать. Урон +2, мана +5.",
+	},
+	"staff_oak": {
+		"name": "Крепкий посох", "slot": "weapon", "price": 150, "weapon_type": "staff",
+		"dmg_bonus": 4, "mana_bonus": 10, "vendor": "smith",
+		"desc": "Дублёное древко с железным набалдашником. Урон +4, мана +10.",
+	},
+	"staff_rune": {
+		"name": "Рунный посох", "slot": "weapon", "price": 300, "weapon_type": "staff",
+		"dmg_bonus": 6, "mana_bonus": 15, "rarity": "rare", "vendor": "merchant",
+		"desc": "Руны помнят руки, которые их жгли. Урон +6, мана +15.",
+	},
+	"bow_hunter": {
+		"name": "Охотничий лук", "slot": "weapon", "price": 80, "weapon_type": "bow",
+		"dmg_bonus": 2, "vendor": "merchant",
+		"desc": "Ясеневый, неторопливый, точный. Урон +2.",
+	},
+	"bow_heavy": {
+		"name": "Тяжёлый лук", "slot": "weapon", "price": 200, "weapon_type": "bow",
+		"dmg_bonus": 4, "rarity": "rare", "vendor": "merchant",
+		"desc": "На тугой тетиве рука крепнет. Урон +4.",
+	},
+	"shield_iron": {
+		"name": "Крепкий щит", "slot": "shield", "price": 70,
+		"armor_bonus": 1, "vendor": "smith",
+		"desc": "Кованая чаша на ремнях: съедает 1 единицу урона из каждого удара.",
+	},
+	"shield_raven": {
+		"name": "Вороний щит", "slot": "shield", "price": 220,
+		"armor_bonus": 2, "rarity": "rare", "vendor": "smith",
+		"desc": "Чёрное крыло Морхейма: съедает 2 единицы урона, минимум 1 проходит.",
+	},
 }
-## Стартовый набор лавки Гриима (порядок витрины).
-const SHOP_STOCK := ["sword", "axe", "rune_blade", "leather", "chain"]
+## Стартовый набор лавки Гриима (порядок витрины). t10 (25.11): кузнец куёт
+## и щиты, и посохи с железом на древках — витрина выросла, старые три меча
+## НЕ исчезли (вердикт): «не твоя рука» серится в лавке, но покупается.
+const SHOP_STOCK := ["sword", "axe", "rune_blade", "leather", "chain",
+	"staff_oak", "shield_iron", "shield_raven"]
 ## Витрины торговых голов главы 1 (g13). Кузница — SHOP_STOCK + крафт-секция
 ## (shop.gd), Дран — смола/факел, Ута — крепкое зелье.
 ## g20b (вердикт §4): Дран после сделки («трофейный» круг) — меч северян и
 ## кольчуга; Геральд — базовый сет (краткий меч + кожа).
+## t10 (25.11): Дран — лучная и рунная линия (луки/рунный посох), Геральд —
+## ученический посох (его рукоять).
 const VENDOR_STOCK := {
 	"smith": SHOP_STOCK,
-	"merchant": ["resin", "torch", "nordsword", "chain"],
+	"merchant": ["resin", "torch", "nordsword", "chain", "bow_hunter", "bow_heavy", "staff_rune"],
 	"uta": ["potion"],
-	"hermit": ["shortsword", "leather"],
+	"hermit": ["shortsword", "leather", "staff_apprentice"],
 }
 ## гейт витрины: VENDOR_REQ[vendor][item] == "slime_deal" — позиция видна
 ## только после закрытия квеста Драна (GameState.slime_quest >= 2, «сделка» g13).
@@ -343,14 +456,29 @@ static func weapon_mult(gs: Object) -> float:
 
 ## Броня в единицах урона из надетого armor-предмета + талант «Толстая кожа»
 ## (skin, +1/ранг, CONTRACT_TALENTS §3); 0 — без брони и таланта.
+## t10 (25.11): щит ест урон той же честной мерой, что броня (плоский канал
+## absorb с минимумом 1 — см. обоснование в ITEMS у shield_*): минус щита
+## прибавляется к минусу брони, «минимум 1 проходит» гарантирует absorb().
 static func armor_bonus(gs: Object) -> int:
 	var b := 0
 	var it := item(equipped_id(gs, "armor"))
 	if String(it.get("slot", "")) == "armor":
 		b += int(it.get("armor_bonus", 0))
+	var sh := item(equipped_id(gs, "shield"))
+	if String(sh.get("slot", "")) == "shield":
+		b += int(sh.get("armor_bonus", 0))
 	if gs != null:
 		b += gs.tal_rank("skin")
 	return b
+
+## t10 (25.11): мана-потолок надетого посоха (только staff из слота weapon;
+## маг без посоха — 0, класс без маны — всё равно 0, потолок считает
+## recalc_max_mana из класса + этот бонус).
+static func mana_bonus(gs: Object) -> int:
+	var it := item(equipped_id(gs, "weapon"))
+	if String(it.get("slot", "")) != "weapon" or weapon_type(equipped_id(gs, "weapon")) != "staff":
+		return 0
+	return int(it.get("mana_bonus", 0))
 
 ## Урон после брони (для точки получения урона): любой ненулевой удар бьёт
 ## минимум на 1 (иначе кожа делала слаймов безвредными — дыра баланса).

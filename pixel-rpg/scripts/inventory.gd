@@ -38,10 +38,13 @@ var hint_lbl: Label
 var close_btn: Button
 var cells: Array = []           # {btn: Button, cnt: Label, kind: Dictionary}
 # --- g20b: экипировка (правая колонка) + сумка снаряжения (под сеткой) ---
-const SLOT_ORDER := ["weapon", "armor", "relic"]
-const SLOT_NAMES := {"weapon": "Оружие", "armor": "Броня", "relic": "Оберег"}
+# t10 (вердикт 25.11 «воину мечи и щиты»): слот shield — РЯДОМ с оружием.
+const SLOT_ORDER := ["weapon", "shield", "armor", "relic"]
+const SLOT_NAMES := {"weapon": "Оружие", "shield": "Щит", "armor": "Броня", "relic": "Оберег"}
 const BAG_CELLS := 12           # 6×2 — как сетка расходников (физических
-                                # экипируемых вещей в реестре ровно 10, кап 12)
+                                # экипируемых вещей в реестре 17 с t10, но
+                                # в одном забеге их не бывает больше дюжины;
+                                # кап сумки в сейве — 12, см. from_dict)
 var bag_grid: GridContainer
 var bag_cells: Array = []       # {btn: Button, mark: Label} — id в bag_ids
 var bag_ids: Array = []         # порядок id, обновляется в refresh
@@ -480,6 +483,11 @@ func item_tip(id: String) -> String:
 			var tail := ""
 			if t > 0:
 				tail = ". Заточка %d/%d (+%d%%)" % [t, GearData.SHARPEN_MAX, GearData.sharpen_pct(t)]
+			# t10 (25.11): посох, кроме урона, поднимает потолок маны — видно
+			# в подсказке (число из реестра, «формула честная и видна»).
+			var mb := int(it.get("mana_bonus", 0))
+			if mb > 0:
+				tail += ". Мана +%d" % mb
 			if _is_equipped(id):
 				var part := GearData.weapon_part(GameState)
 				return "%s: Урон %d + %d%s" % [nm, GameState.damage - part, part, tail]
@@ -487,6 +495,9 @@ func item_tip(id: String) -> String:
 				return "%s: Урон +%d%s" % [nm, int(it["dmg_bonus"]), tail]
 			return "%s: Урон ×%.1f%s" % [nm, float(it.get("dmg_mult", 1.0)), tail]
 		"armor":
+			return "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
+		"shield":
+			# t10: щит — тот же плоский канал, что броня (min 1 проходит)
 			return "%s: держит %d урона, минимум 1 проходит" % [nm, int(it.get("armor_bonus", 0))]
 		"relic":
 			return "Амулет Леса: подсветка и +1 урон. Работает и без слота."
@@ -507,6 +518,15 @@ func _on_bag_pressed(i: int) -> void:
 		GameState.unequip_slot(slot)
 		GameAudio.sfx("ui_click")
 	else:
+		# t10 (вердикт 25.11): матрица канона на входе — отказ с причиной,
+		# НЕ молча (сам гейт живёт в GameState.equip_item; здесь штатный
+		# ui_deny + тот же текст, что вернул бы backstop-гейт).
+		var gate: Dictionary = GearData.can_equip(GameState.class_id, id)
+		if not bool(gate.get("ok", true)):
+			GameAudio.sfx("ui_deny")
+			GameState.toast.emit(String(gate.get("reason", "Не твоя рука.")))
+			refresh()
+			return
 		GameState.equip_item(slot, id)
 		GameState.stats_changed.emit()  # armor/relic equip_item не эмитит (паттерн Shop)
 		GameAudio.sfx("belt")
