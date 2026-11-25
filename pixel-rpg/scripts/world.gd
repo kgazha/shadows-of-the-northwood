@@ -113,6 +113,12 @@ const WORLD_ARCH_TILE := Vector2i(22, 2)
 ## t3: генератор Мира (class_name OpenWorld дублируем preload-ом — устойчиво
 ## к stale global_script_class_cache в headless-прогонах, тот же приём, что DZ).
 const OW := preload("res://scripts/open_world.gd")
+## t19 «Глубина v2 §2а» (25.11): микро-подземелья — чистый генератор и
+## внутренняя сцена. «Этаж» хода — MD.MINI_Y (48000 = 10×YS_CYCLE, новый
+## верхний ярус над лентой локаций: карта мира и геометрия локаций НЕ
+## двигаются, GOLDEN-WM-PIN целы). t19 подключает лес; остальные пояса — t20.
+const MD := preload("res://scripts/mini_dungeon.gd")
+const MDZ := preload("res://scripts/mini_zone.gd")
 ## Костры-привалы (id -> тайл). Ровно один на мир — фидбек игрока: «не более
 ## одного, и то реже» (варка/отдых = осознанная редкость). Одноразовый.
 const CAMPFIRE_SPOTS := {
@@ -201,6 +207,11 @@ var _fog_cell := Vector2i(-9999, -9999) # t7: последняя засвече�
 var biome_zone_cont := {}               # biome -> Node2D-контейнер
 var biome_grids := {}                   # biome -> scripts/biome_zone.gd (слабо)
 var loc_return := {}                    # biome -> Vector2 (отель портала на карте мира)
+## t19 микро-подземелья: те же словари по биомам (хода строится лениво,
+## как локация; hole — интерактор внутри loc_<биом>).
+var mini_cont := {}                     # biome -> Node2D-контейнер хода
+var mini_grids := {}                    # biome -> scripts/mini_zone.gd (слабо)
+var mini_holes := {}                    # biome -> MiniHole-интерактор в локации
 var active_area := "village"  # "village" | "cave" | "ashen" — где сейчас герой
 var cam: Camera2D
 var _void_poly: Polygon2D = null    # t64: тёмное «запределье» зоны (см. VOID_RAMP)
@@ -1123,6 +1134,10 @@ func _ensure_location(b: String) -> bool:
 		biome_grids[b] = null
 		return false
 	biome_grids[b] = gz
+	# t19: «ход» в локациях подключённых поясов (§2а; t19 — лес). Ставится
+	# один раз вместе с зоной, клетка — детерминированный pick_hole.
+	if MD.BIOMES.has(b):
+		_ensure_hole(b, gz)
 	cont.visible = false
 	cont.process_mode = Node.PROCESS_MODE_DISABLED
 	return true
@@ -1177,6 +1192,73 @@ func exit_location() -> void:
 	if not String(active_area).begins_with("loc_"):
 		return
 	transition_to_area("worldmap")
+
+# --- t19 «Глубина v2 §2а»: микро-подземелья ----------------------------------
+
+## Посадить «ход» в построенной локации (лес — t19; клетка — argmax shash по
+## «лесной пол у массы», вдали от входа/портала/сундука). Без проходимой
+## клетки (редкий сид) — хода нет, локация живёт как жила.
+func _ensure_hole(b: String, gz) -> void:
+	if mini_holes.has(b) and is_instance_valid(mini_holes[b]):
+		return
+	var meta: Dictionary = OW.loc_map(GameState.run_seed, b).get("meta", {})
+	var sp: Array = meta.get("spawn", [21, OW.LOC_H - 4])
+	var po: Array = meta.get("portal_out", [22, OW.LOC_H - 3])
+	var ch: Array = meta.get("chest", [-1, -1])
+	var t := MD.pick_hole(gz.map_rows, Vector2i(int(sp[0]), int(sp[1])),
+			Vector2i(int(ch[0]), int(ch[1])), Vector2i(int(po[0]), int(po[1])), b)
+	if t.x < 0:
+		push_warning("Ход: для локации %s не нашлось клетки — пропускаем" % b)
+		return
+	var h = MDZ.MiniHole.new()
+	gz.add_child(h)
+	h.setup(gz, t)
+	mini_holes[b] = h
+
+## Внутренняя сцена хода — лениво, один раз за сборку (паттерн _ensure_location).
+func _ensure_mini(b: String) -> bool:
+	if mini_grids.has(b):
+		return mini_grids[b] != null
+	if not MD.BIOMES.has(b):
+		return false
+	var cont := Node2D.new()
+	cont.name = "Mini_" + b
+	cont.position = Vector2(0.0, MD.MINI_Y)
+	cont.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(cont)
+	mini_cont[b] = cont
+	var mz = MDZ.new()
+	cont.add_child(mz)
+	mz.setup(self, MD.generate(GameState.run_seed, b))
+	if mz.map_w <= 0:
+		cont.queue_free()
+		mini_cont.erase(b)
+		mini_grids[b] = null
+		return false
+	mini_grids[b] = mz
+	cont.visible = false
+	cont.process_mode = Node.PROCESS_MODE_DISABLED
+	return true
+
+## Вход по E у хода (паттерн enter_location; без флага wm.open не пускаем —
+## ход физически живёт в открытой локации, отдельного флага не заводим:
+## «виден после открытия» = «только внутри открытой туманом локации»).
+func enter_mini(b: String) -> void:
+	if active_area == "mini_" + b or not _ensure_mini(b):
+		return
+	var first: bool = str(GameState.flags.get("mini.seen." + b, "")) != "1"
+	transition_to_area("mini_" + b, func():
+		if first:
+			GameState.set_flag("mini.seen." + b, "1")
+			GameState.toast.emit("Ход уходит в корни. Внизу дышит что-то большое.")
+			if FirstHint.I != null: FirstHint.I.show_hint("mini", "Микро-подземелье: смерть здесь — конец забега. Сундук с реликтом — за дальней комнатой.")
+		GameState.input_locked = false)
+
+## Выход «тем же интерактором»: apply_area ставит героя на клетку хода.
+func exit_mini(b: String) -> void:
+	if active_area != "mini_" + b:
+		return
+	transition_to_area("loc_" + b)
 
 func _build_fade() -> void:
 	var cl := CanvasLayer.new()
@@ -1620,6 +1702,8 @@ func _place_resumed_player() -> void:
 	var zone := GameState.resolve_resume_zone(String(GameState.area))
 	if zone == "" or zone == "village":
 		zone = "village"
+	if zone.begins_with("mini_") and not _ensure_mini(zone.substr(5)):
+		zone = "village"  # t19: ход подключённого пояса; нет сцены — к дому
 	if GameState.pos_valid and _pos_walkable(p):
 		player.global_position = p
 		_snap_camera()  # t64: резюме — не «долёт», а мгновенная посадка камеры
@@ -1659,6 +1743,9 @@ func _place_resumed_player() -> void:
 			if zone.begins_with("loc_"):
 				var g = biome_grids[zone.substr(4)]
 				entry = Vector2(0.0, float(OW.LOC_OFFSET_Y[zone.substr(4)])) + g.spawn_world_pos()
+			elif zone.begins_with("mini_"):
+				# t19: резюме внутри хода — с его спавна (клетка того же выхода)
+				entry = Vector2(0.0, MD.MINI_Y) + mini_grids[zone.substr(5)].spawn_world_pos()
 	apply_area(zone, false)
 	player.global_position = entry
 	_snap_camera()  # t64 (g18b): «вышел к входу» — камера сразу на арке, старый край не показываем
@@ -1666,6 +1753,15 @@ func _place_resumed_player() -> void:
 
 ## Проходима ли мировая точка в зоне, которой она принадлежит по координате/флагу.
 func _pos_walkable(p: Vector2) -> bool:
+	# t19: ход — верхний «этаж» 48000 (10×YS_CYCLE). y-полосный резолвер
+	# ленту >= 48000 не различает (сейчас ход один — лес; t20 при надобности
+	# разведёт пояса по своим полосам тем же правилом 4800).
+	if p.y >= MD.MINI_Y:
+		for b in MD.BIOMES:
+			var mz = mini_grids.get(b, null)
+			if mz != null:
+				return mz.cell_walkable(_world_to_tile(p, Vector2(0.0, MD.MINI_Y)))
+		return false
 	# t3: верхние «этажи» Мира — карта мира и локации (порядок сверху вниз:
 	# самому верхнему этажу соответствует наибольший не превышающий y офсет).
 	if p.y >= OW.WM_OFFSET_Y:
@@ -1704,6 +1800,8 @@ func apply_area(area: String, teleport: bool = true) -> void:
 		_ensure_location(area.substr(4))
 	elif area == "worldmap":
 		_ensure_worldmap()
+	elif area.begins_with("mini_"):
+		_ensure_mini(area.substr(5))  # t19: микро-подземелье — ленивая сборка
 	# t20 P0-3: зона гибели для экрана смерти — обновляем при каждой смене области.
 	GameState.flags["rs.zone"] = area
 	var to_cave := area == "cave"
@@ -1725,6 +1823,13 @@ func apply_area(area: String, teleport: bool = true) -> void:
 		var on := area == "loc_" + String(b)
 		cont.visible = on
 		cont.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	for b in mini_cont:  # t19: ход — своя «комната» на этаже MINI_Y
+		var mcont: Node2D = mini_cont[b]
+		if not is_instance_valid(mcont):
+			continue
+		var mon := area == "mini_" + String(b)
+		mcont.visible = mon
+		mcont.process_mode = Node.PROCESS_MODE_INHERIT if mon else Node.PROCESS_MODE_DISABLED
 	near.clear()
 	# t39: ведьма Пепелища масштабируется под уровень героя (mob_boss2.depth_scale) —
 	# переливаем силу при каждом входе в зону (L1 19hp/1dmg … L6+ канон 48/3).
@@ -1763,8 +1868,18 @@ func apply_area(area: String, teleport: bool = true) -> void:
 			if biome_grids.has(b):
 				if prev == "worldmap":
 					loc_return[b] = player.global_position
-				player.global_position = Vector2(0.0, float(OW.LOC_OFFSET_Y[b])) \
-					+ (biome_grids[b] as Node2D).spawn_world_pos()
+				if prev == "mini_" + b and mini_holes.has(b) and is_instance_valid(mini_holes[b]):
+					# t19: возврат из хода — ровно на клетку хода (тот же интерактор)
+					player.global_position = (mini_holes[b] as Node2D).global_position
+				else:
+					player.global_position = Vector2(0.0, float(OW.LOC_OFFSET_Y[b])) \
+						+ (biome_grids[b] as Node2D).spawn_world_pos()
+		elif area.begins_with("mini_"):
+			# t19: вход в ход — с его спавна (клетка того же интерактора внутри)
+			var mb := area.substr(5)
+			if mini_grids.has(mb) and mini_grids[mb] != null:
+				player.global_position = Vector2(0.0, MD.MINI_Y) \
+					+ (mini_grids[mb] as Node2D).spawn_world_pos()
 		elif prev == "ashen":
 			player.global_position = ashen_return_pos if ashen_return_pos != Vector2.INF else tile_to_world(spawn_tile)
 		elif prev == "worldmap":
@@ -1775,11 +1890,14 @@ func apply_area(area: String, teleport: bool = true) -> void:
 	_set_cam_limits(area)
 	if atmosphere != null:
 		# Пепелище — НАЗЕМНЫЙ тон: пещерной палитры не просим (false), серый
-		# холодок зоны рисует сам ashen_zone (self_modulate тайлмапа)
-		atmosphere.zone_changed(to_cave)
+		# холодок зоны рисует сам ashen_zone (self_modulate тайлмапа).
+		# t19: ход — подземная сцена, пещерная палитра честная (true).
+		atmosphere.zone_changed(to_cave or area.begins_with("mini_"))
 	# музыка по зоне: пещера — своя тема, Пепелище — тот же мрачный трек (новых
-	# ассетов не заводим), выход — лес (кроссфейд внутри GameAudio)
-	GameAudio.music("cave" if to_cave or area == "ashen" or area == "loc_dungeon" else "forest")
+	# ассетов не заводим), выход — лес (кроссфейд внутри GameAudio);
+	# t19: ход — та же пещерная тема (подземелье в корнях).
+	GameAudio.music("cave" if to_cave or area == "ashen" or area == "loc_dungeon"
+			or area.begins_with("mini_") else "forest")
 
 func _set_cam_limits(area: String) -> void:
 	if area == "cave" and dungeon_zone != null:
@@ -1806,6 +1924,14 @@ func _set_cam_limits(area: String) -> void:
 		cam.limit_top = int(OW.LOC_OFFSET_Y[area.substr(4)])
 		cam.limit_right = int(gz.map_w) * TILE
 		cam.limit_bottom = int(OW.LOC_OFFSET_Y[area.substr(4)]) + int(gz.map_h) * TILE
+	elif area.begins_with("mini_") and mini_grids.has(area.substr(5)) \
+			and mini_grids[area.substr(5)] != null:
+		# t19: ход 40×24 (640×384) — обе оси >= вида (640×360), полос нет.
+		var mz = mini_grids[area.substr(5)]
+		cam.limit_left = 0
+		cam.limit_top = int(MD.MINI_Y)
+		cam.limit_right = int(mz.map_w) * TILE
+		cam.limit_bottom = int(MD.MINI_Y) + int(mz.map_h) * TILE
 	else:
 		cam.limit_left = 0
 		cam.limit_top = 0

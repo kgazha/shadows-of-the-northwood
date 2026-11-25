@@ -427,6 +427,7 @@ static func _cond_met(gs, when: String) -> bool:
 const BQ_PREFIX := "q.bq."   # статус звена цепочки: 1 взято, 2 сдано (нет = 0)
 const BK_PREFIX := "q.bk."   # убийства мобов Зоны (счётчик цели «зачистить»)
 const BC_PREFIX := "q.bc."   # сундук Зоны найден/открыт (1)
+const BM_PREFIX := "q.bm."   # t19: ход пояса «закрыт» — мини-босс убит (1)
 
 ## Вилка золота звена — BALANCE.md §«Цепочка поясов» (30+10·пояс; финал
 ## пояса с реликтом — +15). Реликт — guaranteed (Loot.quest_relic, force_relic
@@ -519,6 +520,11 @@ static func belt_progress(gs, i: int) -> int:
 			return int(gs.get_flag(BK_PREFIX + String(def.get("zone", "")), 0))
 		"biome_chest":
 			return int(gs.get_flag(BC_PREFIX + String(def.get("zone", "")), 0))
+		"mini_clear":
+			# t19 (25.11): «закрыть ход» = мини-босс микро-подземелья убит
+			# (хук MiniBossWatch -> q.bm.<биом>). Звенья цепочки с этой целью
+			# добавит t20 — ветка готова заранее, BELT_SIGS qa_q5 не трогает.
+			return int(gs.get_flag(BM_PREFIX + String(def.get("zone", "")), 0))
 	return 0
 
 static func belt_ready(gs, i: int) -> bool:
@@ -584,6 +590,13 @@ static func note_belt_kill_area(gs, active_area: String) -> void:
 static func note_belt_chest(gs, zone: String) -> void:
 	if OW_ZONES.has(zone):
 		gs.set_flag(BC_PREFIX + zone, 1)
+
+## t19 (25.11): «закрыть ход» — мини-босс микро-подземелья убит (хук
+## MiniBossWatch в mini_zone.gd). Флаг-факт, как счётчики выше: без
+## quest_changed на смерть (доска/журнал читуют свежим; переходы сейвят сами).
+static func note_belt_mini(gs, zone: String) -> void:
+	if OW_ZONES.has(zone):
+		gs.set_flag(BM_PREFIX + zone, 1)
 
 ## Членство в реестре зон (свой const — QuestsData не предлоадит open_world,
 ## порядок букв совпадает с OpenWorld.ZONES; расхождение поймает стенд).

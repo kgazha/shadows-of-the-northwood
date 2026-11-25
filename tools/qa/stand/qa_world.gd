@@ -125,6 +125,7 @@ func _ready() -> void:
 	w7_env(OWg)
 	await w8_fog(OWg)
 	w9_boar()
+	await w10_mini()
 	# и после себя не оставляем: автосейвы чекпойнтов/фикстуры W3 — на диске
 	_wipe_save()
 	GameState.start_fresh_game()
@@ -1009,3 +1010,111 @@ func w9_boar() -> void:
 	var src_txt := FileAccess.get_file_as_string("res://scripts/brute.gd")
 	chk(not src_txt.contains("assets/brute.png"),
 			"W9.8 рантайм brute.gd не грузит легаси-лист (пиксель-канон: нигде не рисуется)")
+
+# --- W10 микро-подземелье «Лес» (t19 «Глубина v2 §2а», 25.11) ------------------
+# Пины контракта t19: вход/выход тем же интерактором, сундук один раз,
+# мини-босс в дальней комнате, перф-прогрев (утечки/раунд-трипы). Ген
+# (связность ×8 сидов) — в qa_pg PG12; здесь — живая проводка world.
+
+func w10_mini() -> void:
+	if world == null:
+		chk(false, "W10.0 живой world не поставлен")
+		return
+	var MD := load("res://scripts/mini_dungeon.gd")
+	GameState.start_fresh_game()
+	var gz = world.biome_grids.get("forest", null)
+	if gz == null:
+		chk(false, "W10.0 loc_forest не собрана (wire-секции не дошли?)")
+		return
+	# W10.1 ход в локации: есть, клетка == детерминированный pick_hole, 'f' проходима
+	var hole = world.mini_holes.get("forest", null)
+	chk(hole != null and is_instance_valid(hole), "W10.1a ход «Чащи» стоит в локации")
+	if hole == null:
+		return
+	var want: Vector2i = MD.pick_hole(gz.map_rows, gz.spawn_tile, gz.chest_tile,
+			gz.portal_out_tile, "forest")
+	var hole_tile := Vector2i(int(floor(hole.position.x / 16.0)),
+			int(floor((hole.position.y - 2.0) / 16.0)))
+	chk(hole_tile == want, "W10.1b клетка хода = pick_hole-ожидание (%s == %s)" % [hole_tile, want])
+	chk(gz.cell_walkable(hole_tile), "W10.1c клетка хода проходима")
+	# W10.2 вход: зона, позиция, лимиты камеры, геометрия
+	world.enter_mini("forest")
+	await _frames(40)
+	chk(String(world.active_area) == "mini_forest",
+			"W10.2a enter_mini -> active_area mini_forest")
+	var mz = world.mini_grids.get("forest", null)
+	chk(mz != null and mz.map_w == 40 and mz.map_h == 24,
+			"W10.2b внутренняя карта 40×24 собрана")
+	if mz == null:
+		return
+	var spawn_w: Vector2 = Vector2(0.0, float(MD.MINI_Y)) + mz.spawn_world_pos()
+	chk(world.player.global_position.distance_to(spawn_w) < 0.75,
+			"W10.2c герой на спавне хода (клетка выхода)")
+	var cam = world.cam
+	chk(cam.limit_top == int(MD.MINI_Y) and cam.limit_bottom == int(MD.MINI_Y) + 24 * 16
+			and cam.limit_right == 40 * 16,
+			"W10.2d лимиты камеры = границы хода (этаж 48000)")
+	chk(mz.exit_node != null and is_instance_valid(mz.exit_node),
+			"W10.2e выход «тем же интерактором» стоит на спавне")
+	# W10.3 мини-босс: якорь = meta.far (тот же чистый generate), статы — пин
+	var regen: Dictionary = MD.generate(GameState.run_seed, "forest")
+	var bmeta: Array = regen["meta"]["boss"]
+	chk(mz.boss_tile == Vector2i(int(bmeta[0]), int(bmeta[1])) and mz.boss_node != null,
+			"W10.3a мини-босс в дальней комнате (якорь генератора)")
+	# лесной пояс = 1 (PORTAL_CELLS), ярус 1: hp round(round(6×1,25)×2,5)=20,
+	# dmg max(2, round(round(1×1,25)×1,5))=2, xp 6×3=18 (BALANCE §«Микро-подземелья»)
+	var boss = mz.boss_node
+	chk(boss != null and int(boss.hp) == 20 and int(boss.dmg) == 2 and int(boss.kill_xp) == 18
+			and int(boss.tier) == 1 and bool(boss.boss) == false,
+			"W10.3b статы мини-босса 20/2/18 ярус1×пояс1×мини-вилка (пин t19)")
+	# W10.4 сундук: реликт ровно один раз
+	var chest = mz.chest_node
+	chk(chest != null and String(chest.get_hint()) == "Открыть сундук",
+			"W10.4a сундук хода ждёт E")
+	if chest != null:
+		var owned_before: Array = GameState.owned_gear.duplicate()
+		var gold0: int = int(GameState.gold)
+		chest.try_interact()
+		var gained: Array = []
+		for k in GameState.owned_gear:
+			if not owned_before.has(k):
+				gained.append(String(k))
+		var aff_ok: bool = false
+		for g in gained:
+			var aff: Array = GameState.affixes.get(g, []) as Array
+			if aff.size() == 2:
+				aff_ok = true
+		chk(gained.size() == 1 and aff_ok,
+				"W10.4b открытый сундук = ровно 1 вещь пула, реликтовая (2 аффикса)")
+		chest.try_interact()
+		chk(int(GameState.gold) == gold0 and GameState.owned_gear.size() == owned_before.size() + 1
+				and GameState.chests_used.has("chest@mini_forest:%d,%d" % [mz.chest_tile.x, mz.chest_tile.y]),
+				"W10.4c повторный тычок — ноль награды (сундук один раз за круг)")
+	# W10.5 смерть мини-босса = «ход закрыт» (q.bm.forest; watch против teardown)
+	if boss != null:
+		boss.dying = true
+		boss.queue_free()
+		await _frames(4)
+		chk(int(GameState.get_flag("q.bm.forest", 0)) == 1,
+				"W10.5a смерть мини-босса закрывает ход (q.bm.forest=1)")
+	# W10.6 выход тем же интерактором: ровно на клетку хода в локации
+	world.exit_mini("forest")
+	await _frames(40)
+	chk(String(world.active_area) == "loc_forest"
+			and world.player.global_position.distance_to((hole as Node2D).global_position) < 0.75,
+			"W10.6 выход из хода ставит героя на клетку хода")
+	# W10.7 резолвер зоны резюме (сейв внутри хода переживает рестарт процесса)
+	GameState.area = "mini_forest"
+	chk(String(GameState.resolve_resume_zone("mini_forest")) == "mini_forest",
+			"W10.7 резолвер зон пропускает mini_forest")
+	GameState.area = "village"
+	# W10.8 перф-прогрев: три туда-обратно — утечек нод нет, контейнер один
+	var cnt0: int = world.find_children("*", "", true, true).size()
+	for _r in 3:
+		world.enter_mini("forest")
+		await _frames(40)
+		world.exit_mini("forest")
+		await _frames(40)
+	var cnt1: int = world.find_children("*", "", true, true).size()
+	chk(cnt1 == cnt0 and (world.mini_cont as Dictionary).size() == 1,
+			"W10.8 прогресс-раунды хода×3: утечек нод 0, сцена переиспользуется")

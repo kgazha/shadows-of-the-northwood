@@ -762,6 +762,10 @@ func from_dict(d: Dictionary) -> void:
 ## Ключ area (аддитивная v4-надстройка) УТОЧНЯЕТ вывод, только когда позиция
 ## валидна и физика сказала «деревня» (этажные зоны физика читает сама).
 func resolve_resume_zone(key: String = "") -> String:
+	# t19 (25.11): ход — этаж 48000, выше всех y-полос; ключ зоны первичен
+	# (легаси-полосы ниже не затронуты — прежние входы резолвятся 1:1).
+	if key.begins_with("mini_"):
+		return key
 	var phys := "village"
 	if in_cave:
 		phys = "cave"

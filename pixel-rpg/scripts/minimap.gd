@@ -180,14 +180,15 @@ func _process(delta: float) -> void:
 			elif pl != null and is_instance_valid(pl) and ao is Vector2 and pl.global_position.y > (ao as Vector2).y:
 				zone = "ashen"
 		elif zone != "village" and zone != "cave" and zone != "ashen" \
-				and zone != "worldmap" and not zone.begins_with("loc_"):
+				and zone != "worldmap" and not zone.begins_with("loc_") \
+				and not zone.begins_with("mini_"):
 			zone = "village"  # незнакомое значение — безопасная деревня
 		var az = world.get("ashen_grid")   # слабая ссылка: null в сборках без Пепелища
 		var prefix := "a" if zone == "ashen" else ("c" if zone == "cave" else ("v" if zone == "village" else zone))
 		var rows_s: String
 		if zone == "ashen" and az != null and is_instance_valid(az) and az.get("map_rows") != null:
 			rows_s = str(az.map_rows)
-		elif zone == "worldmap" or zone.begins_with("loc_"):
+		elif zone == "worldmap" or zone.begins_with("loc_") or zone.begins_with("mini_"):
 			var zg = _world_grid(zone)
 			rows_s = str(zg.map_rows) if zg != null else ""
 		else:
@@ -376,6 +377,9 @@ func _zone_base() -> Vector2:
 		if offs is Dictionary and (offs as Dictionary).has(String(_zone).substr(4)):
 			return Vector2(0.0, float((offs as Dictionary)[String(_zone).substr(4)]))
 		return Vector2.ZERO
+	if String(_zone).begins_with("mini_"):
+		# t19: этаж хода (MD.MINI_Y = 10×YS_CYCLE — тот же шаг полос этажей)
+		return Vector2(0.0, preload("res://scripts/mini_dungeon.gd").MINI_Y)
 	if _zone == "ashen":
 		var ao: Variant = world.get("ASHEN_OFFSET")
 		var off := Vector2.ZERO
@@ -393,6 +397,11 @@ func _world_grid(zone: String):
 		var bg: Variant = world.get("biome_grids")
 		if bg is Dictionary:
 			return (bg as Dictionary).get(zone.substr(4), null)
+	if zone.begins_with("mini_"):
+		# t19: внутренняя карта хода (world.mini_grids)
+		var mg: Variant = world.get("mini_grids")
+		if mg is Dictionary:
+			return (mg as Dictionary).get(zone.substr(5), null)
 	return null
 
 ## Мировые координаты -> тайл зоны (обратный ход world.tile_to_world: +0.5T и +2px).
