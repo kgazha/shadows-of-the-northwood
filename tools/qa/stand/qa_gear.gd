@@ -629,7 +629,7 @@ func _g8_canon() -> void:
 	_check(GearData.weapon_type("sword") == "sword" and GearData.weapon_type("rune_blade") == "sword",
 			"W: старая линейка — оружие типа sword (без поля = меч, канон weapon_type)")
 	_check(GearData.weapon_type("axe") == "sword",
-			"W: топор в группе sword при AXE_AS_SWORD=true (одна константа, ждёт вердикт)")
+			"W: топор в группе sword при AXE_AS_SWORD=true (канон 25.11 — слово пользователя)")
 	var gsrc := FileAccess.get_file_as_string("res://scripts/gear_data.gd")
 	_check(gsrc.contains("const AXE_AS_SWORD := true"),
 			"W: AXE_AS_SWORD=true в источнике (false => топор не наденет никто — одна строка)")
@@ -738,7 +738,7 @@ func _g8_canon() -> void:
 	GameState.ensure_gear("axe")
 	GameState.equip_item("weapon", "axe")
 	_check(GearData.equipped_id(GameState, "weapon") == "axe",
-			"W: боевой топор воину разрешён (AXE_AS_SWORD, ждёт уточнения пользователя)")
+			"W: боевой топор воину разрешён (AXE_AS_SWORD=true — слово пользователя 25.11)")
 	# без класса — надевание молча проходит (t9-флоу смерти)
 	_set_cls("")
 	_empty_gear()
