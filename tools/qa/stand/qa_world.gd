@@ -46,7 +46,12 @@ const GATE_ANCHOR_STAND := [47, 58]
 # +ROAD_F1/F2, сдвиг упаковки (прежние w1: floor 8C599CCA…, props B31F054B…)
 const WORLD_FLOOR_MD5 := "eb9d505235cedd38fe5dca843518ad0d"
 const WORLD_PROPS_MD5 := "377a691a222238e2fdd9fa848d55c475"
-const WORLD_REGIONS_MD5 := "429589588f6a1db711cee6752c7ad86a"
+const WORLD_REGIONS_MD5 := "6d72298ace3e1c4654a162786446c2f9"
+## ^ ПЕРЕПИН 25.11 «Д2 disposition tile-12» (t3): в json добавлен только строковый
+## ключ floor_slots_note (комментарий-аналог forest_note, по образцу JSON без
+## синтаксических комментариев); floor_slots/props байт-в-байт прежние, читатели
+## (worldmap_zone/biome_zone parsed.get) незнакомый ключ игнорируют. Прежний пин
+## w1-wire: 429589588f6a1db711cee6752c7ad86a.
 const MOBS_VARIANTS_MD5 := "89fed95c18bc32b6443d6d3d7b046e78"   # skins(15), bake 18.11 (шаг 3)
 const VILLAGE_V4_MD5 := "3159f23a2da9303b8771099b09f23a21"     # t65-прецедент: деревня байт-цела
 const FOREST_PROPS_MD5 := "f1451755ade072a458b077dbd946d255"
@@ -459,7 +464,7 @@ func w4_wiring() -> void:
 	chk(arch_found, "W4.10 северная арка — интерактор на (22,2), карта деревни не тронута")
 	chk(FileAccess.get_file_as_string("res://data/map_village.json").length() > 0 \
 			and _md5_file("res://data/map_village.json") == MAP_VILLAGE_MD5,
-			"W4.11 map_village.json байт-цел (не правился)")
+			"W4.11 map_village.json байт-цел от пина 25.11 «Д2 лес запад»")
 	# W4.12 штатная цепочка вход/выход ДЛЯ КАЖДОГО из 6 порталов: мир -> локация
 	# (полный твин, герой на своём этаже, мобы на месте) -> мир (отель).
 	var chain_ok := true
@@ -497,7 +502,11 @@ func w4_wiring() -> void:
 	chk(chain_ok and String(world.active_area) == "village",
 			"W4.12 полная цепочка вход/выход 6/6 порталов + возврат в деревню")
 
-const MAP_VILLAGE_MD5 := "d7a25f92f296c02e1bbca2684a6a3826"  # HEAD 8d917dc (git diff пуст)
+const MAP_VILLAGE_MD5 := "ad0734e6825052db9156a31a800c4c41"
+	# ^ ПЕРЕПИН 25.11 «Д2 лес запад» (t3): row21 x5 «t»->«f» — пробита РОВНО одна
+	# клетка глухой поляны (5,21), длина строк/сетка 59×37 бит-в-бит, роща 4->3.
+	# Зеркала: qa_vlg PIN_MAP_ROWS/PIN_T 58/PIN_BASE_BLOCK 84, qa_lp T44_MAP_MD5.
+	# Прежний пин: d7a25f92f296c02e1bbca2684a6a3826 (HEAD 8d917dc, git diff пуст).
 
 # --- W5 края (t59-якорь) --------------------------------------------------------
 

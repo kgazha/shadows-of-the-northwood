@@ -31,6 +31,7 @@
 		"STP_F1": 8,
 		"STP_F2": 9
 	},
+	"floor_slots_note": "TILE-12 disposition C (25.11, реестр t2): CAS_F1=12 — номер слота стрипа пола world_floor_v1, НЕ тайл 12 BLOCKING деревенского валуна (world.gd A) и не легаси-тайл 12 пещеры (dungeon_zone/cave_art B0); совпадение чисел случайно. Удаление ключа = тихая дыра: fallback 0 (worldmap_zone.gd _slots.get(slot_a,0), biome_zone.gd) ⇒ замок снежным полом без единого RED. Удаление C запрещено вердиктом; перепин WORLD_REGIONS_MD5 датирован причиной «Д2 disposition tile-12».",
 	"forest_note": "forest floors/props stay in forest_floor_v1/forest_props_v1 (approved v1)",
 	"props": {
 		"ARCH_NORTH": {

@@ -80,6 +80,11 @@ const PAL := preload("res://scripts/pixel_palette.gd")
 ##  POI/NPC/арки/колодец/каменоломни НЕ ДВИНУТЫ (зеркала inv1/inv2/PIN_FIXED).
 ## t69 (17.11) комментарий прежний: row11 x16 «R» — клетка колодца
 ## VillageArt.WELL_TILE (физика на арте, слот травы, без коллайдера Walls).
+## t3 «Д2 лес запад» (25.11): row21 x5 «t»->«f» — пробита РОВНО одна клетка
+## глухой поляны (5,21) в деревенском лесу (кадр документов волны, реестр t2).
+## Роща 4->3 ((4,21),(5,20),(4,20) целы — inv3 норма 3..6, вторая рубка = RED).
+## Счёт t 59->58 (PIN_T), база блоков 85->84 (PIN_BASE_BLOCK). md5-перепины:
+## qa_world MAP_VILLAGE_MD5 / qa_lp T44_MAP_MD5, причина «Д2 лес запад».
 const PIN_MAP_ROWS := [
 	"ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
 	"ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
@@ -102,7 +107,7 @@ const PIN_MAP_ROWS := [
 	"ttTTTTTttTTTTTTTTTttTTdTTTTttTTTTTTTTTTTttTTTTtttggrrgggfgt",
 	"ttTTTTTtTTTrrTTTTTtTTTTTTTTTttTTTTTTTTTTttTTTTtttfgrggggggt",
 	"ttTTttTTTTTTTTTTTTTrTTdddddddddddddddddddddddAddddddggggggt",
-	"ttTTttTTTTttTTTTTTTrrTTTTTTTttTTTTTTTTTTTTTTTTtttggdggggggt",
+	"ttTTtfTTTTttTTTTTTTrrTTTTTTTttTTTTTTTTTTTTTTTTtttggdggggggt",
 	"ttTTTTTTTTtTTTTTTTTTTTTTTTTTTttTTTTrrTTTTTTTTTtttTTdddggfgt",
 	"ttTTTttTTrTTTTTTTTTTTttTTTTTTTTTTTTTTTTTrTTTTTtttTTggdrrggt",
 	"ttTTTttTTrTTTTtTTTTTTTtTTTrTTTTTTTttTTTTrTTTTTtttgggggrgggt",
@@ -125,8 +130,8 @@ const PIN_FIXED_CELLS := [
 	[22, 20, "d"], [45, 20, "A"],
 ]
 const PIN_ROW20_D_RUN := [22, 44]        # row20: d на x=22..44 включительно
-const PIN_BASE_BLOCK := 85               # t+r в лесу (interior) — база d07c86a (принятая перепланировка)
-const PIN_T := 59
+const PIN_BASE_BLOCK := 84               # t+r в лесу (interior) — «Д2 лес запад» 25.11: 85→84, снят ровно 1 «t» на (5,21); прежняя база d07c86a (принятая перепланировка)
+const PIN_T := 58                        # «Д2 лес запад» 25.11: 59→58 (t→f на (5,21)); t+r=84 в ±20% от базы
 const PIN_R := 26
 # Стартовые тайлы мобов деревни (пин-факты): slimes — JSON; archers —
 # world.gd:284; rat(мглокрысы glade_west) — world.gd:290. Тенеплёт (15,7)/
@@ -202,6 +207,7 @@ func _ready() -> void:
 	_inv3()
 	_inv4()
 	_inv5()
+	_d2()
 	_inv_scale()
 	_inv7()
 	await _inv8()
@@ -213,6 +219,7 @@ func _ready() -> void:
 	_inv_wellsync()
 	await _inv_scale_resume()
 	await _inv_halo()
+	await _d2_live()
 	var total: int = pass_n + fail_n
 	print("QA_VLG %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -464,6 +471,83 @@ func _inv5() -> void:
 	chk(t == PIN_T, "inv5: деревьев в лесу %d = пин %d" % [t, PIN_T])
 	chk(r == PIN_R, "inv5: валунов в лесу %d = пин %d" % [r, PIN_R])
 	chk(all >= lo and all <= hi, "inv5: блоков %d в ±20%% от базы %d (%d..%d)" % [all, PIN_BASE_BLOCK, lo, hi])
+
+# ---------------------------------------------------------------- Д2 «Лес запад» (25.11)
+## Сетка: ровно одна пробитая клетка поляны (5,21), роща цела, BFS-достижимость
+## центра от спавна (по карте inv4), кластер рощи == 3 (4→3; вторая рубка = RED).
+func _d2() -> void:
+	chk(_ch(5, 21) == "f", "d2: клетка (5,21) = «f» — пробита ровно одна (остальные строки — байт-пин inv2)")
+	chk(_ch(4, 21) == "t" and _ch(4, 20) == "t" and _ch(5, 20) == "t",
+		"d2: роща row21 целая: (4,21)/(4,20)/(5,20) — «t», второй рубки не было")
+	if reach_map.size() == H and reach_map[21].size() == W:
+		chk(reach_map[21][5] == true, "d2: центр (5,21) достижим BFS от спавна (карта inv4)")
+	else:
+		chk(false, "d2: reach_map не построен (inv4 не предшествовал?)")
+	var seen := {}
+	if _ch(4, 21) == "t":
+		var q := [[4, 21]]
+		seen[[4, 21]] = true
+		while not q.is_empty():
+			var c: Array = q.pop_front()
+			for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+				var nx: int = int(c[0]) + int(d[0])
+				var ny: int = int(c[1]) + int(d[1])
+				if ny < FOREST_ROWS[0] or ny > FOREST_ROWS[1] \
+						or nx < FOREST_COLS[0] or nx > FOREST_COLS[1]:
+					continue
+				var ch2 := _ch(nx, ny)
+				if (ch2 == "t" or ch2 == "r") and not seen.has([nx, ny]):
+					seen[[nx, ny]] = true
+					q.append([nx, ny])
+	chk(seen.size() == 3, "d2: роща row21 — t-кластер (4,21) = 3 дерева (было 4; норма inv3 3..6)")
+
+## Живой шаг: герой реально встаёт на (5,21), сбор поляны одноразовый, на клетке
+## нет ни одного коллайдера слоя 2 (seal/R3.2-счётчики не двигаются).
+func _d2_live() -> void:
+	if game_world == null or not is_instance_valid(game_world) or game_world.player == null:
+		chk(false, "d2-live: живой мир не построен (inv8 не предшествовал?)")
+		return
+	var w = game_world
+	var gl = w.get("forest_glade")
+	chk(gl != null and is_instance_valid(gl), "d2-live: узел POI-поляны live в деревне")
+	if gl == null or not is_instance_valid(gl):
+		return
+	var art = gl.get_node_or_null("GladeArt")
+	chk(art != null and (art as Sprite2D).texture is ImageTexture \
+			and String((art as Sprite2D).texture.resource_path) == "",
+		"d2-live: текстура поляны кодогенная (ImageTexture runtime, растров на диске 0)")
+	chk((gl as Node2D).get_children().size() == 1,
+		"d2-live: на поляне только спрайт — Area2D/коллайдеров ноль")
+	var cell: Vector2 = w.tile_to_world(Vector2i(5, 21))
+	var pl: Node2D = w.player
+	var keep := pl.global_position
+	GameState.flags.erase("fw.glade_taken")
+	GameState.set_flag("fw.glade_taken", 0)
+	pl.global_position = keep
+	await _frames(4)
+	GameState.herbs = 0
+	pl.global_position = cell
+	await _frames(6)
+	chk(pl.global_position.distance_to(cell) < 9.0,
+		"d2-live: живой шаг героя на (5,21) — стоит, стенка не выталкивает (%.1f px)" \
+			% pl.global_position.distance_to(cell))
+	chk(int(GameState.flags.get("fw.glade_taken", 0)) == 1 and GameState.herbs == 2,
+		"d2-live: сбор одноразовый: herbs +2, флаг fw.glade_taken=1")
+	pl.global_position = keep
+	await _frames(4)
+	GameState.herbs = 7
+	pl.global_position = cell
+	await _frames(6)
+	chk(GameState.herbs == 7, "d2-live: повторный вход на поляну не начисляет")
+	var space := w.get_world_2d().direct_space_state
+	var pq := PhysicsPointQueryParameters2D.new()
+	pq.position = cell
+	pq.collision_mask = 2
+	pq.collide_with_bodies = true
+	pq.collide_with_areas = false
+	var hits := space.intersect_point(pq)
+	chk(hits.is_empty(),
+		"d2-live: на клетке POI коллайдеров стен (слой 2) = 0 (снят ровно 1 хитбокс ствола)")
 
 # ---------------------------------------------------------------- инв. 8
 const MAIN_SCENE := "res://scenes/main.tscn"

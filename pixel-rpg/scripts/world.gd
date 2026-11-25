@@ -6,6 +6,17 @@ extends Node2D
 
 const TILE := 16
 const Nav := preload("res://scripts/nav.gd")
+## TILE-12 DISPOSITION (реестр diag-w4/audit.md §2; решение капитана по t3, 25.11):
+## деревенский валун «r» рисует тайл 12, он же в списке блокирующих. Решение —
+## «все три оставить с датированным комментарием»: A (это место) — определения
+## (символ «r» в CHAR_TO_TILE, десятки в BLOCKING, форма коллайдера валуна в
+## BLOCK_SHAPES); B0 — atlas-ключ легаси-тайла 12 пещеры (dungeon_zone.gd
+## _draw_tiles/_set_chest_open_cell, cave_art.gd «сундук: состояние держат
+## тайл 12»); C — world_regions.json CAS_F1 = 12 (номер слота стрипа пола, к
+## этому тайлу отношения не имеет — совпадение чисел случайно). «Удалить тайл
+## 12» с деревенской стороны ЗАПРЕЩЕН: валун станет проходимой клеткой, и
+## inv3/inv4 тихо «переучат» карту без единого RED (тихая дыра). B1 — в долг,
+## B2/удаление C — запрещены вердиктом.
 const CHAR_TO_TILE := {
 	"g": 0, "G": 1, "f": 2, "d": 3, "w": 4, "t": 5, "W": 6, "R": 7,
 	"D": 8, "#": 9, "r": 12, "s": 13, "T": 15, "A": 3,
@@ -104,6 +115,15 @@ const OW := preload("res://scripts/open_world.gd")
 const CAMPFIRE_SPOTS := {
 	"cf_village": Vector2i(18, 13),
 }
+## «Лес запад» (Д2, 25.11, реестр t2): POI-поляна в деревенском лесу. В
+## map_village.json пробита РОВНО одна клетка — row21 x5, прежний глухой «t»
+## стал «f»; роща 4→3 дерева ((4,21)/(5,20)/(4,20) целы, inv3 норма 3..6).
+## Перепины датированы причиной «Д2 лес запад»: qa_vlg PIN_MAP_ROWS row21,
+## PIN_T 59→58, PIN_BASE_BLOCK 85→84; qa_world MAP_VILLAGE_MD5; qa_lp
+## T44_MAP_MD5. GOLDEN-WM-PIN ×15 не тронут (карта мира от деревенской не
+## зависит). Поляна кодогенная (ForestWestGlade), коллайдеров не заводит.
+const FOREST_WEST_CELL := Vector2i(5, 21)
+const FOREST_WEST_PICK := 2      # одноразовый сбор корений (флаг fw.glade_taken в сейве)
 
 ## Мобы пещеры — «отпрыски гнили» тремя ярусами по глубине (расстояние от входа
 ## в тайл Чебышёва): чем глубже, тем плотнее и сильнее. Пик сложности — босс.
@@ -188,6 +208,7 @@ var cur_enemy: Texture2D   # курсор «атака» (cursor_enemy.png)
 var cur_arrow: Texture2D   # стрелка для диалогов/модалок (assets/ui/cursor_arrow.png)
 var atmosphere             # scripts/atmosphere.gd: свет/тени/частицы/цветокор (весь визуал спринта «Атмосфера»)
 var campfires: Array = []  # scripts/campfire.gd (hud читает для панели варки/полосы отдыха)
+var forest_glade: Node2D = null  # Д2 «Лес запад»: кодо-поляна на (5,21) — спрайт без коллайдера
 
 func _ready() -> void:
 	# t46 (F1): ЕДИНАЯ очистка реестра стай при старте мира — ПЕРВОЙ строкой, до
@@ -271,6 +292,7 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_entities()
 	_build_campfires()
+	_build_forest_west()  # Д2 «Лес запад»: кодо-поляна на пробитой клетке (5,21)
 	_build_village_v4()
 	_build_cave()
 	_build_cave_entrance()
@@ -598,6 +620,18 @@ func _build_campfires() -> void:
 		village_zone.add_child(cf)
 		cf.setup(self, String(id), CAMPFIRE_SPOTS[id])
 		campfires.append(cf)
+
+## Д2 «Лес запад» (25.11): POI-поляна на пробитой клетке (5,21). procedural bake:
+## текстура рисуется кодом в runtime (Image), НИ ОДНОГО растрового файла, палитра
+## — только LEAF family. Узел — Node2D+Sprite2D без Area2D/коллайдера: клетка
+## POI обязана оставаться чистым «f» (seal/R3.2-счёты слоя 2 не двигаем);
+## сбор — по расстоянию в _physics_process поляны, одноразовый через флаг
+## GameState.flags["fw.glade_taken"] (персист в сейве, повторный вход не начисляет).
+func _build_forest_west() -> void:
+	var gl := ForestWestGlade.new()
+	village_zone.add_child(gl)
+	gl.setup(self, FOREST_WEST_CELL, FOREST_WEST_PICK)
+	forest_glade = gl
 
 ## t54 (вердикт пользователя «внедряем в игру»): художественный слой деревни
 ## «Деревня v4» — кодоген-атласы листа t53 (docs/PIXEL_STYLE.md). Изба/колодец/
@@ -2167,6 +2201,76 @@ class WorldArchNorth:
 	func _on_exit(b: Node) -> void:
 		if b.is_in_group("player"):
 			world.near.erase(self)
+
+class ForestWestGlade:
+	extends Node2D
+	## Д2 «Лес запад» (25.11): кодо-поляна трав/грибов (процедурный bake: Image в
+	## runtime, ноль растровых файлов, палитра — строго LEAF family, свет СЗ по
+	## PIXEL_STYLE). Одноразовый сбор: GameState.flags["fw.glade_taken"]=1 живёт
+	## в сейве вместе с остальными флагами — повторный вход не начисляет.
+	## Коллайдеров/солитов НЕ заводит намеренно (паттерн WorldArchNorth-Area2D
+	## здесь не используется): клетка POI остаётся чистым «f», счётчики слоя 2
+	## (R3.2 «0 px», seal/t59) не двигаем. Сбор — по расстоянию до героя.
+	const _TUFTS := [[1, 13], [4, 14], [7, 13], [10, 14], [13, 13],
+		[2, 10], [8, 11], [12, 8], [5, 6], [14, 10]]
+	const _MUSH := [[3, 9], [9, 6], [12, 11]]
+	const _REACH := 10.0            # px до центра клетки — как радиус трав (interactable)
+	var world
+	var _pick_n := 0
+	var _spr: Sprite2D
+	var _done := false
+	func setup(p_world: Node2D, tile: Vector2i, pick_n: int) -> void:
+		world = p_world
+		position = world.tile_to_world(tile)
+		_pick_n = pick_n
+		_done = int(GameState.flags.get("fw.glade_taken", 0)) == 1
+		_spr = Sprite2D.new()
+		_spr.texture = _glade_tex(_done)
+		_spr.name = "GladeArt"
+		add_child(_spr)
+		if _done:
+			set_physics_process(false)
+	func _physics_process(_d: float) -> void:
+		if _done or world == null or world.player == null:
+			return
+		if global_position.distance_to(world.player.global_position) <= _REACH:
+			_pick()
+	func _pick() -> void:
+		_done = true
+		set_physics_process(false)
+		GameState.herbs += _pick_n
+		GameState.set_flag("fw.glade_taken", 1)
+		GameAudio.sfx("step2", 1.0, 1.25)  # шорох среза — тот же сэмпл, что у трав
+		GameState.toast.emit("Поляна на опушке: коренья собраны +%d (всего: %d)" \
+				% [_pick_n, GameState.herbs])
+		GameState.quest_changed.emit()  # автосейв: флаг одноразовости должен дожить до F9
+		_spr.texture = _glade_tex(true)
+	## procedural bake 16×16: куртины LEAF LIGHT/MID + грибы (ножка MID, шляпка
+	## LIGHT с тенью MID на востоке — свет СЗ). taken=True — куртины без шляпок.
+	func _glade_tex(taken: bool) -> Texture2D:
+		var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+		var lite := PAL.c("LEAF", PAL.T_LIGHT)
+		var mid := PAL.c("LEAF", PAL.T_MID)
+		var dark := PAL.c("LEAF", PAL.T_DARK)
+		for t in _TUFTS:
+			var x: int = int(t[0])
+			var y: int = int(t[1])
+			img.set_pixel(x, y, mid)
+			img.set_pixel(x, y - 1, lite)
+			img.set_pixel(maxi(0, x - 1), y, lite)
+			img.set_pixel(mini(15, x + 1), y, dark)
+		if not taken:
+			for m in _MUSH:
+				var mx: int = int(m[0])
+				var my: int = int(m[1])
+				img.set_pixel(mx, my, mid)              # ножка
+				img.set_pixel(mx, my - 1, lite)         # ножка верх
+				img.set_pixel(mx - 1, my - 2, lite)     # шляпка: свет с СЗ
+				img.set_pixel(mx, my - 2, lite)
+				img.set_pixel(mx + 1, my - 2, mid)      # тень шляпки к ЮВ
+		var t := ImageTexture.create_from_image(img)
+		t.resource_name = "ForestWestGladeV1"
+		return t
 
 class AshenGate:
 	extends Area2D

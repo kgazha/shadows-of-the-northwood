@@ -58,6 +58,7 @@ const C_FIRE := Color(1.0, 0.714, 0.282)          # костёр — жёлты�
 const C_CHEST := Color(1.0, 0.824, 0.290)         # сундук — золотой
 const C_NPC := Color(0.875, 0.902, 0.933)         # NPC — белый
 const C_PORTAL := Color(0.345, 0.784, 1.0)        # вход в пещеру / выход — голубой
+const C_GLADE := Color(0.373, 0.569, 0.251)       # Д2 поляна «лес запад» — LEAF MID (5f9140)
 const C_DIM := 0.38                               # альфа «прошлого» POI (пепел/пустой)
 
 static var I: Minimap              # синглтон; назначает world._ready (fallback — _enter_tree)
@@ -337,6 +338,13 @@ func _rebuild_pois() -> void:
 		elif p.ends_with("npc.gd"):
 			_pois.append({"t": _tile_of((n as Node2D).global_position, _zone_base(), ts), "c": C_NPC, "s": 2})
 	_pois.append({"t": Vector2i(world.CAVE_ENTRANCE_TILE), "c": C_PORTAL, "s": 3})
+	# Д2 «Лес запад» (25.11): поляна на (5,21) — зелёный блип; собранная (флаг
+	# fw.glade_taken) — тусклый, как пепел костра/вскрытый сундук.
+	var gl = world.get("forest_glade")
+	if gl != null and is_instance_valid(gl):
+		var taken_g: bool = int(GameState.flags.get("fw.glade_taken", 0)) == 1
+		_pois.append({"t": _tile_of((gl as Node2D).global_position, _zone_base(), ts),
+				"c": _dim(C_GLADE) if taken_g else C_GLADE, "s": 3})
 	# выжженная аршина на восточной окраине — вход в Пепелище
 	var aet: Variant = world.get("ASHEN_ENTRANCE_TILE")
 	if aet is Vector2i:
