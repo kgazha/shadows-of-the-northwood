@@ -427,6 +427,9 @@ class BiomeChest:
 		used = true
 		GameState.chest_mark_used(uid)
 		Loot.chest_reward(GameState)
+		# t18 (25.11): цель цепочки поясов «найти сундук» — тот же факт
+		# открытия, отдельного сейв-ключа нет (q.bc.* — аддитивно в flags).
+		QuestsData.note_belt_chest(GameState, String(zone.biome))
 		Achv.on_chest_opened()
 		GameState.quest_changed.emit()  # автосейв: сундук осядет в сохранении
 		if ResourceLoader.exists(CaveArt.ATLAS_PATH) and CaveArt.REGIONS.has("CHEST_OPEN"):

@@ -460,7 +460,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 			GameState.toast.emit("Отпрыск гнили повержен! (+%d опыта)" % kill_xp)
 			_roll_mat_drop()
 		var loot_kind := "boss" if boss else ("brute" if tier == 1 else "brute_t%d" % tier)
-		Loot.on_mob_death(belt_loot if belt_loot != "" else loot_kind, global_position)
+		Loot.on_mob_death(belt_loot if belt_loot != "" else loot_kind, global_position, world)
 		GameState.quest_changed.emit()
 		queue_free()
 

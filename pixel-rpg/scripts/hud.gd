@@ -271,6 +271,7 @@ func setup(p_world: Node2D) -> void:
 
 	_build_skill_panel(th)
 	_build_alch_ui(th)
+	_build_journal_btn(th)
 	_build_class_modal(th)
 	# мета-счётчики (P2 §3.4/§4): Пепел + daily-серия, левый нижний угол — meta_hud.gd
 	add_child(load("res://scripts/meta_hud.gd").new())
@@ -707,6 +708,51 @@ func _on_potion_pressed() -> void:
 	Sfx.play("ui_click")  # t31: бархатный тик вместо чиптюн-клика
 	if world != null and world.has_method("drink_potion"):
 		world.drink_potion()
+
+# --- t18 «Квесты поясов» (25.11, DESIGN_DEPTH_V2 §3): кнопка журнала --------
+## «Список + кнопка в HUD» — утверждённый минимум доступа к журналу. Язык
+## существующих кнопок (та же тема/ступень 8, как Q-зелье), место — верхний
+## левый угол (низ-лево занят meta_hud, верх-право — радар миникарты). Ключ J
+## остаётся легаси-клавишей (тексты тостов «J — журнал» пиннованы стендами),
+## Q занят пином «Q — испить зелье» (input-экшн potion=81) — кнопка и есть
+## честный второй вход без ломки канона. Гейт открытия повторяет J-гейт
+## journal.gd: диалог/модалка/лавка — кнопка не открывает.
+var journal_btn: Button
+
+func _build_journal_btn(th: Theme) -> void:
+	journal_btn = Button.new()
+	journal_btn.text = "Журнал (J)"
+	journal_btn.add_theme_font_size_override("font_size", 8)
+	journal_btn.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	journal_btn.offset_left = 6
+	journal_btn.offset_right = 68
+	journal_btn.offset_top = 6
+	journal_btn.offset_bottom = 22
+	journal_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	journal_btn.tooltip_text = "Журнал: квесты, достижения, таланты (J)"
+	journal_btn.pressed.connect(_on_journal_pressed)
+	journal_btn.theme = th
+	add_child(journal_btn)
+
+## Журнал — child world.gd (add_child(Journal.new()), world.gd:323); ищем по
+## типу — поля в world.gd не заводим (минимальность интеграции — канон journal.gd).
+func _find_journal() -> Journal:
+	if world == null:
+		return null
+	for c in world.get_children():
+		if c is Journal:
+			return c as Journal
+	return null
+
+func _on_journal_pressed() -> void:
+	Sfx.play("ui_click")  # тот же velvet-тик, что у зелья (t31)
+	var jn := _find_journal()
+	if jn == null:
+		return
+	if jn.is_open():
+		jn.close()
+	elif not GameState.input_locked and not Shop.is_open():
+		jn.open()
 
 # --- привалы и алхимия: индикаторы, кнопка заряда, панель варки, полоса отдыха ---
 

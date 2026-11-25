@@ -293,7 +293,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Achv.count("kill_swarmling")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Мглокрыс повержен! (+3 опыта)")
-		Loot.on_mob_death(loot_kind if loot_kind != "" else "swarmling", global_position)
+		Loot.on_mob_death(loot_kind if loot_kind != "" else "swarmling", global_position, world)
 		GameState.quest_changed.emit()
 		_on_swarm_death()
 		queue_free()

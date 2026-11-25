@@ -36,6 +36,11 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 	# (QA-симуляции qa_bt/qa_s4/qa_s6 зовут с синтетическими kind — безвредно,
 	# rs.* стирается каждый забег в _wipe_circle).
 	GameState.flags["rs.k." + kind] = GameState._num(GameState.flags.get("rs.k." + kind, 0), 0) + 1
+	# t18 (25.11, DESIGN_DEPTH_V2 §3): поясный счётчик цепочки (цель «зачистить
+	# N»). Аттрибуция — по active_area вызвавшего мира ("loc_<зона>"); без world
+	# (headless-QA, прежние вызовы без аргумента) — прежнее поведение 1:1.
+	if world != null:
+		QuestsData.note_belt_kill_area(GameState, String(world.active_area))
 	var table: Variant = GearData.LOOT.get(kind, [])
 	if typeof(table) != TYPE_ARRAY or table.is_empty():
 		push_warning("Loot: неизвестный вид моба: %s" % kind)
@@ -196,6 +201,39 @@ static func grant_gear_set(gs: Node, ids: Array, cell: String = "",
 	if not got.is_empty():
 		GameAudio.sfx("coin")
 		gs.toast.emit("В сундуке снаряжение: %s!" % ", ".join(PackedStringArray(got)))
+
+## t18 (25.11, DESIGN_DEPTH_V2 §3): гарантированный реликт — награда финала
+## звена цепочки пояса. Выбор предмета детерминирован: shash("questrelic:
+## <звень>:<run_seed>") % пул; аффиксы — force_relic канона t17 (клетка
+## "quest:<звень>" стабильна под повторными входами сейва). Вещь уже в сумке
+## (игрок купил) — честный откат: реликтовое серебро +40 зол. Возвращает id
+## выданной вещи или "" (откат) — для стендовых пинов.
+static func quest_relic(gs: Node, link_id: String, pool: Array) -> String:
+	if pool.is_empty():
+		return ""
+	# Пул фильтруется от уже купленного (иначе два пояса с одним пулом
+	# гарантированно столкнулись бы) и от «не своей руки» — матрица can_equip
+	# (t10: чужое купить можно, надеть нельзя; награда обязана надеваться).
+	var free: Array = []
+	for p in pool:
+		var pid := String(p)
+		if not gs.owned_gear.has(pid) \
+				and bool(GearData.can_equip(String(gs.class_id), pid).get("ok", true)):
+			free.append(pid)
+	if free.is_empty():
+		gs.add_gold(40)
+		gs.toast.emit("Награда старейшины растоплена: реликт уже в сумке — +40 зол.")
+		return ""
+	var pick := String(free[OW.shash("questrelic:%s:%d" % [link_id, int(gs.run_seed)]) % free.size()])
+	if not gs.ensure_gear(pick):
+		gs.add_gold(40)
+		gs.toast.emit("Награда старейшины растоплена: реликт уже в сумке — +40 зол.")
+		return ""
+	_roll_instance_affixes(gs, pick, "quest:" + link_id, true)
+	GameAudio.sfx("potion")
+	gs.toast.emit("Награда старейшины: %s — реликтовая!"
+			% String(GearData.item(pick).get("name", pick)))
+	return pick
 
 ## Выдача special-предмета: "herb" — трава (Q-зелье), "potion" — заряд
 ## крепкого зелья (до BREWED_CAP, излишек — травами). Свободного инвентаря

@@ -23,6 +23,7 @@ func _ready() -> void:
 	sim_side_badges()
 	sim_ng_plus()
 	sim_achv_gates()
+	sim_belt_chain()
 	sim_old_holes()
 	sim_supply_info()
 	print("=== QA Q5 DONE: fails=%d holes=%d ===" % [fails, holes])
@@ -603,3 +604,160 @@ func sim_supply_info() -> void:
 		+ "реалистично ~13 мин суммарно за игру (total копится между кругами)")
 	inf("E2", "q_suhotsvet (сухоцвет со слаймов, need 5) сходится с охотничьим гейтом 40")
 	inf("E3", "q_ashen: 25 xp за вход на Пепелище каждый круг — маршрут и так обязателен (Ведьма)")
+
+# --- G: t18 «Квесты поясов» (25.11, DESIGN_DEPTH_V2 §3) --------------------
+# Цепочка 12 звеньев через доску: gate «по мере открытия поясов» (wm.open),
+# цели biome_kill/biome_chest, награда один раз (флаг 2 до выдачи), финал
+# пояса — гарантированный реликт (force_relic t17). Полный путь на 4 сидах —
+# пин-таблица сигнатур реликтов (детерминизм shash-канона).
+
+## Мировая заглушка: Loot.on_mob_death читает world.active_area для поясного
+## счётчика. Только это поле и нужно (Fx при синтетическом kind без золота не
+## вызывается — канон qa_bt/qa_s4 с синтетическими kind).
+class FakeArea:
+	extends Node2D
+	var active_area := ""
+
+var fake_area: Node2D
+
+func belt_kill(zone: String, n: int) -> void:
+	if fake_area == null:
+		fake_area = FakeArea.new()
+	fake_area.set("active_area", "loc_" + zone)
+	for k in n:
+		Loot.on_mob_death("qa_belt_probe@b0", Vector2.ZERO, fake_area)
+
+func belt_kill_outside(area: String) -> void:
+	if fake_area == null:
+		fake_area = FakeArea.new()
+	fake_area.set("active_area", area)
+	Loot.on_mob_death("qa_belt_probe@b0", Vector2.ZERO, fake_area)
+
+## Пин-сида полного пути (t18, 25.11): сигнатура = порядок реликтовых
+## выдач (id или "-" = серебро-откат) + итог золота (старт героя 10 + 750
+## наград цепочки = 760, воина, ни одного отката). Пере-пин — только
+## датированной записью (паттерн таблицы аффиксов t17). Снято прогоном
+## 25.11 (build t18 до пинования, G7 PASS в пробеге).
+const BELT_SEEDS := [1, 7, 1337, 90210]
+const BELT_SIGS := [
+	"chain|sword|boarhide|fangblade|shield_raven|nordsword#760",
+	"leather|chain|shield_iron|nordsword|rune_blade|shield_raven#760",
+	"shortsword|nordsword|shield_iron|chain|shield_raven|boarhide#760",
+	"leather|boarhide|nordsword|rune_blade|fangblade|shield_raven#760",
+]
+
+## Пройти цепочку до конца; вернуть «pick1|pick2…#gold».
+func walk_full_chain() -> String:
+	var picks: Array = []
+	for i in QuestsData.BELT_CHAIN.size():
+		var def: Dictionary = QuestsData.belt_link(i)
+		var z := String(def.get("zone", ""))
+		gs.set_flag("wm.open." + z, "1")
+		QuestsData.belt_offer(gs, i)
+		if String(def.get("type", "")) == "biome_kill":
+			belt_kill(z, int(def.get("need", 1)))
+		else:
+			QuestsData.note_belt_chest(gs, z)
+		var is_relic := bool(def.get("relic", false))
+		var a0: int = gs.affixes.size()
+		var g0 := int(gs.gold)
+		QuestsData.belt_turnin(gs, i)
+		if is_relic:
+			var got_new: bool = gs.affixes.size() == a0 + 1
+			picks.append(String(gs.affixes.keys().back()) if got_new else "-")
+			# награда ровно один раз: второй тычок доски ничего не должен менять
+			QuestsData.belt_turnin(gs, i)
+			if int(gs.gold) != g0 + int(def.get("gold", 0)) or gs.affixes.size() != a0 + (1 if got_new else 0):
+				return "DOUBLE_REWARD@" + String(def.get("id", ""))
+	return "|".join(PackedStringArray(picks)) + "#%d" % int(gs.gold)
+
+func sim_belt_chain() -> void:
+	print("--- G: t18 цепочка поясов ---")
+	rst()
+	ck("G0.чистый герой: current=0, в журнале пусто",
+		QuestsData.belt_current(gs) == 0 and qentry("bq_snow_1") == null)
+	QuestsData.belt_offer(gs, 0)  # без открытого пояса — no-op
+	ck("G0.без открытого пояса не берётся",
+		not QuestsData.belt_can_offer(gs, 0) and QuestsData.belt_status(gs, 0) == QuestsData.STATUS_NONE)
+	# G1: gate «по мере открытия» + взятие
+	gs.set_flag("wm.open.snow", "1")  # канон: world.enter_location (t7)
+	ck("G1.пояс открыт → звено предложено", QuestsData.belt_can_offer(gs, 0))
+	QuestsData.belt_offer(gs, 0)
+	ck("G1.взято, журнал видит, цель не закрыта",
+		QuestsData.belt_status(gs, 0) == QuestsData.STATUS_ACTIVE
+		and qentry("bq_snow_1") != null and not target_done("bq_snow_1", "Зачистить"))
+	# G2: счётчик убийств — ТОЛЬКО своя локация, канонический хук лута
+	belt_kill("snow", 3)
+	ck("G2.3/4 в своём поясе; чужие пояса и лес — мимо",
+		QuestsData.belt_progress(gs, 0) == 3 and not QuestsData.belt_ready(gs, 0))
+	belt_kill("desert", 5)
+	belt_kill_outside("forest")
+	ck("G2.чужая аттрибуция не считается", QuestsData.belt_progress(gs, 0) == 3)
+	ck("G2.цепочка не трогает slime_kills_circle", int(gs.slime_kills_circle) == 0)
+	# G3: сдача один раз
+	belt_kill("snow", 1)
+	ck("G3.цель закрыта (4/4)", QuestsData.belt_ready(gs, 0) and target_done("bq_snow_1", "Зачистить"))
+	var g0 := int(gs.gold)
+	QuestsData.belt_turnin(gs, 0)
+	ck("G3.сдача +30 зол., статус 2, журнал done",
+		int(gs.gold) == g0 + 30 and QuestsData.belt_status(gs, 0) == QuestsData.STATUS_DONE
+		and target_done("bq_snow_1", "Зачистить"))
+	QuestsData.belt_turnin(gs, 0)
+	ck("G3.повторная сдача — награда ноль", int(gs.gold) == g0 + 30 and QuestsData.belt_current(gs) == 1)
+	QuestsData.belt_offer(gs, 0)
+	ck("G3.сданное не берётся заново", QuestsData.belt_status(gs, 0) == QuestsData.STATUS_DONE)
+	# G4: финал пояса — гарантированный реликт
+	ck("G4.финал пояса берётся (пояс уже открыт)", QuestsData.belt_can_offer(gs, 1))
+	QuestsData.belt_offer(gs, 1)
+	ck("G4.сундук не найден — не готово", not QuestsData.belt_ready(gs, 1))
+	QuestsData.note_belt_chest(gs, "snow")
+	ck("G4.сундук → цель закрыта", QuestsData.belt_ready(gs, 1) and target_done("bq_snow_2", "Найти"))
+	g0 = int(gs.gold)
+	QuestsData.belt_turnin(gs, 1)
+	ck("G4.+45 зол. и ровно одна реликтовая запись",
+		int(gs.gold) == g0 + 45 and gs.affixes.size() == 1)
+	var pick := String((gs.affixes.keys() as Array)[0])
+	ck("G4.реликт = ровно 2 аффикса (force_relic)", (gs.affixes[pick] as Array).size() == 2)
+	QuestsData.belt_turnin(gs, 1)
+	ck("G4.реликт не дублируется при повторной сдаче",
+		int(gs.gold) == g0 + 45 and gs.affixes.size() == 1)
+	# G5: сейв-roundtrip середины цепочки
+	var snap: Dictionary = gs.to_dict()
+	belt_kill("snow", 4)
+	QuestsData.note_belt_chest(gs, "desert")
+	gs.add_gold(999)
+	gs.from_dict(snap)
+	ck("G5.roundtrip: звенья/счётчики/золото/аффиксы восстановлены",
+		QuestsData.belt_status(gs, 0) == QuestsData.STATUS_DONE
+		and QuestsData.belt_status(gs, 1) == QuestsData.STATUS_DONE
+		and QuestsData.belt_progress(gs, 1) == 1
+		and int(gs.gold) == int(snap.get("gold", -1)) and gs.affixes.size() == 1)
+	# G6: новый круг — цепочка пере-взводится (семантика побочек q.*)
+	var w: int = gs.start_ng_plus()
+	ck("G6.NG+: current=0, статусы/счётчики/журнал обнулены",
+		w == 1 and QuestsData.belt_current(gs) == 0
+		and QuestsData.belt_status(gs, 0) == QuestsData.STATUS_NONE
+		and QuestsData.belt_progress(gs, 0) == 0 and qentry("bq_snow_1") == null)
+	# G7: полный путь 12 звеньев на 4 сидах — бит-в-бит пин-таблица
+	for si in BELT_SEEDS.size():
+		rst()
+		gs.run_seed = int(BELT_SEEDS[si])
+		var sig := walk_full_chain()
+		inf("G7.seed%d" % int(BELT_SEEDS[si]), sig)
+		if String(BELT_SIGS[si]) == "":
+			ck("G7.seed %d: путь 12/12 без двойной награды (таблица ещё пуста — пробег)" % int(BELT_SEEDS[si]),
+				not sig.contains("DOUBLE_REWARD") and QuestsData.belt_current(gs) == QuestsData.BELT_CHAIN.size())
+		else:
+			ck("G7.seed %d: путь 12/12, реликты bit-в-бит, награда один раз" % int(BELT_SEEDS[si]),
+				sig == String(BELT_SIGS[si]) and QuestsData.belt_current(gs) == QuestsData.BELT_CHAIN.size())
+	# G8: провода на месте (статические пины интеграции)
+	ck("G8.провода: хук лута / сундук-хук / доска в деревне / кнопка HUD",
+		file_has("res://scripts/loot.gd", "note_belt_kill_area")
+		and file_has("res://scripts/biome_zone.gd", "note_belt_chest")
+		and file_has("res://scripts/world.gd", '"board", Vector2i(12, 8)')
+		and file_has("res://scripts/hud.gd", "_build_journal_btn"))
+	ck("G8.звенья цепочки НЕ в реестре QUESTS (нет автозавершения refresh)",
+		not file_src("res://scripts/quests_data.gd").contains("\"bq_snow_1\": {"))
+	# G9: клавиатурный канон не сломан: журнал J, Q — зелье
+	ck("G9.журнал на J (KEY_Q в journal.gd не появился)",
+		file_has("res://scripts/journal.gd", "KEY_J") and not file_has("res://scripts/journal.gd", "KEY_Q"))

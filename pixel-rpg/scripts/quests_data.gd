@@ -302,6 +302,25 @@ static func entries(gs) -> Array:
 			"story": is_story(id),
 			"targets": targets,
 		})
+	# t18 (25.11, DESIGN_DEPTH_V2 §3): цепочка поясов — те же строки журнала
+	# тем же языком; в журнал попадают только взятые/сданные звенья.
+	for i in BELT_CHAIN.size():
+		var st := belt_status(gs, i)
+		if st == STATUS_NONE:
+			continue
+		var def: Dictionary = BELT_CHAIN[i]
+		var need := maxi(1, int(def.get("need", 1)))
+		var p := mini(need, belt_progress(gs, i))
+		var done := p >= need or st == STATUS_DONE
+		out.append({
+			"id": String(def.get("id", "bq_%d" % i)),
+			"title": String(def.get("title", "")),
+			"desc": String(def.get("desc", "")),
+			"status": st,
+			"story": false,
+			"targets": [{"label": String(def.get("label", "")),
+					"cur": need if done else p, "need": need, "done": done}],
+		})
 	return out
 
 ## Тик системы (вызывает journal.gd): счётчики материалов + автостарты +
@@ -392,3 +411,180 @@ static func _cond_met(gs, when: String) -> bool:
 			# в новом круге игрок обязан вернуться на Пепелище за Ведьмой)
 			return int(gs.cave_state) >= 4
 	return false
+
+# --- t18 «Глубина v2 §3: Квесты поясов» (25.11, docs/DESIGN_DEPTH_V2.md) ----
+# Один квестовый поток через доску объявлений: заказчик — старейшина, звенья
+# открываются ПО МЕРЕ ОТКРЫТИЯ поясов (канон-флаг wm.open.<зона> ставит
+# world.enter_location), цели живут в биомах, сдача — у доски. Прогресс —
+# функция от GameState (счётчики "q.bk.<зона>"/"q.bc.<зона>"), статусы —
+# "q.bq.<звень>", всё вайпится с "q.*" каждый круг (цепочка — нажитое забега,
+# как побочки; награда — ровно один раз на круг, флаги 1/2). Цели v1 —
+# «зачистить N» и «найти сундук»; «закрыть ход» придёт вместе с ходами
+# микро-подземелий (t19) — реестр готов принять новый тип без правок остального.
+# ЗВЕНЬЯ НЕ В РЕЕСТРЕ QUESTS: их не трогает автостарт/автозавершение refresh()
+# — взятие и сдача только через доску (interactable kind "board").
+
+const BQ_PREFIX := "q.bq."   # статус звена цепочки: 1 взято, 2 сдано (нет = 0)
+const BK_PREFIX := "q.bk."   # убийства мобов Зоны (счётчик цели «зачистить»)
+const BC_PREFIX := "q.bc."   # сундук Зоны найден/открыт (1)
+
+## Вилка золота звена — BALANCE.md §«Цепочка поясов» (30+10·пояс; финал
+## пояса с реликтом — +15). Реликт — guaranteed (Loot.quest_relic, force_relic
+## канона t17). Пул — существующие вещи яруса пояса; «уже в сумке» и матрица
+## can_equip отсекаются в Loot.quest_relic (награда никогда не «не в руку»),
+## когда у класса весь пул куплен — честное реликтовое серебро (+40 зол.).
+const BELT_CHAIN := [
+	{"id": "bq_snow_1", "zone": "snow", "type": "biome_kill", "need": 4,
+		"title": "Снежный долг", "label": "Зачистить сущностей в Снежнике",
+		"desc": "Старейшина: «Снежник открыт — и ветер оттуда несёт не только снег. Разберись с первыми тенями, тогда поговорим дальше.»",
+		"gold": 30},
+	{"id": "bq_snow_2", "zone": "snow", "type": "biome_chest", "need": 1,
+		"title": "Клад под снегом", "label": "Найти и открыть сундук Снежника",
+		"desc": "Старейшина: «Передать надо то, что было до нас. В Снежнике под сугробом ждёт сундук первых — найди его.»",
+		"gold": 45, "relic": true,
+		"relic_pool": ["leather", "chain", "shortsword", "staff_apprentice", "bow_hunter"]},
+	{"id": "bq_desert_1", "zone": "desert", "type": "biome_kill", "need": 5,
+		"title": "Пепельный урок", "label": "Зачистить сущностей в Пустоши",
+		"desc": "Старейшина: «Пустошь помнит пожар. То, что ползает в пепле, помнит его хуже — научи их тишине.»",
+		"gold": 40},
+	{"id": "bq_desert_2", "zone": "desert", "type": "biome_chest", "need": 1,
+		"title": "Закопанное солнце", "label": "Найти и открыть сундук Пустоши",
+		"desc": "Старейшина: «В Пустоши, где тень короче всего, зарыто то, что прятали от огня.»",
+		"gold": 55, "relic": true,
+		"relic_pool": ["leather", "chain", "boarhide", "sword", "nordsword", "staff_oak", "bow_heavy", "shield_iron"]},
+	{"id": "bq_steppe_1", "zone": "steppe", "type": "biome_kill", "need": 6,
+		"title": "Степной простор", "label": "Зачистить сущностей в Степи",
+		"desc": "Старейшина: «Степь широка и потому дерзка. Пройди её — так, чтобы кочевники запомнили шаг.»",
+		"gold": 50},
+	{"id": "bq_steppe_2", "zone": "steppe", "type": "biome_chest", "need": 1,
+		"title": "Курган", "label": "Найти и открыть сундук Степи",
+		"desc": "Старейшина: «В кургане Степи лежит то, что кочевники забрали у леса. Пусть вернётся в оборот.»",
+		"gold": 65, "relic": true,
+		"relic_pool": ["leather", "chain", "boarhide", "sword", "nordsword", "staff_oak", "bow_heavy", "shield_iron"]},
+	{"id": "bq_forest_1", "zone": "forest", "type": "biome_kill", "need": 7,
+		"title": "Закон Чащи", "label": "Зачистить сущностей в Чаще",
+		"desc": "Старейшина: «Чаща — наша соседка и наша кормилица. То, что гложет её изнутри, должно уйти.»",
+		"gold": 60},
+	{"id": "bq_forest_2", "zone": "forest", "type": "biome_chest", "need": 1,
+		"title": "Сердце Чащи", "label": "Найти и открыть сундук Чащи",
+		"desc": "Старейшина: «В чаще есть поляна, которую лес обходит. Что там оставлено — забери, лес не обидится.»",
+		"gold": 75, "relic": true,
+		"relic_pool": ["chain", "boarhide", "nordsword", "fangblade", "rune_blade", "staff_oak", "staff_rune", "bow_heavy", "shield_raven"]},
+	{"id": "bq_castle_1", "zone": "castle", "type": "biome_kill", "need": 8,
+		"title": "Каменный зуб", "label": "Зачистить сущностей у Замка",
+		"desc": "Старейшина: «Замок сломан, а зуб его всё ещё кусается. Выбей этот зуб.»",
+		"gold": 70},
+	{"id": "bq_castle_2", "zone": "castle", "type": "biome_chest", "need": 1,
+		"title": "Зал с сокровищем", "label": "Найти и открыть сундук Замка",
+		"desc": "Старейшина: «В Замке есть зал, который не грабили — боялись. Испугайся ты, забери и принеси.»",
+		"gold": 85, "relic": true,
+		"relic_pool": ["chain", "boarhide", "nordsword", "fangblade", "rune_blade", "staff_oak", "staff_rune", "bow_heavy", "shield_raven"]},
+	{"id": "bq_dungeon_1", "zone": "dungeon", "type": "biome_kill", "need": 9,
+		"title": "Тьма под землёй", "label": "Зачистить сущностей в Подземелье",
+		"desc": "Старейшина: «Подземелье — последний пояс и последняя наша забота. Свети мечом там, где не светит солнце.»",
+		"gold": 80},
+	{"id": "bq_dungeon_2", "zone": "dungeon", "type": "biome_chest", "need": 1,
+		"title": "Последняя комната", "label": "Найти и открыть сундук Подземелья",
+		"desc": "Старейшина: «В последней комнате Подземелья оставлено то, что не сумели унести прежние. Цепочка замкнётся — и деревня будет должна тебе до конца зимы.»",
+		"gold": 95, "relic": true,
+		"relic_pool": ["chain", "boarhide", "nordsword", "fangblade", "rune_blade", "staff_oak", "staff_rune", "bow_heavy", "shield_raven"]},
+]
+
+static func belt_link(i: int) -> Dictionary:
+	return BELT_CHAIN[i] if i >= 0 and i < BELT_CHAIN.size() else {}
+
+static func belt_status(gs, i: int) -> int:
+	var lid := String(belt_link(i).get("id", ""))
+	return int(gs.get_flag(BQ_PREFIX + lid, 0)) if lid != "" else STATUS_NONE
+
+## Первое несданное звено; == BELT_CHAIN.size() — цепочка закрыта.
+static func belt_current(gs) -> int:
+	for i in BELT_CHAIN.size():
+		if belt_status(gs, i) != STATUS_DONE:
+			return i
+	return BELT_CHAIN.size()
+
+## Взять можно первое несданное звено, только если пояс открыт (wm.open —
+## канон «Тумана открытия» t7: игрок ногами дошёл до локации).
+static func belt_can_offer(gs, i: int) -> bool:
+	if i != belt_current(gs) or belt_status(gs, i) != STATUS_NONE:
+		return false
+	return str(gs.get_flag("wm.open." + String(belt_link(i).get("zone", "")), "")) == "1"
+
+## Прогресс цели звена (0..+; витрина клампит к need).
+static func belt_progress(gs, i: int) -> int:
+	var def := belt_link(i)
+	match String(def.get("type", "")):
+		"biome_kill":
+			return int(gs.get_flag(BK_PREFIX + String(def.get("zone", "")), 0))
+		"biome_chest":
+			return int(gs.get_flag(BC_PREFIX + String(def.get("zone", "")), 0))
+	return 0
+
+static func belt_ready(gs, i: int) -> bool:
+	return belt_status(gs, i) == STATUS_ACTIVE \
+			and belt_progress(gs, i) >= int(belt_link(i).get("need", 1))
+
+## Честная строка прогресса для подсказки/тоста: «2/4» или «0/1».
+static func belt_progress_line(gs, i: int) -> String:
+	var def := belt_link(i)
+	return "%d/%d" % [mini(int(def.get("need", 1)), belt_progress(gs, i)), int(def.get("need", 1))]
+
+## Имя зоны звена для тостов. ЗЕРКАЛО OpenWorld.ZONE_NAMES (QuestsData не
+## предлоадит open_world — тот же приём, что у OW_ZONES; стенд сверяет).
+const ZONE_TITLES := {"snow": "Снежник", "desert": "Пустошь", "steppe": "Степь",
+		"forest": "Чаща", "castle": "Замок", "dungeon": "Подземелье"}
+
+static func belt_zone_name(gs, i: int) -> String:
+	var z := String(belt_link(i).get("zone", ""))
+	return String(ZONE_TITLES.get(z, z))
+
+## Взять звено у доски. Идемпотентен: только NONE -> ACTIVE и только current.
+static func belt_offer(gs, i: int) -> void:
+	if not belt_can_offer(gs, i):
+		return
+	gs.set_flag(BQ_PREFIX + String(belt_link(i).get("id", "")), STATUS_ACTIVE)
+	gs.toast.emit("Доска: взято «%s»." % String(belt_link(i).get("title", "")))
+	gs.quest_changed.emit()  # автосейв: звено взято
+
+## Сдача звена у доски: флаг 2 ДО выдачи (идемпотентность награды — канон
+## refresh()), золото вилки, на финале пояса — гарантированный реликт t17.
+static func belt_turnin(gs, i: int) -> void:
+	if belt_status(gs, i) != STATUS_ACTIVE or not belt_ready(gs, i):
+		return
+	var def := belt_link(i)
+	gs.set_flag(BQ_PREFIX + String(def.get("id", "")), STATUS_DONE)
+	var gold := int(def.get("gold", 0))
+	if gold > 0:
+		gs.add_gold(gold)
+	gs.toast.emit("Сдано: «%s». +%d зол." % [String(def.get("title", "")), gold])
+	if bool(def.get("relic", false)):
+		Loot.quest_relic(gs, String(def.get("id", "")),
+				def.get("relic_pool", []) as Array)
+	GameAudio.sfx("coin")
+	gs.quest_changed.emit()  # автосейв: награда выдана ровно один раз
+
+# --- счётчики целей (хуки loot.gd::on_mob_death и biome_zone BiomeChest) ----
+
+## Убийство внутри локации ("loc_<зона>") — поясная цель цепочки. Вне локаций
+## (лес/деревня/пещера/Пепелище) — тишина: счётчики цепочки живут только
+## поясами, ни одна прежняя ветка (ачивки, rs.k.*, трофеи) не тронута.
+static func note_belt_kill_area(gs, active_area: String) -> void:
+	if not active_area.begins_with("loc_"):
+		return
+	var z := active_area.substr(4)
+	if not OW_ZONES.has(z):
+		return
+	gs.set_flag(BK_PREFIX + z, int(gs.get_flag(BK_PREFIX + z, 0)) + 1)
+	# БЕЗ quest_changed: счётчик читается доской/журналом свежим в момент
+	# просмотра, автосейв на каждое убийство раздувал бы диск; переходы
+	# (взятие/сдача) сейвят сами.
+
+## Сундук локации открыт — цель «найти сундук» закрыта (хукает BiomeChest).
+static func note_belt_chest(gs, zone: String) -> void:
+	if OW_ZONES.has(zone):
+		gs.set_flag(BC_PREFIX + zone, 1)
+
+## Членство в реестре зон (свой const — QuestsData не предлоадит open_world,
+## порядок букв совпадает с OpenWorld.ZONES; расхождение поймает стенд).
+const OW_ZONES := ["snow", "desert", "steppe", "forest", "castle", "dungeon"]

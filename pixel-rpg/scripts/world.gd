@@ -592,6 +592,15 @@ func _spawn_entities() -> void:
 		var chest = it_script.new()
 		village_zone.add_child(chest)
 		chest.setup(self, "chest", Vector2i(int(e[0]), int(e[1])), "village")  # D4: uid зоны
+	# t18 (25.11, DESIGN_DEPTH_V2 §3): доска объявлений старейшины — в двух
+	# шагах восточнее самого старейшины (10,8), на проходимом 'g' (12,8).
+	# map_village.json байт-пиннован (t65), поэтому пин — фиксированным тайлом
+	# в коде, тот же прецедент, что smith (26,13)/ута (21,14)/геральд (43,20).
+	# Доска НЕ npc: npc.gd грузит растровый npc_<id>.png (арт-закон «ноль
+	# растров» её запрещает) — интерактив kind "board" с код-графикой.
+	var board = it_script.new()
+	village_zone.add_child(board)
+	board.setup(self, "board", Vector2i(12, 8), "village")
 	var slime_script := load("res://scripts/slime.gd")
 	for e: Array in meta.get("slimes", []):
 		var slime = slime_script.new()

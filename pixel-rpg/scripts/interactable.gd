@@ -1,5 +1,6 @@
 extends Area2D
-## Интерактивный объект: трава или сундук.
+## Интерактивный объект: трава, сундук или доска объявлений (t18, 25.11 —
+## kind "board": код-графика, многоразовая, цепочка поясов в quests_data).
 ## Травы — возобновляемый ресурс (зелья): через ~50 с отрастают на месте.
 
 const HERB_RESPAWN := 50.0
@@ -24,9 +25,16 @@ func setup(p_world: Node2D, p_kind: String, tile: Vector2i, p_area := "") -> voi
 	area = p_area
 	tile_xy = tile
 	position = world.tile_to_world(tile)
-	spr = Sprite2D.new()
-	spr.texture = _atlas(11 if kind == "herb" else 10)
-	add_child(spr)
+	if kind == "board":
+		# t18 (25.11): доска объявлений старейшины — код-графика (ноль растров);
+		# многоразовая: used не ставит, диалог с цепочкой поясов живёт в try.
+		var art := _BoardArt.new()
+		art.position = Vector2(0, -4)
+		add_child(art)
+	else:
+		spr = Sprite2D.new()
+		spr.texture = _atlas(11 if kind == "herb" else 10)
+		add_child(spr)
 	var cs := CollisionShape2D.new()
 	var sh := CircleShape2D.new()
 	sh.radius = 10.0
@@ -68,6 +76,21 @@ func _atlas(tile_index: int) -> AtlasTexture:
 	return at
 
 func get_hint() -> String:
+	if kind == "board":
+		# t18: подсказка доски честная по состоянию цепочки (язык маркеров NPC:
+		# «смотри объявления» = можно взять, «сдай» = цель закрыта).
+		var i := QuestsData.belt_current(GameState)
+		if i >= QuestsData.BELT_CHAIN.size():
+			return "Доска: цепочка закрыта"
+		match QuestsData.belt_status(GameState, i):
+			QuestsData.STATUS_NONE:
+				return "Доска: смотри объявления" \
+						if QuestsData.belt_can_offer(GameState, i) else "Доска: объявление не по пути"
+			QuestsData.STATUS_ACTIVE:
+				return "Доска: сдай" if QuestsData.belt_ready(GameState, i) \
+						else "Доска: работаешь — %s" % QuestsData.belt_progress_line(GameState, i)
+			_:
+				return "Доска"
 	if kind == "herb":
 		# g12 (Г1.2 «Три коренья»): в речи мира это коренья Морги (GLOSSARY #21);
 		# машинное имя kind/счётчика — прежнее ("herb"/herbs), канон полей сейва.
@@ -75,6 +98,9 @@ func get_hint() -> String:
 	return "Открыть сундук" if not used else "Пустой сундук"
 
 func try_interact() -> void:
+	if kind == "board":
+		_interact_board()
+		return
 	if used:
 		return
 	if kind == "herb":
@@ -158,3 +184,52 @@ func _sync_shadow() -> void:
 	var sh := get_node_or_null("AtmoShadow")
 	if sh != null:
 		(sh as CanvasItem).visible = spr != null and spr.visible
+
+# --- t18 «Квесты поясов» (25.11): доска объявлений старейшины ---------------
+
+## Ритуал доски: первое несданное звено цепочки. Взять (если пояс открыт),
+## сдать (если цель закрыта) или честная подсказка, что мешает. Идемпотентность
+## наград — в QuestsData.belt_turnin (флаг 2 до выдачи).
+func _interact_board() -> void:
+	GameAudio.sfx("ui_click")
+	var i := QuestsData.belt_current(GameState)
+	if i >= QuestsData.BELT_CHAIN.size():
+		GameState.toast.emit("На доске — старые адреса. Старейшина больше ни о чём не просит.")
+		return
+	var title := String(QuestsData.belt_link(i).get("title", ""))
+	match QuestsData.belt_status(GameState, i):
+		QuestsData.STATUS_NONE:
+			if QuestsData.belt_can_offer(GameState, i):
+				QuestsData.belt_offer(GameState, i)
+			else:
+				GameState.toast.emit("Объявление «%s» не по пути: сперва доберись до «%s»."
+						% [title, QuestsData.belt_zone_name(GameState, i)])
+		QuestsData.STATUS_ACTIVE:
+			if QuestsData.belt_ready(GameState, i):
+				QuestsData.belt_turnin(GameState, i)
+			else:
+				GameState.toast.emit("«%s» ещё не закрыто: %s."
+						% [title, QuestsData.belt_progress_line(GameState, i)])
+		_:
+			pass
+
+class _BoardArt:
+	extends Node2D
+	## Код-графика доски (арт-закон: ноль растров, как маркер npc.gd и RootBoard):
+	# ножки, доска-планка, два листа, амбер-кант = на доске есть дело (взять/сдать).
+	func _ready() -> void:
+		GameState.quest_changed.connect(queue_redraw)
+	func _draw() -> void:
+		var wood := Color(0.47, 0.34, 0.22)
+		var dark := Color(0.20, 0.14, 0.09)
+		draw_rect(Rect2(-6, -2, 2, 9), dark)              # ножки
+		draw_rect(Rect2(4, -2, 2, 9), dark)
+		draw_rect(Rect2(-9, -11, 18, 10), wood)           # планка
+		draw_rect(Rect2(-9, -11, 18, 10), dark, false, 1.0)
+		draw_rect(Rect2(-7, -9, 7, 6), Color(0.93, 0.90, 0.80))   # листы
+		draw_rect(Rect2(1, -8, 6, 6), Color(0.87, 0.84, 0.73))
+		var i := QuestsData.belt_current(GameState)
+		if i < QuestsData.BELT_CHAIN.size() and (QuestsData.belt_can_offer(GameState, i)
+				or QuestsData.belt_ready(GameState, i)):
+			draw_rect(Rect2(-5, -10, 2, 2), Color(1.0, 0.7, 0.26))  # амбер = есть дело
+			draw_rect(Rect2(2, -9, 2, 2), Color(1.0, 0.7, 0.26))
