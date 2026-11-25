@@ -401,7 +401,13 @@ func facing_offset() -> Vector2:
 ## Урон по конкретному врагу с учётом «Метки охотника» и благословения волхвы
 ## (t20 P0-3: +2% за смерть круга, кап +20% — GameState.volkhv_bless_mult;
 ## единая точка умножения урона героя: все атаки/скиллы идут через dmg_vs).
+## t17 крит-аффикс «Верная щель»: срабатывание ×2 помечается в last_dmg_crit —
+## t23 читает это для волны тяжёлого удара (лист W5B: «двойной крит»). Флаг
+## чистится на каждом входе, вне аффикса никогда не ставится.
+static var last_dmg_crit := false
+
 func dmg_vs(e: Node, mult: float) -> int:
+	last_dmg_crit = false
 	var d := float(GameState.damage) * mult * GameState.volkhv_bless_mult()
 	if e == mark_target and mark_t > 0.0:
 		d *= 1.5
@@ -412,6 +418,7 @@ func dmg_vs(e: Node, mult: float) -> int:
 	var crit := GearData.affix_sum(GameState, "lethal")
 	if crit > 0.0 and randf() < crit:
 		d *= 2.0
+		last_dmg_crit = true
 	return int(round(d))
 
 # --- атаки ---
@@ -498,16 +505,31 @@ func _spin_fx() -> void:
 	t.tween_callback(func(): anim.rotation = 0.0)
 
 ## Мгновенный мили-удар: враги в радиусе точки удара (12 px по facing).
+## t23 «VFX смело» (лист W5B): попадание кормит комбо-серию; крит ×2 — волна
+## тяжёлого удара; добивание (смерть от этого удара) — замедление-кадр+флеш;
+## пустой замах — свист-дуга (ПРОМАХ ВИДЕН) и сброс серии.
 func melee_hit(mult: float, center := Vector2.INF, radius := 13.0, only: Node2D = null) -> void:
 	var c := center if center != Vector2.INF else global_position + facing_offset()
 	Fx.hit(c, world)
+	var hits := 0
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if not is_instance_valid(e) or not e.has_method("hurt"):
 			continue
 		if only != null and e != only:
 			continue
 		if e.global_position.distance_to(c) <= radius + _enemy_size(e) * 0.5:
+			var pre_dying := bool(e.get("dying"))
 			e.hurt(dmg_vs(e, mult), global_position)
+			hits += 1
+			var crit_hit := last_dmg_crit
+			BoldFx.note_hit(e.global_position + Vector2(0, -12), world)
+			if crit_hit:
+				BoldFx.wave(e.global_position)
+			if not pre_dying and bool(e.get("dying")):
+				BoldFx.finisher(e.global_position)
+	if hits == 0:
+		BoldFx.note_whiff()
+		BoldFx.swish(c, facing_dir().angle())
 
 static func _enemy_size(e: Node) -> float:
 	return 18.0 if e.is_in_group("boss") else 10.0
@@ -944,6 +966,12 @@ func take_damage(n: int, src := "") -> void:
 	GameState.hurt(n)
 	DmgNumbers.spawn(global_position + Vector2(0, -12), maxi(0, _hp0 - GameState.hp), "normal")  # t51: было −12
 	Fx.hit(global_position + Vector2(0, -6), world)
+	# t23 «VFX смело» (лист W5B): рамка-виньетка получения (CanvasLayer ColorRect,
+	# читаемо не слепит; t18-импульс hud под ней живёт как сегодня). Таран/слэм
+	# вепря — тяжёлый удар по таблице листа: волна BONE в точку удара.
+	BoldFx.vignette()
+	if src == "brute":
+		BoldFx.wave(global_position + Vector2(0, -6))
 	Sfx.play("hurt")  # t31:глухой тёплый «в тело» (процедурный каталог)
 	# t18 «сочность»: hitstop + тряска; фатальный удар — тяжелее. Восстановление
 	# time_scale гарантировано realtime-watchdog'ом juice.gd (смерть/диалог не залипают).

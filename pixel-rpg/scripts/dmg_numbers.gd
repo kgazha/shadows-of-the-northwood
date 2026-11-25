@@ -30,6 +30,18 @@ const COLORS := {
 # лечение 9, «броня» 7 (минимальная читаемая ступень; мирная подсказка world.gd — 8).
 const FONT_SIZES := {"crit": 11, "normal": 9, "heal": 9, "block": 7}
 
+# t23 «VFX смело» (лист W5B §4 «комбо: 2-й Label в пуле DmgNumbers»): метка
+# серии «xN» — тот же пул Label, цвет HUD_GOLD_LIGHT из палитры, ритм 3x50 мс.
+const COMBO_COLOR := Color("ffd873")
+const COMBO_SIZE := 11
+const COMBO_STEP := 0.05
+
+static func combo(pos: Vector2, n: int) -> void:
+	var host := _host()
+	if host == null:
+		return
+	host._show_text(pos, "x%d" % n, COMBO_COLOR, COMBO_SIZE)
+
 static var _inst: DmgNumbers = null
 
 ## Точка входа. pos — мировые координаты (Vector2.INF — над героем).
@@ -94,6 +106,38 @@ func _show(pos: Vector2, amount: int, kind: String) -> void:
 	tw.tween_property(lbl, "global_position", start + Vector2(0, -RISE), RISE_TIME)\
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(lbl, "modulate:a", 0.0, RISE_TIME * 0.45).set_delay(RISE_TIME * 0.55)
+	tw.chain().tween_callback(_retire.bind(lbl))
+	_active.append({"lbl": lbl, "tw": tw})
+
+## t23: текстовая метка особого рода (комбо «xN») — тот же пул, ритм 3x50 мс:
+## pop, всплытие, погасание. Переполнение пула гасит старейшее (как у чисел).
+func _show_text(pos: Vector2, txt: String, col: Color, fs: int) -> void:
+	if pos == Vector2.INF:
+		pos = _player_pos()
+	if pos == Vector2.INF:
+		return
+	if _active.size() >= MAX_ACTIVE:
+		var old: Dictionary = _active[0]
+		old["tw"].kill()
+		_retire(old["lbl"])
+	var lbl := _acquire()
+	lbl.text = txt
+	lbl.add_theme_font_size_override("font_size", fs)
+	lbl.add_theme_color_override("font_color", col)
+	lbl.modulate = Color.WHITE
+	lbl.reset_size()
+	var start := pos - lbl.size * 0.5 + Vector2(10, -6)  # чуть в стороне от чисел урона
+	lbl.global_position = start
+	lbl.pivot_offset = lbl.size * 0.5
+	lbl.scale = Vector2.ONE * POP_FROM
+	lbl.visible = true
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(lbl, "scale", Vector2.ONE, COMBO_STEP)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(lbl, "global_position", start + Vector2(0, -8.0), COMBO_STEP * 2)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(lbl, "modulate:a", 0.0, COMBO_STEP).set_delay(COMBO_STEP * 2)
 	tw.chain().tween_callback(_retire.bind(lbl))
 	_active.append({"lbl": lbl, "tw": tw})
 

@@ -35,8 +35,15 @@ const DIP := 0.15             # time_scale во время hitstop (эффект
 const STOP_FRAMES := 2        # длительность dip в ФИЗИЧЕСКИХ КАДРАХ (контракт 2–4)
 const FAILSAFE_MS := 150      # жёсткий реальный край dip (страховка: физика встала)
 const THROTTLE_MS := 100      # не чаще одного hitstop на комбо-шквал
+# t23 «VFX смело» (лист W5B, добивание): замедление-кадр ~60 мс игрового
+# времени тем же механизмом — кадровый dip (предсказуем и в headless, как
+# hit-stop: стоимость FINISH_TICKS*(1-FINISH_DIP) = 2.6 кадра). Все гарантии
+# восстановления времени общие; вне тумблера «Смелые эффекты» не вызывается.
+const FINISH_DIP := 0.35
+const FINISH_TICKS := 4
 
 static var _host: Node = null
+var _last_fin_ms := -100000
 
 static func host() -> Node:
 	if _host != null and is_instance_valid(_host):
@@ -59,6 +66,12 @@ static func hit() -> void:
 	var h := host()
 	if h != null:
 		(h as Juice)._hit()
+
+## t23 «добивание» (лист W5B): короткий кадровый dip — замедление-кадр.
+static func finisher_pulse() -> void:
+	var h := host()
+	if h != null:
+		(h as Juice)._finisher()
 
 ## Тряска «мазок кисти»: amp — амплитуда в px, dur_s — длительность в секундах.
 static func shake(amp: float, dur_s: float) -> void:
@@ -135,6 +148,23 @@ func _hit() -> void:
 	_dip_active = true
 	_dip_left = STOP_FRAMES
 	_dip_deadline = now + FAILSAFE_MS
+
+func _finisher() -> void:
+	# t23 «добивание»: тот же кадровый dip, но глубже и чуть длиннее hit-stop.
+	if GameState.input_locked:
+		return
+	if not is_inside_tree():
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_fin_ms < 240:
+		return                               # AoE-добивания: пульсы не наслаиваем
+	_last_fin_ms = now
+	if Engine.time_scale > FINISH_DIP:
+		Engine.time_scale = FINISH_DIP       # только опускаем
+	_dip_active = true
+	# если hit-stop уже активен — продлеваем, не укорачиваем и не воюем
+	_dip_left = maxi(_dip_left, FINISH_TICKS)
+	_dip_deadline = maxi(_dip_deadline, now + FAILSAFE_MS)
 
 func _shake(amp: float, dur_s: float) -> void:
 	var now := Time.get_ticks_msec()

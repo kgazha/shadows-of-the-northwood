@@ -98,6 +98,8 @@ var cm_row: HBoxContainer      # строка тумблера ПКМ-хода; 
 var cm_btn: Button
 var _cm_api                    # ClickMove: автозагрузка-узел либо GDScript со статиками
 var mm_row: HBoxContainer      # строка тумблера миникарты; нет Minimap -> скрыта
+var bf_row: HBoxContainer      # t23: строка «Смелые эффекты» (ядро, виден всегда)
+var bf_btn: Button
 var mm_btn: Button
 var _mm_api                    # Minimap: GDScript со статиками (паттерн _cm_api)
 var sv_export: LineEdit        # «Сейв»: readonly-строка экспорта (выделение+копия)
@@ -129,6 +131,7 @@ func open() -> void:
 	_sync_audio()
 	_refresh_click_move()        # фича могла «прилететь» между открытиями — перепроверка
 	_refresh_minimap()           # фича могла «прилететь» между открытиями — перепроверка
+	_refresh_bold_fx()           # t23: тумблер ядра — синхронизация с сейвом/флагом
 	# t29 B-07 (реестр t28): open/close теперь АТОМАРНЫ по владению — lock ставится
 	# ДО показа панели и с пометкой «он наш», close() снимает ровно свой lock.
 	# Двойное Esc в один кадр (открыться-и-закрыться) не может оставить висячий
@@ -364,6 +367,20 @@ func _build() -> void:
 	mm_row.add_child(mm_btn)
 	mm_row.visible = false
 	vb.add_child(mm_row)
+
+	# t23 «VFX смело» (лист W5B, вердикт 25.11): «Смелые эффекты» — тумблер
+	# ядра (не опциональной фичи), потому виден всегда. Дефолт ВКЛ.
+	bf_row = HBoxContainer.new()
+	bf_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bf_btn = Button.new()
+	bf_btn.toggle_mode = true
+	bf_btn.focus_mode = Control.FOCUS_NONE
+	bf_btn.add_theme_font_size_override("font_size", 8)
+	bf_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	bf_btn.tooltip_text = "Волна удара, брызги, рамка-виньетка, добивание, след стрелы, свист промаха, тень-лужа смерти. Выкл — только прежние эффекты."
+	bf_btn.toggled.connect(_on_bf_toggled)
+	bf_row.add_child(bf_btn)
+	vb.add_child(bf_row)
 
 	# --- «Управление»: двухколоночная шпаргалка (действие | клавиша) ---
 	# Не в общий список, а в ПРАВУЮ колонку (перестановка в конце _build):
@@ -693,6 +710,20 @@ func _on_mm_toggled(on: bool) -> void:
 	_mm_refresh_text(on)
 	if _mm_api != null:
 		_mm_api.call("set_on", on)   # персист — ответственность Minimap
+
+# --- t23 «Смелые эффекты»: состояние живёт в GameState.bold_fx (сейв аддитивен) ---
+
+func _refresh_bold_fx() -> void:
+	bf_btn.set_pressed_no_signal(GameState.bold_fx)
+	_bf_refresh_text(GameState.bold_fx)
+
+func _bf_refresh_text(on: bool) -> void:
+	bf_btn.text = "Смелые эффекты — %s" % ("вкл" if on else "выкл")
+
+func _on_bf_toggled(on: bool) -> void:
+	GameAudio.sfx("ui_click")
+	_bf_refresh_text(on)
+	GameState.bold_fx = on
 
 # --- «Сейв»: экспорт/импорт строкового бэкапа (вся логика — в SaveVault) ---
 

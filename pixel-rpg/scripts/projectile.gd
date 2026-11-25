@@ -13,6 +13,7 @@ var aoe := 0.0
 var life := 1.6
 var caster: Node2D          # герой: для «Поглощения» (лечение при попадании)
 var _hits := {}             # instance_id уже задетых (pierce не бьёт дважды)
+var sp_idx := 0             # t23: индекс спрайта для VFX-веток (след/сгусток)
 
 func setup(from: Vector2, dir: Vector2, p_speed: float, p_dmg: int, sprite_idx: int,
 		p_pierce := false, p_aoe := 0.0, p_caster: Node2D = null) -> void:
@@ -20,6 +21,7 @@ func setup(from: Vector2, dir: Vector2, p_speed: float, p_dmg: int, sprite_idx: 
 	dirv = dir.normalized() if dir != Vector2.ZERO else Vector2.RIGHT
 	speed = p_speed
 	dmg = maxi(1, p_dmg)
+	sp_idx = clampi(sprite_idx, 0, 3)
 	pierce = p_pierce
 	aoe = p_aoe
 	caster = p_caster
@@ -42,6 +44,13 @@ func setup(from: Vector2, dir: Vector2, p_speed: float, p_dmg: int, sprite_idx: 
 		if sprite_idx == 3:
 			spr.modulate = Color(1, 1, 1, 0.6)  # призрак полупрозрачен
 		add_child(spr)
+		# t23 «VFX смело» (лист W5B): стрела/призрак — хвостовой след 2x45 мс
+		# (второй спрайт поверх атласа снаряда); осколок магии — мерцающий
+		# сгусток (кадры листа sustok0/1, носитель «кадр болта + Tween»).
+		if sprite_idx == 0 or sprite_idx == 3:
+			BoldFx.arrow_tail(self)
+		elif sprite_idx == 2:
+			BoldFx.bolt_spr(spr)
 	else:
 		push_warning("Нет ассета: assets/projectiles.png — снаряд без спрайта")
 	body_entered.connect(_on_hit)
@@ -54,6 +63,9 @@ func _physics_process(delta: float) -> void:
 
 func _on_hit(b: Node) -> void:
 	if not b.is_in_group("enemy") or not b.has_method("hurt"):
+		# t23 W5B: стрела в преграде — остаток с дрожащим оперением + пыль.
+		if (sp_idx == 0 or sp_idx == 3) and get_parent() is Node2D:
+			BoldFx.arrow_stub(global_position, rotation, sp_idx, get_parent())
 		queue_free()  # стена/преграда: снаряд гаснет (фикс T9: вешался только return — прошивал насквозь)
 		return
 	var id := b.get_instance_id()
@@ -68,10 +80,21 @@ func _on_hit(b: Node) -> void:
 	else:
 		_hit_one(b)
 	if not pierce:
+		# t23 W5B: остаток стрелы в цели; удар магии — лучи 4+4 + осколки
+		if get_parent() is Node2D:
+			var par: Node2D = get_parent()
+			if sp_idx == 0:
+				BoldFx.arrow_stub(global_position, rotation, sp_idx, par)
+			elif sp_idx == 2:
+				BoldFx.magic_burst(b.global_position, par)
 		queue_free()
 
 func _hit_one(e: Node) -> void:
+	var pre_dying := bool(e.get("dying"))
 	e.hurt(dmg, global_position - dirv * 8.0)
+	# t23 W5B: добивание снарядом — тот же замедление-кадр+флеш, что в мили
+	if not pre_dying and bool(e.get("dying")):
+		BoldFx.finisher(e.global_position)
 	# «Поглощение» мага: попадания снарядов лечат по 1 HP
 	if caster != null and is_instance_valid(caster) and float(caster.get("siphon_t")) > 0.0:
 		GameState.heal(1)

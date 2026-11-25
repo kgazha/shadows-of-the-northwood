@@ -426,6 +426,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
 	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
 	Juice.shake(1.2, 0.12)
+	BoldFx.splat(global_position + Vector2(0, -4), global_position - from, world)  # t23 W5B брызги
 	# §D w3 «Костяная кора»: удар почти не сносит Грому с места (база — 50.0).
 	velocity = (global_position - from).normalized() * (BONEBARK_KNOCK if (affix_mask & AFFIX_BONEBARK) != 0 else 50.0)
 	# §D w1 «Тлеющая плоть»: ударивший в мили-контакт обжигается пеплом.
@@ -435,6 +436,8 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 		world.player.take_damage(SMOLDER_DMG, "brute")  # t20: kind убийцы
 	if hp <= 0:
 		dying = true
+		if not boss:
+			BoldFx.death_shadow(global_position)  # t23 W5B: лужа рядовым/мини-боссам; мирным боссам (Гром/Ведьма) — их штатная смерть
 		remove_from_group("enemy")  # мёртвый моб больше не бьёт и не целивается
 		# t31: элита/босс (Гром, Ведьма) — двойной «проваливающийся» тон,
 		# отпрыски гнили — обычный тон смерти.

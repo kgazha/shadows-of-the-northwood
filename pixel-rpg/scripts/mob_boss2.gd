@@ -88,6 +88,7 @@ func hurt(dmg_in: int, from: Vector2) -> void:
 	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
 	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
 	Juice.shake(1.2, 0.12)
+	BoldFx.splat(global_position + Vector2(0, -4), global_position - from, world)  # t23 W5B брызги
 	velocity = (global_position - from).normalized() * 50.0
 	if not guard_done and hp > 0 and hp * 2 <= hp_full:
 		guard_done = true      # до спавна: даже рекурсивный hurt стражей не повторит

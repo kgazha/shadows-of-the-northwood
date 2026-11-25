@@ -179,12 +179,14 @@ func hurt(dmg: int, from: Vector2) -> void:
 	hurt_t = 0.09  # t18: вспышка цели ≤0.1 с
 	Juice.hit()    # t18 «сочность»: hitstop + мазок (гарантии восстановления — juice.gd)
 	Juice.shake(0.8, 0.09)
+	BoldFx.splat(global_position + Vector2(0, -4), global_position - from, world)  # t23 W5B брызги
 	velocity = (global_position - from).normalized() * 70.0
 	if hp <= 0:
 		_die()
 
 func _die() -> void:
 	dying = true
+	BoldFx.death_shadow(global_position)  # t23 W5B: тень-лужа в палитре поля
 	respawn_t = RESPAWN
 	Sfx.play("mob_die")  # t31: процедурный «оседающий» тон смерти рядовой твари
 	GameState.slime_kills += 1

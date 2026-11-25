@@ -23,6 +23,7 @@ func _ready() -> void:
 	await _t6_inf_path()
 	await _t5_death()
 	await _t7_perf()
+	await _t8_bold_fx()
 	print("QA DN: checks=%d fails=%d" % [checks, fails])
 	print("QA DN: " + ("ALL PASS" if fails == 0 else "FAILS!"))
 	get_tree().quit(0 if fails == 0 else 1)
@@ -276,6 +277,102 @@ func _t7_perf() -> void:
 		await get_tree().physics_frame
 	_check(drained and int(h.active_count()) == 0, \
 		"T7 pool drained after storm: %d" % int(h.active_count()))
+
+# ---------------- T8: t23 «VFX смело» (интеграция листа W5B) ----------------
+# Пины кадров: волна/сгусток/лучи — FNV ЛИСТА PINS_W5B §3 (рантайм рисует те же
+# байты, метод W7.1); tail/arc/тени — рантайм-кадры БЕЗ мокап-подложки листа,
+# датированный self-пин 25.11 (26.11 — только с явной отметкой перепина).
+
+const BFX_FRAMES := {
+	"wave0": "BC8390A7", "wave1": "CC14030C", "wave2": "E53F0812",
+	"bolt0": "930F5AED", "bolt1": "2BE53C8F",
+	"burst0": "948FC516", "burst1": "7B4DCBC2", "burst2": "789D9E1B",
+	"tail0": "B42A6635", "tail1": "AC53E657", "arc0": "F8F5E146",
+	"shad_GRASS0": "D0ACAF06", "shad_GRASS1": "46B7CEBB", "shad_GRASS2": "78684C4C",
+	"shad_PATH0": "4D718B84", "shad_PATH1": "0D29D0DA", "shad_PATH2": "6DE23482",
+	"shad_ASH_GROUND0": "1FB3C3E7", "shad_ASH_GROUND1": "FA02F095", "shad_ASH_GROUND2": "F481D739",
+	"shad_STONE0": "0B630637", "shad_STONE1": "109DC228", "shad_STONE2": "D537ED6B",
+}
+const BFX_TIMINGS := {
+	"T_WAVE_MS": 40, "T_SPLAT_MS": 40, "T_VIGN_MS": 70, "T_COMBO_MS": 50,
+	"T_FINISH_SLOW": 60, "T_FINISH_FLASH": 100, "T_FLY_MS": 45, "T_QUIVER_MS": 60,
+	"T_BOLT_MS": 60, "T_BURST_MS": 40, "T_SWISH_MS": 50, "T_SHAD_MS": 70,
+}
+
+func _t8_bold_fx() -> void:
+	await _settle()
+	BoldFx.reset_state()
+	# T8.1: кадры == пин (лист 1:1 там, где он рисовал эффект, а не мокап)
+	var bad := ""
+	for key: String in BFX_FRAMES:
+		var f := int(key.right(1))
+		var base := key.substr(0, key.length() - 1)
+		var got: String = BoldFx._fnv32_hex(BoldFx.frame(base, f))
+		if got != String(BFX_FRAMES[key]):
+			bad += "%s(%s!=%s) " % [key, got, BFX_FRAMES[key]]
+	_check(bad == "", "T8.1 frame FNV == pin W5B/W7B: %s" % (bad if bad != "" else "all"))
+	# T8.2: тайминги const == литеральная таблица листа (PINS_W5B §1)
+	var cmap: Dictionary = load("res://scripts/bold_fx.gd").get_script_constant_map()
+	var tbad := ""
+	for k: String in BFX_TIMINGS:
+		if int(cmap.get(k, -1)) != int(BFX_TIMINGS[k]):
+			tbad += "%s " % k
+	_check(tbad == "", "T8.2 timing const == sheet: %s" % (tbad if tbad != "" else "all"))
+	_check(GameState.bold_fx == true, "T8.3 toggle default ON (verdict default)")
+	# T8.4: ВКЛ — эффекты заводятся и живут в группе boldfx
+	var n0 := BoldFx.live_count()
+	BoldFx.wave(player.global_position)
+	BoldFx.death_shadow(player.global_position + Vector2(30, 0))
+	BoldFx.swish(player.global_position + Vector2(-30, 0), 0.0)
+	BoldFx.vignette()
+	_check(BoldFx.live_count() >= n0 + 3, "T8.4 ON: wave/shadow/swish alive: %d" % BoldFx.live_count())
+	var vig0 := _root_named("BfxVignette")
+	_check(vig0 == 1, "T8.4 ON: vignette CanvasLayer on root: %d" % vig0)
+	# T8.5: комбо x3 из пула DmgNumbers (носитель листа — Label пула)
+	BoldFx.note_hit(player.global_position)
+	BoldFx.note_hit(player.global_position)
+	BoldFx.note_hit(player.global_position)
+	_check(_texts(_host()).count("x3") == 1, "T8.5 combo x3 label: %s" % str(_texts(_host())))
+	BoldFx.note_whiff()
+	BoldFx.note_hit(player.global_position)
+	_check(not _texts(_host()).has("x2"), "T8.5 whiff resets series (no x2)")
+	await _settle()
+	# T8.6: ВЫКЛ — молчат (ни одной новой ноды), числа/пул живут как сегодня
+	GameState.bold_fx = false
+	BoldFx.reset_state()
+	var m0 := BoldFx.live_count()
+	var h := _host()
+	var a0: int = h.active_count()
+	BoldFx.wave(player.global_position)
+	BoldFx.death_shadow(player.global_position)
+	BoldFx.vignette()
+	BoldFx.swish(player.global_position, 0.0)
+	BoldFx.note_hit(player.global_position)
+	BoldFx.note_hit(player.global_position)
+	BoldFx.note_hit(player.global_position)
+	DmgNumbers.spawn(player.global_position, 4, "normal")
+	_check(BoldFx.live_count() == m0, "T8.6 OFF: bold silent, no nodes: %d" % BoldFx.live_count())
+	_check(not _texts(h).has("x3"), "T8.6 OFF: no combo label")
+	_check(h.active_count() == a0 + 1 and _last_text(h) == "4", "T8.6 OFF: numbers alive as today")
+	_check(_root_named("BfxVignette") == 0, "T8.6 OFF: no vignette layer")
+	GameState.bold_fx = true
+	# T8.7: добивание — dip возвращает время (гарантия juice.gd, кадровый край)
+	Juice.finisher_pulse()
+	var tmax := Engine.time_scale
+	await frames(30)
+	_check(Engine.time_scale == 1.0, "T8.7 finisher dip restored: t0=%f now=%f" % [tmax, Engine.time_scale])
+	# T8.8: дренаж — ни одной boldfx-ноды и служебных слое через 50 кадров
+	await frames(50)
+	_check(BoldFx.live_count() == 0, "T8.8 boldfx drains to 0: %d" % BoldFx.live_count())
+	_check(_root_named("BfxVignette") == 0 and _root_named("BfxFlash") == 0, "T8.8 no leftover layers on root")
+	BoldFx.reset_state()
+
+func _root_named(nm: String) -> int:
+	var n := 0
+	for c: Node in get_tree().root.get_children():
+		if c.name == nm:
+			n += 1
+	return n
 
 # ---------------- helpers ----------------
 
