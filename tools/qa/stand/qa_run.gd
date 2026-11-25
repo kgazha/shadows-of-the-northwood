@@ -29,7 +29,7 @@ func _ready() -> void:
 	# обрывает лишь текущую функцию, и до done() дошёл бы псевдозелёный отсчёт
 	# прошедших R6. Проверяем собственный счётчик — не has_method-гейт, блок
 	# «недосчитан» честно даёт FAIL, до слияния ядра вердикт стенда красный.
-	check("RALL: исполнены все 56 проверок R1–R7 (нет оборванных блоков)", _pass + _fail == 56)
+	check("RALL: исполнены все 57 проверок R1–R7 (нет оборванных блоков)", _pass + _fail == 57)
 	done()
 
 # --- фикстуры ---
@@ -114,6 +114,11 @@ func r3_hero_zeroed() -> void:
 	_gs.start_new_run()
 	check("R3: уровень=1 и опыт=0", GameState.level == 1 and GameState.xp == 0)
 	check("R3: шмот стартовый — оба слота пусты", String(GameState.gear.get("weapon", "?")) == "" and String(GameState.gear.get("armor", "?")) == "")
+	# t9 (25.11, вердикт пользователя 24.11, CONTRACT_RUNLOOP §1.2 с правкой):
+	# смерть ОБНУЛЯЕТ класс — «класс вечен» отменён. Урон при этом численно
+	# остаётся базой воина: class_data("") фолбэкится на воина — ровно состояние
+	# свежей игры ДО выбора класса (тот же инвариант пина ниже).
+	check("R3: класс обнулён вердиктом 24.11 — class_id == \"\" (смерть стирает класс)", String(GameState.class_id) == "")
 	var base_dmg := int(Classes.class_data("warrior").dmg)
 	check("R3: has_sword погашен; урон = база класса %d (меч/таланты вытерты)" % base_dmg, GameState.has_sword == false and GameState.damage == base_dmg)
 	check("R3: золото = 50 x meta.purse(1), не перенос 777", GameState.gold == 50)

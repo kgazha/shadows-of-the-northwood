@@ -30,6 +30,7 @@ var kills_lbl: Label
 var bless_lbl: Label
 var rekindle_btn: Button
 var board_btn: Button
+var class_btn: Button          # t9 С1 (25.11): «Выбрать класс заново» (тот же путь, что «Вспыхнуть»)
 var ui_frame_tex: Texture2D     # 9-slice рамка (assets/ui/panel_frame.png), опц.
 var board: MetaBoard            # «Доска пепла» (дитя панели, layer=7)
 var _holds_lock := false        # input_locked сейчас принадлежит нам, а не кому-то ещё
@@ -150,6 +151,23 @@ func _build() -> void:
 	rekindle_btn.text = "Вспыхнуть заново (Esc)"
 	rekindle_btn.pressed.connect(_rekindle)
 	vb.add_child(rekindle_btn)
+	# t9 БАГ-2 С1 (25.11, вердикт пользователя «после смерти нельзя выбрать класс»):
+	# канон сменился — смерть обнуляет class_id (start_new_run), поэтому «вспыхнуть»
+	# ТЕПЕРЬ и есть путь в штатный выбор героя: мир пересоберётся с модалкой
+	# «Создание героя» (гейт world.gd по class_id == "" -> hud.show_class_modal ->
+	# _pick_class). Кнопка — явный аффорданс того же пути (тот же _rekindle, та же
+	# идемпотентность _finalized): игрок видит, что сменить героя можно, не теряя
+	# вечный слой. Выход через чужие окна (Esc-меню) не открываем — С3 вне вердикта.
+	var class_note := Label.new()
+	class_note.text = "Смерть стирает класс: следующий герой — на твой выбор."
+	class_note.add_theme_font_size_override("font_size", 8)
+	class_note.add_theme_color_override("font_color", Color(0.62, 0.72, 0.85))
+	class_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(class_note)
+	class_btn = Button.new()
+	class_btn.text = "Выбрать класс заново"
+	class_btn.pressed.connect(_rekindle)
+	vb.add_child(class_btn)
 
 ## Тёмная деревянная рамка (тот же ассет и приёмы, что Shop/hud.gd).
 func _ui_frame_style(content: float) -> StyleBoxTexture:

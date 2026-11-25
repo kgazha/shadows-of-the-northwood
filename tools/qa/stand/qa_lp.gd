@@ -3515,6 +3515,46 @@ func _t37() -> void:
 	chk(world.player.global_position == goodp
 			and _c37_toasts.count("Герой вышел к входу") == rescues,
 		"c37: валидная позиция сейва не тронута (pos=%s)" % str(world.player.global_position))
+	# 3a) t9 БАГ-1 (25.11, реестр diag-fx2/two-bugs.md, фикс Р1): резюме сеет
+	# якоря входа ДО раннего return — при валидной позе «в пещере» выход теперь
+	# у арочного «T» (40,17), у Пепелища — у портального «A» (45,20), а не на
+	# спавне у дома старейшины. Контроль «живой заход без сейва» не регрессит:
+	# вход через apply_area(teleport=true) перезаписывает якорь фактической позицией.
+	world.village_return_pos = Vector2.INF  # фикстура: свежесобранный мир, памяти нет
+	world.ashen_return_pos = Vector2.INF
+	var cavepose: Vector2 = world.CAVE_OFFSET + world.dungeon_zone.spawn_world_pos
+	_c37_write_save(true, cavepose.x, cavepose.y)
+	world.do_quickload()
+	chk(world.player.global_position == cavepose and String(world.active_area) == "cave",
+		"t9/bag1: резюме с валидной позой «в пещере» — герой в пещере (ранний return жив)")
+	chk(world.village_return_pos == world.tile_to_world(world.CAVE_ENTRANCE_TILE)
+			and world.ashen_return_pos == world.tile_to_world(world.ASHEN_ENTRANCE_TILE),
+		"t9/bag1: resume посевил якоря входа (40,17)/(45,20), а не оставил INF")
+	world.apply_area("village", true)
+	chk(world.player.global_position == world.tile_to_world(Vector2i(40, 17)),
+		"t9/bag1: выход из пещеры после резюме — ровно у входа (40,17), не у старейшины (pos=%s)" \
+			% str(world.player.global_position))
+	# Пепелище: та же дыра закрыта (prev==ashen -> якорь «A» (45,20))
+	world.village_return_pos = Vector2.INF
+	world.ashen_return_pos = Vector2.INF
+	_c37_write_save(false, goodp.x, goodp.y)
+	world.do_quickload()  # резюме в деревню — тот же посев обоих якорей
+	chk(world.ashen_return_pos == world.tile_to_world(world.ASHEN_ENTRANCE_TILE),
+		"t9/bag1: якорь Пепелища посеян и на деревенском резюме")
+	world.apply_area("ashen", false)  # только флаги/видимость: prev для выхода = ashen
+	world.apply_area("village", true)
+	chk(world.player.global_position == world.tile_to_world(Vector2i(45, 20)),
+		"t9/bag1: выход из Пепелища после посева — у портального камня (45,20) (pos=%s)" \
+			% str(world.player.global_position))
+	# контроль «без сейва» (реестр Ф0-B): живой заход в пещеру возвращает туда,
+	# где встал, а не на арку — якорь входа фактической позицией приоритетен
+	world.player.global_position = world.tile_to_world(world.spawn_tile)
+	world.apply_area("cave", true)
+	world.apply_area("village", true)
+	chk(world.player.global_position == world.tile_to_world(world.spawn_tile)
+			and world.player.global_position != world.tile_to_world(world.CAVE_ENTRANCE_TILE),
+		"t9/bag1: контроль без сейва — возврат к точке фактического входа, не к арке (pos=%s)" \
+			% str(world.player.global_position))
 	# 4) меню «Игра»: узлы, доступность «Загрузить» от сейва, мышь, клавиатура
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
@@ -3695,13 +3735,15 @@ const G12_HINTS := [  # С1-С3 живут в world.gd (FirstHint.show_hint вы
 # изменили; поведение запинено в _t42. Остальные — по-прежнему бит-в-бит.
 const G12_UNTOUCHED := {
 	"res://scripts/settings_menu.gd": "c7b90737cc53c457cf3963b69e5bd742",
-	# t70 (вердикт пользователя 17.11 16:14 «заработанное полностью исчезает»): в
-	# run_summary.gd снята строка «сохранится ~N» — заработанное переживает смерть
-	# полностью, врать про догорание нечем. Файл изменён ЦЕЛЕНАПРАВЛЕННО (формат
-	# ярлыка итогов + датированный комментарий), поведение запинено в qa_mb R1/R4/R6
-	# и qa_lp c37. Ре-пин по прецедентам g13/g14/g15/t50/g19 (базис — md5 файла на
-	# диске стадии, CRLF из git archive; сверено: копия в рабочем дереве == стадия).
-	"res://scripts/run_summary.gd": "cb2ef60241fbdf5739b9afbb3e0d13b5",
+	# t9 (вердикт пользователя 24.11 «после смерти нельзя выбрать класс», 25.11):
+	# в run_summary.gd добавлены строка-подсказка и кнопка «Выбрать класс заново»
+	# (С1 экрана итогов; канон-правка §1.2: смерть обнуляет class_id, путь кнопки =
+	# штатный _rekindle -> модалка «Создание героя»). Файл изменён ЦЕЛЕНАПРАВЛЕННО,
+	# поведение запинено в qa_c1 post-death (инверсия) и qa_run R3. Ре-пин по
+	# прецедентам g13/g14/g15/t50/g19/t70 (базис — md5 файла на диске стадии,
+	# CRLF; сверено: копия в рабочем дереве == стадия). Прежний пин t70:
+	# cb2ef60241fbdf5739b9afbb3e0d13b5.
+	"res://scripts/run_summary.gd": "55d08bf82a85313e1ad89fc80cc8bfab",
 	# g19 (вердикт пользователя 16.11 22:44 «старейшина не должен давать
 	# возможность начинать ng+») ЦЕЛЕНАПРАВЛЕННО изменили npc.gd — снята ветка
 	# elder с предложением круга; поведение запинено инверсией qa_ng2 v2.

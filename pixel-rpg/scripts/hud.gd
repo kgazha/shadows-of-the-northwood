@@ -1015,7 +1015,10 @@ func _build_class_modal(th: Theme) -> void:
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(title)
 	var subtitle := Label.new()
-	subtitle.text = "Выбор класса необратим — герой создаётся один раз"
+	# t9 (25.11, вердикт пользователя): необратима смерть ЗАБЕГА, не класс —
+	# смерть стирает class_id (game_state.start_new_run), выбор возвращается
+	# каждому новому забегу. Прежняя строка «один раз на всегда» врала бы.
+	subtitle.text = "В рамках забега выбор необратим — смерть сотрёт героя, и класс можно будет выбрать заново"
 	subtitle.add_theme_font_size_override("font_size", 8)
 	subtitle.add_theme_color_override("font_color", Color(0.85, 0.75, 0.6))
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1096,7 +1099,7 @@ func _pick_class(id: String) -> void:
 	modal_shown = false
 	GameState.input_locked = false
 	GameAudio.sfx("ui_confirm")  # герой создан: ровно раз за игру (аудио-аудит)
-	GameState.toast.emit("Герой создан: %s. Путь выбран — назад не повернуть!" % String(Classes.CLASSES[id].name))
+	GameState.toast.emit("Герой создан: %s. Путь выбран — до конца этого забега!" % String(Classes.CLASSES[id].name))
 	refresh_skills()
 	if class_chosen_cb.is_valid():
 		class_chosen_cb.call()

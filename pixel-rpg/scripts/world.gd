@@ -1555,6 +1555,19 @@ func do_quickload() -> void:
 ## плюс тост — «запустись и управляй» вместо невидимки в скале (acceptance:
 ## играбельный герой в первые секунды).
 func _place_resumed_player() -> void:
+	# t9 БАГ-1 «выход из пещеры — у дома старейшины» (реестр diag-fx2/two-bugs.md,
+	# фикс Р1, 25.11): память мира (village/ashen_return_pos) живёт одну сборку,
+	# поэтому при любом резюме из сейва/рестарте приложения якорь был INF и выход
+	# из пещеры/Пепелища падал на спавн (8,10) — юзер-фикс 16.11 сеял якорь только
+	# в ветке фолбэка, а массовый случай — резюме с ВАЛИДНОЙ позой (ранний return).
+	# Сеем якоря входа здесь — до раннего return, тем же условием == INF, что и в
+	# фолбэке ниже. Семантика «возврат туда, откуда вошёл» сохраняется: живой вход
+	# в apply_area(teleport=true) перезаписывает якорь фактической позицией.
+	# Геометрия не меняется — ноль перепинов (GOLDEN/MAP_VILLAGE_MD5/PIN_T/seal).
+	if village_return_pos == Vector2.INF:
+		village_return_pos = tile_to_world(CAVE_ENTRANCE_TILE)
+	if ashen_return_pos == Vector2.INF:
+		ashen_return_pos = tile_to_world(ASHEN_ENTRANCE_TILE)
 	var p: Vector2 = GameState.player_pos
 	# t3 «Мир v1»: зона резюме — тем же правилом, что и from_dict (единый
 	# резолвер GameState.resolve_resume_zone): физика при валидной позиции,

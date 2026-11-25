@@ -38,6 +38,7 @@ const ASH := preload("res://scripts/ash.gd")
 const SHOP := preload("res://scripts/shop.gd")
 const MB := preload("res://scripts/meta_board.gd")
 const RS := preload("res://scripts/run_summary.gd")
+const Classes := preload("res://scripts/classes_data.gd")  # t9 (25.11): боёеспособность нового класса после смерти
 
 # ---------------- вечное (переживает reload_current_scene) ----------------------
 static var phase := 0        # 0 — полный плейт; 1 — инварианты после смерти
@@ -1761,10 +1762,31 @@ func phase1_ready() -> void:
 		findings.append({"stage": "post_death", "kind": "crash", "detail": "мир не пересобрался после смерти"})
 		finalize_and_quit()
 		return
+	# t9 БАГ-2 (25.11, ВЕРДИКТ ПОЛЬЗОВАТЕЛЯ 24.11 «после смерти нельзя выбрать
+	# класс»): прежнее «класс вечен (воин)» ЗДЕСЬ ИНВЕРТИРОВАН по смене канона
+	# CONTRACT_RUNLOOP §1.2 — смерть обнуляет class_id, мир пересобирается с
+	# штатной модалкой «Создание героя» (тот же проверенный путь fresh-игры).
+	var ok := true
+	ok = chk("post-death: класс обнулён вердиктом, модалка «Создание героя» показана",
+		String(GameState.class_id) == "" and world.hud != null and world.hud.is_modal_open(),
+		"class=[%s] modal=%s" % [String(GameState.class_id),
+			str(world.hud.is_modal_open() if world.hud != null else false)]) and ok
+	# Честный клик по карточке — тем же стартовым механизмом. Дальнейшие фазы
+	# считают экономику/скиллы ВОИНА, поэтому выбираем заново воина: смена канона
+	# не меняет чисел плейта, меняет лишь путь (модалка теперь обязательна).
+	await pick_warrior()
+	# Урон нового забега — канон gear_data.player_damage на голом герое: база
+	# класса (воин=2) + вечный Амулет Леса (+1); шмот/таланты/заточка/мастерство
+	# вытерты смертью, амулет — единственный легат (qa_run R3 — та же формула
+	# без амулета: dmg == база).
+	var _dmg_want := int(Classes.class_data("warrior").dmg) + (1 if bool(GameState.has_amulet) else 0)
+	ok = chk("post-death:retry->модалка->новый класс в бою работает (воин: ближний бой, урон = база+амулет)",
+		String(GameState.class_id) == "warrior" and world.player != null \
+			and String(world.player.class_data().kind) == "melee" \
+			and int(GameState.damage) == _dmg_want,
+		"class=%s dmg=%d want=%d" % [String(GameState.class_id), int(GameState.damage), _dmg_want]) and ok
 	await close_dialog()
 	var pre: Dictionary = carried
-	var ok := true
-	ok = chk("post-death: мир пересобрался, класс вечен (воин)", String(GameState.class_id) == "warrior", "class=%s" % GameState.class_id) and ok
 	var expected_gold := 50 * int(GameState.flags.get("meta.purse", 0)) + int(GameState.mb_value("first_coal"))
 	ok = chk("смерть=сброс: золото == вечные ранги (%d)" % expected_gold, GameState.gold == expected_gold, "gold=%d" % GameState.gold) and ok
 	ok = chk("смерть=сброс: lvl 1, xp 0, шмот снят, сумка пуста (вечный амулет — единственный легат)",
