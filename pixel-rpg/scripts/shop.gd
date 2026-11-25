@@ -98,6 +98,9 @@ const BTN_PAD_V := 2           # t34 V-06: вертикальный content-от
 
 var scroll: ScrollContainer    # t34 V-06: прокручиваемая витрина (страховка переполнения)
 var list_vb: VBoxContainer     # t34 V-06: единственный ребёнок scroll (секции витрины)
+## t14 (25.11): мировая стойка оружия в витрине (WorldWeapons) + rect-ы по id.
+var rack: HFlowContainer
+var rack_rects := {}
 var close_btn: Button          # t34 V-06: вне скролла => «Закрыть (Esc)» видима всегда
 
 var altar_head: Label          # заголовок секции алтаря с балансом Пепла (§4.2)
@@ -222,6 +225,28 @@ func _build() -> void:
 	list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL  # паттерн journal.gd
 	scroll.add_child(list_vb)
 	list_vb.add_child(_section_label("Витрина:"))
+	# t14 «Оружие v1» (вердикт 25.11 «спрайты внедряй»): мировая стойка над
+	# списком — кодо-бейк WorldWeapons (KORYAGA, лист diag-t10; ряд выбирает
+	# одна константа WorldWeapons.WORLD_ART_KORYAGA). Мышь не ест (IGNORE),
+	# фильтрацию по торговцу/гейту несёт _apply_vendor теми же _sells(), что
+	# и кнопки: стойка и ряды всегда показывают один и тот же сток. Нет
+	# атласа в дереве — молчаливая деградация (ряды живут без картинок).
+	rack = HFlowContainer.new()
+	rack.name = "WeaponRack"
+	rack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	list_vb.add_child(rack)
+	for wid in WorldWeapons.SLOTS:
+		var wtex: AtlasTexture = WorldWeapons.frame_texture(String(wid))
+		if wtex == null:
+			continue
+		var rect := TextureRect.new()
+		rect.name = "Rack_" + String(wid)
+		rect.texture = wtex
+		rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rect.tooltip_text = String(GearData.item(String(wid)).get("name", wid))
+		rack.add_child(rect)
+		rack_rects[String(wid)] = rect
 	for vstock in GearData.VENDOR_STOCK.values():
 		for id in (vstock as Array):
 			# g20b: одна позиция может жить у двух торговцев (кожа — у Гриима и
@@ -382,6 +407,15 @@ func _apply_vendor() -> void:
 	for id in buy_btns:
 		var it := GearData.item(String(id))
 		(buy_btns[id] as Button).visible = _sells(it, String(id))
+	# t14: стойка зеркалит ряды — тот же _sells (и гейт VENDOR_REQ на ней же);
+	# у торговцев без оружия (Ута) стойка целиком скрыта и высоты не даёт.
+	var any_rack := false
+	for rid in rack_rects:
+		var rect: TextureRect = rack_rects[rid]
+		rect.visible = _sells(GearData.item(String(rid)), String(rid))
+		any_rack = any_rack or rect.visible
+	if rack != null:
+		rack.visible = any_rack
 	var forge := _vendor == "smith"
 	craft_head.visible = forge
 	craft_btn.visible = forge

@@ -63,6 +63,7 @@ func _ready() -> void:
 	await _g6_vendors()
 	await _g7_save()
 	await _g8_canon()
+	await _g9_world_art()
 	print("QA GEAR: %d проверок" % (passes + fails))
 	print("QA_GEAR_RESULT %d/%d fails=%s" % [passes, passes + fails, "none" if fails == 0 else "see above"])
 	get_tree().quit(0 if fails == 0 else 1)
@@ -881,3 +882,157 @@ func _g8_canon() -> void:
 	# умирает), но класс почистим — вдруг следующий автосейв дёрнется
 	GameState.class_id = ""
 	GameState.toast.disconnect(_toast_g8)
+
+# ---------------- G9 мировые спрайты оружия (t14 «коряга», вердикт 25.11) ----------------
+# Лист «Оружие v1» (diag-t10/PINS_T10.md) утверждён вердиктом «спрайты внедряй»,
+# мировой вариант — KORYAGA (одна константа WorldWeapons.WORLD_ART_KORYAGA).
+# Цепочка равенств: лист (FNV PINS_T10) == рисовальщик == байты атласа ==
+# стойка в витрине. 47-й стенд не плодим: всё в живом qa_gear.
+
+const WWTool := preload("res://tools_art/weapons_world_v1.gd")
+## Байт-целостность артефакта бейка (tools_art/weapons_world_v1.gd, 25.11):
+const WW_ATLAS_MD5 := "12a1052a2c859abf6c2f8cae788de1d8"
+## FNV-пины листа, секция B (ряд 0 KORYAGA / ряд 1 SILHOUETTE):
+const WW_PIN_KORYAGA := {
+	"staff_apprentice": "AD94FAAE", "staff_oak": "8A2D5D47", "staff_rune": "D92F1020",
+	"bow_hunter": "716A18CF", "bow_heavy": "FA62C3CF",
+	"shield_iron": "2C6EFA7E", "shield_raven": "AE747213",
+}
+const WW_PIN_SIL := {
+	"staff_apprentice": "414EDA4B", "staff_oak": "B7E43346", "staff_rune": "FDC77A90",
+	"bow_hunter": "C5B70EF2", "bow_heavy": "B1B0ED5E",
+	"shield_iron": "C43D6FB6", "shield_raven": "C43D6FB6",
+}
+
+func _md5_res(path: String) -> String:
+	var f := FileAccess.open(ProjectSettings.globalize_path(path), FileAccess.READ)
+	if f == null:
+		return ""
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_MD5)
+	var buf := f.get_buffer(65536)
+	while buf.size() > 0:
+		ctx.update(buf)
+		buf = f.get_buffer(65536)
+	return ctx.finish().hex_encode()
+
+func _lum8(c: Color) -> float:
+	return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b)
+
+func _g9_world_art() -> void:
+	print("== G9: мировые спрайты оружия — коряга (t14, вердикт 25.11) ==")
+	# G9.1 файл: кодо-бейк в дереве, геометрия 2 ряда × 12 слотов 16 px
+	_check(WorldWeapons.available(), "G9: атлас weapons_world_v1.png в дереве (кодо-бейк, ноль растров-импортов)")
+	if not WorldWeapons.available():
+		return
+	var img: Image = load(WorldWeapons.ATLAS_PATH).get_image()
+	_check(img.get_width() == WorldWeapons.SLOT * WorldWeapons.SLOTS.size() and img.get_height() == WorldWeapons.SLOT * 2,
+			"G9: геометрия атласа %dx%d (12 слотов x 2 ряда по 16 px)" % [img.get_width(), img.get_height()])
+	_check(_md5_res(WorldWeapons.ATLAS_PATH) == WW_ATLAS_MD5,
+			"G9: md5 атласа побайтово по пину бейка 25.11")
+	# G9.2 лист == рисовальщик: FNV кадров, посчитанные тем же энкодером, —
+	# дословно PINS_T10 секция B (побитовое равенство утверждённому листу)
+	for id in WW_PIN_KORYAGA:
+		_check(WWTool._fnv32_hex(WWTool._frame(String(id))) == String(WW_PIN_KORYAGA[id]),
+				"G9: KORYAGA %s — FNV побитово листу (PINS_T10)" % id)
+	for id in WW_PIN_SIL:
+		_check(WWTool._fnv32_hex(WWTool._sil(WWTool._frame(String(id)))) == String(WW_PIN_SIL[id]),
+				"G9: SILHOUETTE %s — FNV побитово листу (запасной ряд)" % id)
+	# G9.3 рисовальщик == атлас после декода: все 24 кадра, alpha-маска + RGB
+	var pdiff := 0
+	for i in WorldWeapons.SLOTS.size():
+		for row in 2:
+			var a: Image = WWTool._frame(String(WorldWeapons.SLOTS[i])) if row == 0 \
+					else WWTool._sil(WWTool._frame(String(WorldWeapons.SLOTS[i])))
+			var b: Image = WWTool._frame_of(img, i, row)
+			for y in WorldWeapons.SLOT:
+				for x in WorldWeapons.SLOT:
+					var ca: Color = a.get_pixel(x, y)
+					var cb: Color = b.get_pixel(x, y)
+					if (ca.a > 0.5) != (cb.a > 0.5) \
+							or (ca.a > 0.5 and (ca.to_rgba32() & 0xFFFFFF) != (cb.to_rgba32() & 0xFFFFFF)):
+						pdiff += 1
+	_check(pdiff == 0, "G9: атлас == рисовальщик пиксель-в-пиксель (24 кадра, alpha+RGB): diff=%d" % pdiff)
+	# G9.4 палитра мирового атласа — чистые RAMPS/FLATS (техцветов слота нет)
+	var pidx: Dictionary = PixelPalette.color_index()
+	var off := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var col: Color = img.get_pixel(x, y)
+			if col.a > 0.5 and not pidx.has(PixelPalette.key(col)):
+				off += 1
+	_check(off == 0, "G9: палитра атласа в family (RAMPS/FLATS), off=%d" % off)
+	# G9.5 переключатель вердикта: KORYAGA включена, стойка читет ряд 0
+	_check(WorldWeapons.WORLD_ART_KORYAGA and WorldWeapons.row_index() == 0,
+			"G9: мировой стиль — KORYAGA (вердикт 25.11), переключатель один")
+	var at: AtlasTexture = WorldWeapons.frame_texture("sword")
+	_check(at != null and at.region.position.y == 0.0 and at.region.size == Vector2(16, 16),
+			"G9: кадр витрины берётся из выбранного ряда (16 px, y=0)")
+	# G9.6 живая лавка Гриима: стойка показывает ровно видимое оружейное стекло
+	Shop.open("smith")
+	await _fr(2)
+	var rack: HFlowContainer = shopn.rack
+	_check(rack != null and rack.visible, "G9: у Гриима стойка оружия видна (существующая витрина, без 47-го стенда)")
+	var rack_ids: Array = []
+	for rid in shopn.rack_rects:
+		if (shopn.rack_rects[rid] as TextureRect).visible:
+			rack_ids.append(String(rid))
+	var btn_ids: Array = []
+	for bid in shopn.buy_btns:
+		var bit := GearData.item(String(bid))
+		if String(bit.get("slot", "")) in ["weapon", "shield"] and (shopn.buy_btns[bid] as Button).visible:
+			btn_ids.append(String(bid))
+	rack_ids.sort()
+	btn_ids.sort()
+	_check(rack_ids == btn_ids and rack_ids.size() == 6,
+			"G9: стойка == видимые ряды оружия (6 позиций, зеркало витрины): %s" % str(rack_ids))
+	# G9.7 гейт витрины на стойке: Дран до/после сделки (VENDOR_REQ тот же)
+	Shop.close()
+	GameState.slime_quest = 1
+	Shop.open("merchant")
+	await _fr(2)
+	var nr: TextureRect = shopn.rack_rects.get("nordsword", null)
+	_check(nr != null and not nr.visible, "G9: Дран до сделки — меча северян на стойке нет (гейт общий с рядом)")
+	GameState.slime_quest = 2
+	shopn._apply_vendor()
+	_check(nr.visible, "G9: сделка закрыта — северянин встал на стойку")
+	# G9.8 Ута: оружия нет — стойка целиком скрыта (панель не полнеет)
+	Shop.close()
+	Shop.open("uta")
+	await _fr(2)
+	_check(not shopn.rack.visible, "G9: у Уты стойка скрыта (нечего выкладывать, высоты не даёт)")
+	Shop.close()
+	await _fr(2)
+	# G9.9 мышь: стойка не ест клики (контракт модальности лавки B-02)
+	var mouse_ok := rack.mouse_filter == Control.MOUSE_FILTER_IGNORE
+	for rid in shopn.rack_rects:
+		mouse_ok = mouse_ok and ((shopn.rack_rects[rid] as Control).mouse_filter == Control.MOUSE_FILTER_IGNORE)
+	_check(mouse_ok, "G9: rack и все кадры — MOUSE_FILTER_IGNORE (клики принадлежат рядам)")
+	# G9.10 читаемость на полах биомов (1:1, как секция C листа): пол — не
+	# заливка, а патчворк LIGHT/MID/DARK одного рампа; кадр обязан читаться
+	# (>=10 контрастных по светлоте пикселей) хотя бы на каждом опорном тоне,
+	# считаем по максимуму по патчам семейства — как он реально лежит под ногами.
+	var floor_families: Array = ["GRASS", "PATH", "STONE_WARM", "CRYSTAL", "ASH_GROUND", "CHAR"]
+	var read_ok := true
+	for i in WorldWeapons.SLOTS.size():
+		var fr: Image = WWTool._frame_of(img, i, 0)
+		for fam in floor_families:
+			var best := 0
+			for tone in [PixelPalette.T_LIGHT, PixelPalette.T_MID, PixelPalette.T_DARK]:
+				var fc: Color = PixelPalette.c(String(fam), tone)
+				var n := 0
+				for y in WorldWeapons.SLOT:
+					for x in WorldWeapons.SLOT:
+						var c: Color = fr.get_pixel(x, y)
+						if c.a > 0.5 and absf(_lum8(c) - _lum8(fc)) >= 0.12:
+							n += 1
+				best = maxi(best, n)
+			if best < 10:
+				read_ok = false
+	_check(read_ok, "G9: каждый кадр KORYAGA читаем на полах шести биомов (>=10 контрастных px на лучшем патче)")
+	# G9.11 подсказки стойки — названия предметов (витрина объяснима без кода)
+	var tips_ok := true
+	for rid in shopn.rack_rects:
+		if String((shopn.rack_rects[rid] as TextureRect).tooltip_text) == "":
+			tips_ok = false
+	_check(tips_ok, "G9: у каждого кадра стойки — tooltip с названием предмета")
