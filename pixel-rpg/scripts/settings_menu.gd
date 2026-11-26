@@ -100,6 +100,7 @@ var _cm_api                    # ClickMove: автозагрузка-узел л
 var mm_row: HBoxContainer      # строка тумблера миникарты; нет Minimap -> скрыта
 var bf_row: HBoxContainer      # t23: строка «Смелые эффекты» (ядро, виден всегда)
 var bf_btn: Button
+var i2ev_btn: Button           # t35 I2: «События в пути» (второй в bf_row, мерка c37)
 var mm_btn: Button
 var _mm_api                    # Minimap: GDScript со статиками (паттерн _cm_api)
 var sv_export: LineEdit        # «Сейв»: readonly-строка экспорта (выделение+копия)
@@ -132,6 +133,7 @@ func open() -> void:
 	_refresh_click_move()        # фича могла «прилететь» между открытиями — перепроверка
 	_refresh_minimap()           # фича могла «прилететь» между открытиями — перепроверка
 	_refresh_bold_fx()           # t23: тумблер ядра — синхронизация с сейвом/флагом
+	_refresh_enroute()           # t35 I2: «События в пути» — та же синхронизация
 	# t29 B-07 (реестр t28): open/close теперь АТОМАРНЫ по владению — lock ставится
 	# ДО показа панели и с пометкой «он наш», close() снимает ровно свой lock.
 	# Двойное Esc в один кадр (открыться-и-закрыться) не может оставить висячий
@@ -381,6 +383,20 @@ func _build() -> void:
 	bf_btn.toggled.connect(_on_bf_toggled)
 	bf_row.add_child(bf_btn)
 	vb.add_child(bf_row)
+
+	# I2 «Ритм в пути» (t35, 26.11, волна «Интерес v1»): «События в пути» —
+	# ночные патрули на дорогах локаций и ответка на шум убийств. Дефолт ВКЛ
+	# (вердикт «мир не коридор»); OFF — ни одного события I2, числа целые.
+	# ВТОРЫМ BUTTON'ом в строку bold_fx, а не новой строкой: мерка c37
+	# (панель влезает в 640×360) — продуктовая, высота не растёт.
+	i2ev_btn = Button.new()
+	i2ev_btn.toggle_mode = true
+	i2ev_btn.focus_mode = Control.FOCUS_NONE
+	i2ev_btn.add_theme_font_size_override("font_size", 8)
+	i2ev_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	i2ev_btn.tooltip_text = "Ночные патрули на дорогах и ответка на шум убийств. Выкл — дороги спокойны."
+	i2ev_btn.toggled.connect(_on_i2ev_toggled)
+	bf_row.add_child(i2ev_btn)
 
 	# --- «Управление»: двухколоночная шпаргалка (действие | клавиша) ---
 	# Не в общий список, а в ПРАВУЮ колонку (перестановка в конце _build):
@@ -724,6 +740,20 @@ func _on_bf_toggled(on: bool) -> void:
 	GameAudio.sfx("ui_click")
 	_bf_refresh_text(on)
 	GameState.bold_fx = on
+
+# --- I2 «Ритм в пути»: состояние живёт в GameState.enroute_events (сейв аддитивен) ---
+
+func _refresh_enroute() -> void:
+	i2ev_btn.set_pressed_no_signal(GameState.enroute_events)
+	_i2ev_refresh_text(GameState.enroute_events)
+
+func _i2ev_refresh_text(on: bool) -> void:
+	i2ev_btn.text = "События в пути — %s" % ("вкл" if on else "выкл")
+
+func _on_i2ev_toggled(on: bool) -> void:
+	GameAudio.sfx("ui_click")
+	_i2ev_refresh_text(on)
+	GameState.enroute_events = on
 
 # --- «Сейв»: экспорт/импорт строкового бэкапа (вся логика — в SaveVault) ---
 

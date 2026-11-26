@@ -389,6 +389,60 @@ func _spawn_bestiary() -> void:
 		ELITES.apply(m, "bz%d:%s" % [belt, biome],
 			Vector2i(int((ent as Array)[1]), int((ent as Array)[2])), eidx)
 
+# ============================================================================
+# I2 «Ритм в пути» (t35, 26.11, волна «Интерес v1») — спавнер-хелперы для
+# Enroute: патруль/ответка — обычные мобы на дорогах, вся логика I2 (часы,
+# шум, перестановка home) живёт в scripts/enroute.gd. Здесь — минимальное
+# трио: дорожные клетки, проверка семейства, спавн моба той же канонной
+# поясной разводкой и скинами, что у бестиария.
+
+var _road_cache: Array = []
+var _road_built := false
+
+## Клетки дороги = символ "-" сетки loc_map (столб x=21 + ветка к сундуку +
+## брода-клетки переправы), порядок скана фиксирован — детерминированный
+## маршрут. Наружу отдаём только проходимые (двойная гарантия против
+## встанков у стен, замечание аудитора 26.11).
+func road_cells() -> Array:
+	if _road_built:
+		return _road_cache
+	_road_built = true
+	for y in map_rows.size():
+		var row := String(map_rows[y])
+		for x in row.length():
+			if String(row[x]) == "-" and cell_walkable(Vector2i(x, y)):
+				_road_cache.append(Vector2i(x, y))
+	return _road_cache
+
+func mob_fam_known(fam: String) -> bool:
+	return MOB_SCRIPTS.has(fam)
+
+## Событийный моб: та же поясная разводка/скины, что _spawn_bestiary, но без
+## мета-ординалов (ролл I1 для событий считает вызывающий солью Enroute).
+func spawn_event_mob(fam: String, tile: Vector2i) -> Node2D:
+	if not MOB_SCRIPTS.has(fam) or not cell_walkable(tile):
+		return null
+	var m = load(MOB_SCRIPTS[fam]).new()
+	if fam == "brute":
+		m.boss = false
+		m.tier = OW.brute_tier(belt)
+		m.belt_loot = "brute_t%d@b%d" % [m.tier, belt]
+	else:
+		m.loot_kind = "%s@b%d" % [fam, belt]
+	add_child(m)
+	m.setup(world, tile)
+	var mult := OW.belt_mult(belt)
+	if "hp" in m:
+		m.hp = maxi(1, int(round(int(m.hp) * mult)))
+	if "max_hp" in m:
+		m.max_hp = maxi(1, int(round(int(m.max_hp) * mult)))
+	if "dmg" in m:
+		m.dmg = maxi(1, int(round(int(m.dmg) * mult)))
+	if "dmg_mult" in m:
+		m.dmg_mult = mult
+	OW.apply_biome_skin(m, biome)
+	return m
+
 func _spawn_chest() -> void:
 	if chest_tile.x < 0:
 		return

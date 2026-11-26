@@ -113,6 +113,7 @@ const WORLD_ARCH_TILE := Vector2i(22, 2)
 ## t3: генератор Мира (class_name OpenWorld дублируем preload-ом — устойчиво
 ## к stale global_script_class_cache в headless-прогонах, тот же приём, что DZ).
 const OW := preload("res://scripts/open_world.gd")
+const ENR := preload("res://scripts/enroute.gd")  # I2 «Ритм в пути» (t35, 26.11)
 ## t19 «Глубина v2 §2а» (25.11): микро-подземелья — чистый генератор и
 ## внутренняя сцена. «Этаж» хода — MD.MINI_Y (48000 = 10×YS_CYCLE, новый
 ## верхний ярус над лентой локаций: карта мира и геометрия локаций НЕ
@@ -1377,6 +1378,10 @@ func _process(delta: float) -> void:
 	# живёт (в т.ч. при открытом журнале/магазине — «время экспедиции», не чистое
 	# время ввода); диалог смерти замораживает мир до снимка итогов — счёт честный.
 	GameState.flags["rs.t"] = GameState._num(GameState.flags.get("rs.t", 0), 0) + delta
+	# I2 «Ритм в пути» (t35, 26.11): часы дня идут вместе с миром; тикер I2
+	# (патрули/ответка/смена фаз) — единственный, world тут и есть часы.
+	GameState.day_t += delta
+	ENR.tick(self, delta)
 	var i := near.size() - 1
 	while i >= 0:
 		if not is_instance_valid(near[i]):
@@ -1914,6 +1919,9 @@ func apply_area(area: String, teleport: bool = true) -> void:
 	# t19: ход — та же пещерная тема (подземелье в корнях).
 	GameAudio.music("cave" if to_cave or area == "ashen" or area == "loc_dungeon"
 			or area.begins_with("mini_") else "forest")
+	# I2 «Ритм в пути» (t35, 26.11): заход в сцену — новый лист шума и, если
+	# ночь, ночной патруль на дорогах (только loc-сцены, кроме подземелья).
+	ENR.on_area_enter(self, prev)
 
 func _set_cam_limits(area: String) -> void:
 	if area == "cave" and dungeon_zone != null:
