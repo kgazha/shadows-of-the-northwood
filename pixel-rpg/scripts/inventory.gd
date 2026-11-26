@@ -537,11 +537,30 @@ func _on_bag_pressed(i: int) -> void:
 			GameState.toast.emit(String(gate.get("reason", "Не твоя рука.")))
 			refresh()
 			return
+		# t37 I4 (26.11): дельта силы при экипировке — честное до/после по
+		# канонической формуле (GameState.damage = GearData.player_damage,
+		# т.е. ровно тот урон, который гейт CLASS_WEAPONS и охраняет: рука
+		# пройдена — сравнение по той же ветке). Броня/щит — свой плоский
+		# канал (armor_bonus + «Латаная кромка» аффикса). Текст готовый —
+		# hud.gd красит и гасит, не переформулируя.
+		var dmg_before := int(GameState.damage)
+		var armor_before := GearData.armor_score(GameState, GearData.equipped_id(GameState, slot))
 		GameState.equip_item(slot, id)
 		GameState.stats_changed.emit()  # armor/relic equip_item не эмитит (паттерн Shop)
+		var delta_text := ""
+		match slot:
+			"weapon", "relic":
+				delta_text = GearData.delta_label(int(GameState.damage) - dmg_before, "СИЛЫ")
+			"armor", "shield":
+				delta_text = GearData.delta_label(
+						GearData.armor_score(GameState, id) - armor_before, "БРОНИ")
+		if delta_text != "":
+			GameState.power_delta.emit(delta_text)
 		GameAudio.sfx("belt")
 	refresh()
 
+## t37 I4 (26.11): броневой счёт и кодо-строка дельты переехали в GearData
+## (armor_score / delta_label) — стенд qa_pt меряет их без открытого окна.
 ## Клик по слоту: снять в сумку; пустой слот — только отказ-подсказка.
 func _on_slot_pressed(slot: String) -> void:
 	if _external_lock():

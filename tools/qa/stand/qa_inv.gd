@@ -370,7 +370,7 @@ func _n6_save_v4_migration() -> void:
 			"N6: миграция v3→v4 без потерь: все старые предметы в сетке")
 	_check(GameState.has_key and GameState.has_amulet, "N6: квестовые ключ/амулет целы")
 	var d4 := GameState.to_dict()
-	_check(int(d4.get("v", 0)) == 4, "N6: to_dict пишет v4")
+	_check(int(d4.get("v", 0)) == 5, "N6: to_dict пишет v5 (ре-пин t37, 26.11)")
 	var iv: Variant = d4.get("inv", {})
 	_check(typeof(iv) == TYPE_DICTIONARY and not (iv as Dictionary).is_empty(),
 			"N6: ветки предметов живут в inv (v4)")

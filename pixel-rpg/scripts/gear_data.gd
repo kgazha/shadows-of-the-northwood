@@ -650,3 +650,27 @@ static func weapon_part(gs: Object) -> int:
 		return 0
 	var base := int(Classes.class_data(String(gs.get("class_id"))).get("dmg", 4))
 	return player_damage(base, gs) - player_damage(base, gs, true)
+
+## t37 I4 (26.11): плоский счёт брони предмета — armor_bonus реестра + ступень
+## «Латаная кромка» (hardened 1/2 по качеству-инстансу; значения из той же
+## таблицы, что читает боевая формула). Пустой id — ноль.
+static func armor_score(gs: Object, id: String) -> int:
+	if gs == null or id == "":
+		return 0
+	var it := item(id)
+	var v := int(it.get("armor_bonus", 0))
+	var af: Array = (gs.affixes as Dictionary).get(id, [])
+	if af.has("hardened"):
+		v += int(AFFIX_SRC.AFFIX_VALUES["hardened"][1 if af.size() >= 2 else 0])
+	return v
+
+## t37 I4: кодо-строка дельты для всплывающей строки над хотбаром:
+## «+7 СИЛЫ» / «−2 БРОНИ» /
+## «та же сила» (минус типографский; hud красит по первому символу). Арифметику
+## считает вызывающий честным до/после (GameState.damage / armor_score).
+static func delta_label(d: int, noun: String) -> String:
+	if d > 0:
+		return "+%d %s" % [d, noun]
+	if d < 0:
+		return "−%d %s" % [-d, noun]
+	return "та же сила"

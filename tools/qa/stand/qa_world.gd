@@ -916,9 +916,9 @@ func w8_fog(ow) -> void:
 		var legacy: Dictionary = snap.duplicate(true)
 		legacy.erase("wm_fog")
 		GameState.from_dict(legacy)
-		chk(GameState.wm_fog == null and int(GameState.to_dict().get("v", 0)) == 4 \
+		chk(GameState.wm_fog == null and int(GameState.to_dict().get("v", 0)) == 5 \
 				and String(GameState.to_dict().get("wm_fog", "x")) == "",
-				"W8.8b легаси-сейв без ключа: туман ВЫКЛ (null), v4, ключ круглит пустым")
+				"W8.8b легаси-сейв без ключа: туман ВЫКЛ (null), v5 (ре-пин t37), ключ круглит пустым")
 		GameState.from_dict(snap)
 		chk(GameState.wm_fog.discovered_count() == cnt_saved \
 				and GameState.wm_fog.is_discovered(52, 8) and GameState.wm_fog.is_discovered(47, 56) \

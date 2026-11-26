@@ -97,6 +97,9 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null,
 		# Econ-вилка qa_c1 строит по этому счётчику честную золотую вилку
 		# (обычные x1, элитные x3 + гарантированный предмет) вместо расхождения.
 		GameState.flags["rs.elite." + kind] = GameState._num(GameState.flags.get("rs.elite." + kind, 0), 0) + 1
+		# t37 I4 «подача»: смерть элиты — момент с карточкой (OFF-тумблер —
+		# молчание; x3 серебро и pity-кредит живут при любом тумблере).
+		BoldFx.rare_card("ЭЛИТ", "elite")
 	# NG+ §1.3: золото × ng_gold_mult(волна) — на ИТОГ ролла, формула в game_state.gd
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).
@@ -160,6 +163,16 @@ static func affix_roll(run_seed: int, cell: String, drop_ordinal: int,
 		force_relic: bool = false) -> Array:
 	return AFFIX.affix_roll(run_seed, cell, drop_ordinal, force_relic)
 
+## t37 I4 (26.11): чаша pity полна — следующий ролл снаряжения силится
+## реликтом (расход — на стороне фактической выдачи, см. _give_gear /
+## grant_gear_set). Одна точка чтения порога.
+static func pity_active(gs: Node) -> bool:
+	return int(gs.elite_pity) >= int(gs.PITY_THRESHOLD)
+
+## Реликтовая роль = 2 аффикса (константа канона t17, не магическая цифра
+## этого файла: AFFIX.affix_roll возвращает want=2 при реликтовой корзине).
+const AFFIX_RELIC_N := 2
+
 ## Ключ клетки из мировой точки (TILE 16, канон world.gd).
 static func cell_key(pos: Vector2) -> String:
 	return AFFIX.cell_key(pos)
@@ -185,6 +198,14 @@ static func _give_mat(gs: Node, mid: String, qty: int) -> void:
 ## g20b: редкий дроп снаряжения (5% строка таблицы). Предмет уникален:
 ## повторный дроп той же вещи — бездна молчания (дублей сумка не плодит).
 ## Цветная рамка редкости в мире — короткий glint над точкой смерти.
+## Выдача снаряжения (моб-дроп). Пины t17/t22 не тронуты: без активных
+## pity-кредитов (elite_pity < порога) путь байт-в-байт прежний.
+## t37 I4 (26.11, волна «Интерес v1», тема «награды радуют темпом и подачей»):
+## при elite_pity >= PITY_THRESHOLD ролл аффиксов СИЛИТСЯ реликтовой ролью —
+## и счётчик обнуляется ровно на фактическую выдачу реликта (дубль-дроп
+## уходит в молчание до ролла — кредит цел; естественный реликт 5% кредит не
+## тратит). Подача: карточка BoldFx на каждое редкое качество (тумблер OFF —
+## молчание, числа целы — закон t23).
 static func _give_gear(gs: Node, id: String, world_pos: Vector2 = Vector2.ZERO, world: Node2D = null) -> void:
 	if id == "" or not GearData.has_item(id):
 		push_warning("Loot: неизвестный gear id: %s" % id)
@@ -194,7 +215,10 @@ static func _give_gear(gs: Node, id: String, world_pos: Vector2 = Vector2.ZERO, 
 	# t17 (25.11): ролл аффиксов выпавшей вещи — детерминированно от
 	# (run_seed, клетка, ordinal=размер сумки после покупки). Повторный дроп
 	# сюда не доходит: ensure_gear уникален, аффиксы первого дропа целы.
-	_roll_instance_affixes(gs, id, cell_key(world_pos))
+	var forced := pity_active(gs)
+	_roll_instance_affixes(gs, id, cell_key(world_pos), forced)
+	if forced and (gs.affixes.get(id, []) as Array).size() == AFFIX_RELIC_N:
+		gs.elite_pity = 0    # гарантия израсходована фактической выдачей
 	var it := GearData.item(id)
 	var rn := GearData.rarity_name(id)
 	# тост: качество-инстанс (добротная/реликтовая) важнее статной редкости —
@@ -204,6 +228,12 @@ static func _give_gear(gs: Node, id: String, world_pos: Vector2 = Vector2.ZERO, 
 		rn = qn
 	GameAudio.sfx("potion")
 	gs.toast.emit("Трофей: %s%s!" % [String(it.get("name", id)), (" — " + rn) if rn != "" else ""])
+	# t37 I4 «подача»: редкое качество-инстанс получает момент — карточка-
+	# вспышка существительным (обычный дроп карточки НЕ видит никогда).
+	if qn == String(AFFIX.QUALITY_NAMES[2]):
+		BoldFx.rare_card("РЕЛИКТ", "epic")
+	elif qn == String(AFFIX.QUALITY_NAMES[1]):
+		BoldFx.rare_card("РЕДКОСТЬ", "rare")
 	if world != null and GearData.rarity_color(id) != Color(0, 0, 0, 0):
 		Fx.gear_glint(world_pos, world,
 				GearData.RARITY_COLORS.get(GearData.display_rarity(gs, id), GearData.rarity_color(id)))
@@ -228,15 +258,29 @@ static func _roll_instance_affixes(gs: Node, id: String, cell: String,
 static func grant_gear_set(gs: Node, ids: Array, cell: String = "",
 		force_relic: bool = false) -> void:
 	var got: Array = []
+	# t37 I4: сундучный сет — тоже «следующая награда» для pity-гарантии
+	# (явный force_relic канона t17 поверх: если чаша полна, ролл силится,
+	# кредит гаснет на первом фактическом реликте сета).
+	var pity_forced := not force_relic and cell != "" and pity_active(gs)
+	var relic_granted := false   # карточка — только на ФАКТИЧЕСКИ выданный реликт
 	for gid in ids:
 		var id := String(gid)
 		if gs.ensure_gear(id):
 			if cell != "":
-				_roll_instance_affixes(gs, id, cell, force_relic)
+				_roll_instance_affixes(gs, id, cell, force_relic or pity_forced)
+				if (gs.affixes.get(id, []) as Array).size() == AFFIX_RELIC_N:
+					relic_granted = true
+					if pity_forced:
+						gs.elite_pity = 0
+						pity_forced = false
 			got.append(String(GearData.item(id).get("name", id)))
 	if not got.is_empty():
 		GameAudio.sfx("coin")
 		gs.toast.emit("В сундуке снаряжение: %s!" % ", ".join(PackedStringArray(got)))
+		# t37 I4 «подача»: реликт из сундука — карточка (добротность сета —
+		# штатная редкость, карточку не зовёт: момент только у РЕЛИКТА).
+		if relic_granted:
+			BoldFx.rare_card("РЕЛИКТ", "epic")
 
 ## t18 (25.11, DESIGN_DEPTH_V2 §3): гарантированный реликт — награда финала
 ## звена цепочки пояса. Выбор предмета детерминирован: shash("questrelic:
@@ -269,6 +313,7 @@ static func quest_relic(gs: Node, link_id: String, pool: Array) -> String:
 	GameAudio.sfx("potion")
 	gs.toast.emit("Награда старейшины: %s — реликтовая!"
 			% String(GearData.item(pick).get("name", pick)))
+	BoldFx.rare_card("РЕЛИКТ", "epic")   # t37 I4 «подача»: канон-реликт тоже живёт в моменте
 	return pick
 
 ## Выдача special-предмета: "herb" — трава (Q-зелье), "potion" — заряд

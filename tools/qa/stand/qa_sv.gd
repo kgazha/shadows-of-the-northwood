@@ -116,12 +116,12 @@ func _run_seed_v3() -> void:
 	if typeof(j) != TYPE_DICTIONARY:
 		_check(false, "v3: сохранённый JSON — словарь")
 		return
-	_check(int(j.get("v", 0)) == 4, "v4: файл v == 4")
+	_check(int(j.get("v", 0)) == 5, "v5: файл v == 5 (ре-пин t37, 26.11)")
 	_check(int(j.get("run_seed", -1)) == 987654321, "v3: файл run_seed == 987654321")
 	GameState.run_seed = -1
 	_check(GameState.load_game(), "v3: load_game после сейва с сидом")
 	_check(GameState.run_seed == 987654321, "v3: run_seed раундтрип (reset -1 -> load -> 987654321)")
-	_check(int(GameState.to_dict().get("v", 0)) == 4, "v4: to_dict().v == 4")
+	_check(int(GameState.to_dict().get("v", 0)) == 5, "v5: to_dict().v == 5 (ре-пин t37)")
 
 func _migrate_v2_to_v3() -> void:
 	# Валидный v2-сейв БЕЗ run_seed: load_game рождает сид ровно один раз,
@@ -142,7 +142,7 @@ func _migrate_v2_to_v3() -> void:
 	if typeof(j) != TYPE_DICTIONARY:
 		_check(false, "v2->v3: файл после миграции — словарь")
 		return
-	_check(int(j.get("v", 0)) == 4, "v2->v4: файл стал v == 4")
+	_check(int(j.get("v", 0)) == 5, "v2->v5: файл стал v == 5 (ре-пин t37)")
 	_check(int(j.get("run_seed", -1)) == born, "v2->v3: сид на диске == в памяти")
 	var after := _read("user://save_morkheim.json")
 	_check(GameState.load_game(), "v2->v3: повторный load_game")

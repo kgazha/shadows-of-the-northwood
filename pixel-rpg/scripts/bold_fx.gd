@@ -44,6 +44,81 @@ static var _combo_ms := -100000
 static func enabled() -> bool:
 	return GameState.bold_fx
 
+## t37 I4 «подача» (26.11, волна «Интерес v1»): карточка-вспышка редкого дропа —
+## существительными («РЕЛИКТ»/«ЭЛИТ»/«РЕДКОСТЬ»), как вердикт просил: ни
+## глаголов, ни чисел, ни имени предмета — момент принадлежит существительному.
+## Носитель — та же архитектура, что остальные bold-эффекты: CanvasLayer-хост
+## (слой 8: выше HUD(1)/панелей(5), ниже фейда переходов(10)), кодовый шрифт
+## UIFont, рампа из существующих палитр, твин. Носитель — ОДИН переиспользуемый
+## слой (как host()): на событие ничего не аллоцируется повторно, сток T8.8 не
+## шумит; тумблер OFF — полное молчание (закон t23: украшение гаснет, числа —
+## нет). Повторная карточка в окне 900 мс НЕ плодит стопку: свежая заменяет
+## слово и цвет прежней (двойной вспышки нет).
+const T_CARD_IN_MS := 60
+const T_CARD_HOLD_MS := 320
+const T_CARD_OUT_MS := 220
+const CARD_COOLDOWN_MS := 900   # окно «одна карточка»: как COMBO_WINDOW_MS по духу
+const CARD_RAMP := {"epic": "VIOLET", "elite": "HUD_GOLD", "rare": "CRYSTAL"}
+
+static var _card_layer: CanvasLayer = null
+static var _card_lbl: Label = null
+static var _card_bg: ColorRect = null
+static var _card_ms := -100000
+static var _cards_shown := 0    # пины стендов: сколько карточек ПОКАЗАНО (OFF — ноль)
+
+static func rare_card(word: String, kind: String) -> void:
+	if not enabled():
+		return
+	if word == "" or not CARD_RAMP.has(kind):
+		return
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	var now_ms := Time.get_ticks_msec()
+	if now_ms - _card_ms < CARD_COOLDOWN_MS and _card_lbl != null and is_instance_valid(_card_lbl):
+		# окно занято: только меняем слово/цвет — новая вспышка не стартует
+		_card_lbl.text = word
+		_card_lbl.add_theme_color_override("font_color", _c(CARD_RAMP[kind], 0))
+		_card_ms = now_ms
+		return
+	if _card_layer == null or not is_instance_valid(_card_layer):
+		_card_layer = CanvasLayer.new()
+		_card_layer.layer = 8
+		tree.root.add_child(_card_layer)
+		_card_bg = ColorRect.new()
+		_card_bg.color = Color(0, 0, 0, 0.55)
+		_card_layer.add_child(_card_bg)
+		_card_lbl = Label.new()
+		_card_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_card_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var f := UIFont.get_font()
+		if f != null:
+			_card_lbl.add_theme_font_override("font", f)
+		_card_lbl.add_theme_font_size_override("font_size", 14)
+		_card_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+		_card_lbl.add_theme_constant_override("outline_size", 4)
+		_card_layer.add_child(_card_lbl)
+	var vp := tree.root.get_visible_rect().size
+	_card_bg.size = vp
+	_card_lbl.position = Vector2(0, vp.y * 0.30)
+	_card_lbl.size = Vector2(vp.x, 22)
+	_card_lbl.text = word
+	var ramp: String = CARD_RAMP[kind]
+	_card_lbl.add_theme_color_override("font_color", _c(ramp, 0))
+	_card_ms = now_ms
+	_cards_shown += 1
+	# вспышка: вскок яркости -> держать -> погасить (модуляция цвета, без scale —
+	# пиксельная сетка не дрожит)
+	_card_lbl.modulate.a = 0.0
+	var tw := _card_lbl.create_tween()
+	tw.tween_property(_card_lbl, "modulate:a", 1.0, float(T_CARD_IN_MS) / 1000.0)
+	tw.tween_interval(float(T_CARD_HOLD_MS) / 1000.0)
+	tw.tween_property(_card_lbl, "modulate:a", 0.0, float(T_CARD_OUT_MS) / 1000.0)
+
+## Для стендов: число ПОКАЗАННЫХ карточек (OFF-тумблер никогда не инкрементит).
+static func cards_shown() -> int:
+	return _cards_shown
+
 ## Хост-узел эффектов (ленивый, как DmgNumbers): z=28 — над спрайтами мобов
 ## (0..20) и частицами Fx (20), под числами урона (90).
 static func host() -> BoldFx:

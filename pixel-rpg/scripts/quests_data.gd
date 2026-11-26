@@ -327,6 +327,23 @@ static func entries(gs) -> Array:
 	# же список; journal.gd НЕ тронут (g12-пин), цепочку слияние не касается.
 	for raw_b in BTY.journal_entries(gs):
 		out.append(raw_b)
+	# t37 I4 (26.11): публичный счётчик pity — «радость ожидания» работает только
+	# когда прогресс ВИДЕН. Строка появляется с первым кредитом и гаснет после
+	# выдачи (счётчик обнулён — копить заново). Формулировка — существительное
+	# мира, без обещаний помимо механики.
+	var pity := int(gs.elite_pity)
+	if pity > 0:
+		out.append({
+			"id": "pity",
+			"title": "Реликтовая милость",
+			"desc": "Элиты, охоты и зачистки точат жребий. Когда чаша полна, следующая редкая награда падает реликтом — и чаша пустеет.",
+			"status": STATUS_ACTIVE,
+			"story": false,
+			"targets": [{"label": "До реликта",
+					"cur": mini(pity, int(gs.PITY_THRESHOLD)),
+					"need": int(gs.PITY_THRESHOLD),
+					"done": pity >= int(gs.PITY_THRESHOLD)}],
+		})
 	return out
 
 ## Тик системы (вызывает journal.gd): счётчики материалов + автостарты +
@@ -600,8 +617,14 @@ static func note_belt_chest(gs, zone: String) -> void:
 ## t19 (25.11): «закрыть ход» — мини-босс микро-подземелья убит (хук
 ## MiniBossWatch в mini_zone.gd). Флаг-факт, как счётчики выше: без
 ## quest_changed на смерть (доска/журнал читуют свежим; переходы сейвят сами).
+## t37 I4 (26.11): зачистка микро-подземелья — третий источник pity-кредита
+## (+1; элита +1 в loot.gd, охота +2 в bounties.gd). Флаг-гейт однократный —
+## кредит начисляется ровно раз на биом за круг (повторный удар по флагу
+## молчит, как и сам факт).
 static func note_belt_mini(gs, zone: String) -> void:
 	if OW_ZONES.has(zone):
+		if int(gs.get_flag(BM_PREFIX + zone, 0)) == 0:
+			gs.elite_pity = int(gs.elite_pity) + 1
 		gs.set_flag(BM_PREFIX + zone, 1)
 
 ## Членство в реестре зон (свой const — QuestsData не предлоадит open_world,

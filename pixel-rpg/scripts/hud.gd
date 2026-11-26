@@ -51,6 +51,11 @@ var toast_lbl: Label
 var toast_t := 0.0
 var toast_more: Array[Label] = []   # слайт 1..TOAST_SLOTS-1 (ниже свежего)
 var toast_more_t: Array[float] = [] # таймер каждой строки стопки
+# t37 I4 (26.11): дельта силы над хотбаром (см. _ready) — TTL как у тоста.
+var power_layer: CanvasLayer
+var power_lbl: Label
+var power_t := 0.0
+const POWER_TTL := 1.5
 var panel: PanelContainer
 var portrait: TextureRect
 var dname: Label
@@ -183,6 +188,23 @@ func setup(p_world: Node2D) -> void:
 	toast_lbl.add_theme_constant_override("outline_size", 4)
 	toast_lbl.theme = th
 	add_child(toast_lbl)
+	# t37 I4 (26.11): дельта силы при экипировке — кодо-строка («+7 СИЛЫ» /
+	# «−2 БРОНИ» / «та же сила») над хотбаром. Свой CanvasLayer слой 6: выше
+	# панели инвентаря/лавки (5) — игрок видит момент, не закрывая окно, ниже
+	# фейда переходов (10). Текст диктует источник (inventory.gd), HUD только
+	# красит и гасит по таймеру — переформулировки нет.
+	power_layer = CanvasLayer.new()
+	power_layer.layer = 6
+	add_child(power_layer)
+	power_lbl = Label.new()
+	power_lbl.position = Vector2(0, 360 - 56)
+	power_lbl.size = Vector2(640, 13)
+	power_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	power_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	power_lbl.add_theme_constant_override("outline_size", 4)
+	power_lbl.theme = th
+	power_lbl.visible = false
+	power_layer.add_child(power_lbl)
 	# t29 B-11: нижние слоты стопки тостов — тот же стиль, чуть глуше по яркости,
 	# чтобы иерархия «свежий → старый» читалась глазам.
 	for i in TOAST_SLOTS - 1:
@@ -285,6 +307,8 @@ func setup(p_world: Node2D) -> void:
 	GameState.stats_changed.connect(refresh)
 	GameState.quest_changed.connect(refresh)
 	GameState.toast.connect(show_toast)
+	# t37 I4: дельта силы — сигнальный путь (источник inventory.gd, показ тут).
+	GameState.power_delta.connect(show_power_delta)
 	GameState.leveled_up.connect(_on_leveled_up)
 	refresh()
 	refresh_skills()
@@ -321,6 +345,13 @@ func _process(delta: float) -> void:
 			toast_more_t[i] = maxf(0.0, toast_more_t[i] - delta)
 			if toast_more_t[i] <= 0.0:
 				toast_more[i].text = ""
+	# t37 I4: дельта силы гаснет по своему TTL (тот же счётчик-таймер, что тосты;
+	# на нуле — ни текста, ни видимости: idle-аллокаций нет, закон R8.4).
+	if power_t > 0.0:
+		power_t = maxf(0.0, power_t - delta)
+		if power_t <= 0.0 and power_lbl != null:
+			power_lbl.visible = false
+			power_lbl.text = ""
 	if typing:
 		chars_shown += delta * 45.0
 		if chars_shown >= float(dtext.get_total_character_count()):
@@ -476,6 +507,22 @@ func show_toast(text: String) -> void:
 		if low.contains(m):
 			GameAudio.sfx("ui_deny")
 			break
+
+## t37 I4 (26.11): показ дельты силы над хотбаром (сигнал GameState.power_delta).
+## Палитра мира: рост — HUD_GOLD (тон 0, тот же канон, что числа урона/золота),
+## падение — HP_RED, ноль — приглушённый костяной. Текст дословный.
+func show_power_delta(text: String) -> void:
+	if text == "" or power_lbl == null:
+		return
+	power_lbl.text = text
+	if text.begins_with("+"):
+		power_lbl.add_theme_color_override("font_color", Color("ffd873"))  # HUD_GOLD[0]
+	elif text.begins_with("-") or text.begins_with("−"):
+		power_lbl.add_theme_color_override("font_color", Color("e2604e"))  # HP_RED[0]
+	else:
+		power_lbl.add_theme_color_override("font_color", Color(0.78, 0.74, 0.66))
+	power_lbl.visible = true
+	power_t = POWER_TTL
 
 func show_dialog(arr: Array, cb: Callable) -> void:
 	if arr.is_empty():

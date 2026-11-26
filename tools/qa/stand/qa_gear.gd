@@ -566,7 +566,8 @@ func _g7_save() -> void:
 	GameState.sharpen["nordsword"] = 3
 	_check(GameState.save_game(), "G7: сейв записан")
 	var d := GameState.to_dict()
-	_check(int(d.get("v", 0)) == 4, "G7: версия сейва осталась 4 (аддитивно, без банпа)")
+	# t37 ре-пин 26.11: v 4->5 (pity-гарантия включена — ключ elite_pity каноничен).
+	_check(int(d.get("v", 0)) == 5, "G7: версия сейва 5 (аддитивно, без банпа; ре-пин t37)")
 	var iv: Dictionary = d.get("inv", {})
 	_check(iv.has("bag") and iv.has("sharpen"), "G7: inv.bag и inv.sharpen — в контейнере v4")
 	GameState.owned_gear = []
@@ -1262,8 +1263,9 @@ func _g10_affixes() -> void:
 	GameState.affixes["nordsword"] = ["keen", "gilded"]
 	_check(GameState.save_game(), "G10: сейв записан")
 	var dd: Dictionary = GameState.to_dict()
-	_check(((dd.get("inv", {}) as Dictionary)).has("affixes") and int(dd.get("v", 0)) == 4,
-			"G10: inv.affixes — аддитивный ключ v4-контейнера (версия не тронута)")
+	# t37 ре-пин 26.11: v 4->5; аддитивность ключа inv.affixes не тронута.
+	_check(((dd.get("inv", {}) as Dictionary)).has("affixes") and int(dd.get("v", 0)) == 5,
+			"G10: inv.affixes — аддитивный ключ v5-контейнера (ре-пин t37)")
 	GameState.affixes = {}
 	_check(GameState.load_game() and GameState.affixes.get("nordsword") == ["keen", "gilded"],
 			"G10: roundtrip — аффиксы пережили сейв/загрузку")
