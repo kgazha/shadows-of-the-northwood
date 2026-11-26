@@ -87,6 +87,7 @@ var _spend_known := 0
 var _quests_gold_known := 0
 var _chests_before := 0
 var _rs_before := {}
+var _el_before := {}   # t41 (а, 26.11, artist-cave): снимок rs.elite.* (элитные киллы)
 var _gold_before := 0
 var _mats_before := {}
 var _ash_before := 0
@@ -778,9 +779,21 @@ func rs_counts() -> Dictionary:
 			out[ks.substr(5)] = int(GameState.flags[k])
 	return out
 
+## t41 (а, 26.11, artist-cave): счётчик ЭЛИТНЫХ киллов забега (rs.elite.<kind>,
+## пишет loot.gd в элитной ветке I1). Золотая вилка стадии без него слепнет:
+## элитный килл — серебро x3 точно (BALANCE I1), а не табличные 1x.
+func elite_counts() -> Dictionary:
+	var out := {}
+	for k in GameState.flags:
+		var ks := String(k)
+		if ks.begins_with("rs.elite."):
+			out[ks.substr(9)] = int(GameState.flags[k])
+	return out
+
 func stage_begin() -> void:
 	_gold_before = GameState.gold
 	_rs_before = rs_counts()
+	_el_before = elite_counts()
 	_mats_before = GameState.materials.duplicate()
 	_chests_before = GameState.chests_used.size()
 	_ash_before = ASH.balance()
@@ -791,6 +804,7 @@ func stage_begin() -> void:
 func stage_end(label: String, belt := 0, mat_bonus := {}, chest_gold: Array = [8, 18]) -> Dictionary:
 	var kills := {}
 	var now := rs_counts()
+	var el_now := elite_counts()
 	for k in now:
 		var d: int = int(now[k]) - int(_rs_before.get(k, 0))
 		if d > 0:
@@ -825,6 +839,33 @@ func stage_end(label: String, belt := 0, mat_bonus := {}, chest_gold: Array = [8
 					m_lo[mm] = int(m_lo.get(mm, 0)) + q
 		gold_lo += int(round(lo * mult)) * int(kills[kind])
 		gold_hi += int(round(hi * mult)) * int(kills[kind])
+		# t41 (а, 26.11, artist-cave): ЭЛИТНЫЕ киллы I1 — серебро x3 к роллу
+		# (loot.gd, BALANCE I1) + один гарантированный предмет. Счётчик
+		# rs.elite.<kind> точный, поэтому вилка перестраивается честно: из уже
+		# внесённых x1-долей e_k киллов перекладываются в x3 (умножение ДО
+		# пояса — тот же порядок, что в loot.gd), плюс гарантированный дроп.
+		var e_k: int = clampi(int(el_now.get(kind, 0)) - int(_el_before.get(kind, 0)), 0, int(kills[kind]))
+		if e_k > 0:
+			gold_lo += (int(round(3.0 * lo * mult)) - int(round(lo * mult))) * e_k
+			gold_hi += (int(round(3.0 * hi * mult)) - int(round(hi * mult))) * e_k
+			# двойное округление (x3 в int, затем пояс) съедает +/-1 на килл —
+			# расширяем вилку на рубль с каждого элитного килла
+			gold_lo -= e_k
+			gold_hi += e_k
+			# гарантированный предмет — ПЕРВАЯ item/mat строка реальной таблицы
+			# (игра ищет лут по сырому kind; гирь 231 — только для базы)
+			var rows_real: Array = GD.LOOT.get(String(kind), rows)
+			for r in rows_real:
+				if not (r is Dictionary):
+					continue
+				if r.has("mat"):
+					var em := String((r as Dictionary).get("mat", ""))
+					if m_hi.has(em):
+						m_lo[em] = int(m_lo.get(em, 0)) + e_k
+						m_hi[em] = int(m_hi.get(em, 0)) + e_k
+					break
+				if r.has("item"):
+					break  # трава/зелье — канал вне шестиотслеживаемых матов
 		if kind == "slime" or String(kind).begins_with("brute"):
 			# MAT_DROP_TABLE ["suhotsvet","zhim"] с шансом 25% — не в LOOT-таблице,
 			# учтём отдельной вилкой (находка прогона #1: «жим=1 вне вилки»)

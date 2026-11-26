@@ -82,6 +82,12 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null,
 				_give_item(GameState, String(e.get("item", "")), maxi(1, int(e.get("qty", 1))))
 				break
 		GameState.elite_pity = int(GameState.elite_pity) + 1
+		# t41-хвост (а, 26.11, artist-cave): элитные киллы видимы как статистика
+		# забега — rs.elite.<kind> (тот же life-cycle, что rs.k.*: стирается
+		# _wipe_circle, в экран смерти run_summary НЕ лезет — он сканит "rs.k.").
+		# Econ-вилка qa_c1 строит по этому счётчику честную золотую вилку
+		# (обычные x1, элитные x3 + гарантированный предмет) вместо расхождения.
+		GameState.flags["rs.elite." + kind] = GameState._num(GameState.flags.get("rs.elite." + kind, 0), 0) + 1
 	# NG+ §1.3: золото × ng_gold_mult(волна) — на ИТОГ ролла, формула в game_state.gd
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).

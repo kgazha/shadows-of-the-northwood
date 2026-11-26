@@ -75,11 +75,16 @@ static func apply(mob: Node, salt: String, tile: Vector2i, ordinal: int) -> bool
 ## Украшение: золотое пульсирующее кольцо (смелое — тумблер bold_fx) и кодо-
 ## подпись над головой. Оба — дети моба: живут и умирают вместе с ним, в
 ## save/load не лезут (пересборка перерисует по флагу meta на apply).
-static func _decorate(mob: Node, fam: String) -> void:
-	if not BFX.enabled():
-		return
-	var spr := AnimatedSprite2D.new()
-	spr.name = "EliteAura"
+## t41-хвост (б, 26.11): кадры ауры — ОДИН кэш на класс (static): три
+## ImageTexture строятся при первой элите и переиспользуются всеми (ресурс
+## в рантайме read-only). Прежняя сборка 3×Image на каждого моба осаживала
+## загрузку текстур в ближайший переход (perf-пик 191 мс при медиане 29 мс
+## в qa_c1) — после первой элиты цена украшения нулевая.
+static var _aura_frames: SpriteFrames = null
+
+static func _aura_sprite_frames() -> SpriteFrames:
+	if _aura_frames != null and is_instance_valid(_aura_frames):
+		return _aura_frames
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	frames.add_animation("aura")
@@ -92,7 +97,15 @@ static func _decorate(mob: Node, fam: String) -> void:
 		frames.add_frame("aura", ImageTexture.create_from_image(im))
 	frames.set_animation_speed("aura", 3.0)
 	frames.set_animation_loop("aura", true)
-	spr.sprite_frames = frames
+	_aura_frames = frames
+	return frames
+
+static func _decorate(mob: Node, fam: String) -> void:
+	if not BFX.enabled():
+		return
+	var spr := AnimatedSprite2D.new()
+	spr.name = "EliteAura"
+	spr.sprite_frames = _aura_sprite_frames()
 	spr.z_index = -1          # под спрайтом моба: ободок у ног, не visor-линза
 	spr.offset = Vector2(0, 2)
 	mob.add_child(spr)
