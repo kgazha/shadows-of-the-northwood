@@ -6,6 +6,7 @@ extends RefCounted
 ## «ИНТЕГРАЦИОННЫЕ ЗАПРОСЫ»; файлы движка экономики не меняет.
 
 const OW := preload("res://scripts/open_world.gd")  # t3: GOLD_BELT_STEP — реестр поясов
+const ELIT := preload("res://scripts/elites.gd")    # t34 I1: GOLD_MULT — серебро элит
 
 ## g20b TEST-ONLY: если >= 0, каждый бросок таблицы на смерть моба берётся
 ## отсюда вместо randf() — детерминированная проверка 5%-дропа снаряжения
@@ -18,7 +19,7 @@ static func _roll() -> float:
 ## Смерть моба: kind — строка таблицы GearData.LOOT ("slime"/"brute"/"boss").
 ## world_pos + world (опц.) — точка для искр золота на месте трупа; без world
 ## эффект просто пропускается (headless-QA, бо́сс после queue_free и т. п.).
-static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null) -> void:
+static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null, who: Node = null) -> void:
 	# t3 «Мир v1»: kind мобов локаций несёт ПОЯСНОЙ суффикс "@b<N>" (зоны по
 	# удалению, OPEN_WORLD/BALANCE строка 24): таблица/ачивки/счётчики — базовые
 	# (суффикс снимается), золото итоговое ×(1+GOLD_BELT_STEP·N). Kind без
@@ -61,6 +62,26 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null)
 		elif e.has("gear"):
 			# g20b (вердикт §4): редкий дроп снаряжения (5%) — в сумку GameState
 			_give_gear(GameState, String(e.get("gear", "")), world_pos, world)
+	# I1 «Элиты» (t34, 26.11, волна «Интерес v1»): смерть элитного моба
+	# (meta "elite" ставит Elites.apply у спавнера) — серебро x3 ДО кругового/
+	# поясного/талантного множителе (композиция честная: элита жирнее базы,
+	# надстройки поверх), плюс один ДОПОЛНИТЕЛЬНЫЙ гарантированный дроп (первый
+	# item/mat таблицы — «куш» читается без удачи) и pity-кредит
+	# GameState.elite_pity (счётчик гарантии реликта — читает I4/t37; сброс
+	# _wipe_circle, персист в сейве). Не-элита (who=null или флаг снят) —
+	# поведение байт-в-байт прежнее: ни один прежний вызов не пострадал.
+	if who != null and is_instance_valid(who) and bool(who.get_meta("elite", false)):
+		gold = int(round(gold * ELIT.GOLD_MULT))
+		for e in table:
+			if typeof(e) != TYPE_DICTIONARY:
+				continue
+			if e.has("mat"):
+				_give_mat(GameState, String(e.get("mat", "")), maxi(1, int(e.get("qty", 1))))
+				break
+			if e.has("item"):
+				_give_item(GameState, String(e.get("item", "")), maxi(1, int(e.get("qty", 1))))
+				break
+		GameState.elite_pity = int(GameState.elite_pity) + 1
 	# NG+ §1.3: золото × ng_gold_mult(волна) — на ИТОГ ролла, формула в game_state.gd
 	# (одна точка истины). ПОРЯДОК: до greedy-строки алтаря ниже (§4.2: жадность —
 	# поверх волны). На w0 тождество (×1.0).

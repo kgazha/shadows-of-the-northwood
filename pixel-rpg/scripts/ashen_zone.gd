@@ -32,6 +32,7 @@ extends Node2D
 ## Публичный API: setup(p_world, p_map) -> void; вход/выход: world.enter_ashen()/exit_ashen().
 
 const TILE := 16
+const ELITES := preload("res://scripts/elites.gd")  # I1 (t34, 26.11)
 const TEX_PATH := "res://assets/ashen_tiles.png"
 const CHAR_TO_TILE := {
 	".": 0, ",": 1, "c": 2, "a": 3,   # полы: зола / осыпь / трещины / арена
@@ -252,14 +253,24 @@ func _spawn_entities(meta: Dictionary) -> void:
 	# archers/swarm/boss; dict-схема и procregion не тронуты)
 	var archer_script := load("res://scripts/mob_archer.gd")
 	var mobs: Dictionary = meta.get("mobs", {})
+	# I1 «Элиты» (t34, 26.11, волна «Интерес v1»): мировые мобы Пепелища
+	# катятся тем же shash-каноном, что локации (соль "ashen", ordinal —
+	# порядок мета-таблицы). Мини-босс «Ведьма» вне жребия (персист-вердикт
+	# c21: её смерть — сюжетный флаг, элитизация ломает персист), травы —
+	# не мобы. Детерминизм/пересборка: ролл не в сейве, а в seed+клетке.
+	var ai := -1
 	for a: Array in mobs.get("archers", []):
+		ai += 1
 		if a.size() == 2:
 			var ar = archer_script.new()
 			add_child(ar)
 			ar.setup(world, Vector2i(int(a[0]), int(a[1])))
 			ar.self_modulate = TINT_ARCHER
+			ELITES.apply(ar, "ashen", Vector2i(int(a[0]), int(a[1])), ai)
 	var wraith_script := load("res://scripts/mob_wraith.gd")
+	var wi := -1
 	for wr: Array in mobs.get("wraiths", []):
+		wi += 1
 		if wr.size() == 2:
 			var wt = wraith_script.new()
 			# t28 (26.11, вердикт «Тень-заимка»): ряд Пепелища = ровно 4
@@ -268,16 +279,20 @@ func _spawn_entities(meta: Dictionary) -> void:
 			wt.feel_v1 = true
 			add_child(wt)
 			wt.setup(world, Vector2i(int(wr[0]), int(wr[1])))
+			ELITES.apply(wt, "ashen", Vector2i(int(wr[0]), int(wr[1])), wi)
 	var swarm: Array = mobs.get("swarm", [])
 	if not swarm.is_empty():
 		var rat_script := load("res://scripts/mob_swarmling.gd")
+		var si := -1
 		for s: Array in swarm:
+			si += 1
 			if s.size() == 2:
 				var rt = rat_script.new()
 				rt.swarm_id = "ashen_brood"  # до setup: реестр стаи заводится в setup
 				add_child(rt)
 				rt.setup(world, Vector2i(int(s[0]), int(s[1])))
 				rt.self_modulate = TINT_RAT
+				ELITES.apply(rt, "ashen", Vector2i(int(s[0]), int(s[1])), si)
 	# мини-босс: «Ведьма Пепелища» — живёт до смерти, персист по флагу
 	if str(GameState.flags.get("ashen.boss", "")) != "dead" and boss_tile.x >= 0:
 		var witch = load("res://scripts/mob_boss2.gd").new()

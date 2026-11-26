@@ -13,6 +13,7 @@ extends Node2D
 const TILE := 16
 const OW := preload("res://scripts/open_world.gd")
 const OW_PAL := preload("res://scripts/pixel_palette.gd")
+const ELITES := preload("res://scripts/elites.gd")  # I1 (t34, 26.11)
 const MANIFEST_PATH := "res://assets/world/world_regions.json"
 const FLOOR_TEX := "res://assets/world/world_floor_v1.png"
 const PROP_TEX := "res://assets/world/world_props_v1.png"
@@ -380,6 +381,13 @@ func _spawn_bestiary() -> void:
 		OW.apply_biome_skin(m, biome)
 		if is_species:
 			OW.apply_kind_skin(m, biome, kind)  # t26: лицо вида поверх ремэпа
+		# I1 «Элиты» (t34, 26.11, волна «Интерес v1»): ~12% мировой популяции.
+		# ПОСЛЕ поясных/видовых множителе — элита масштабирует итог; ключ
+		# ролла — клетка спавна + ordinal мета-таблицы, пересборка зоны даёт
+		# ровно тех же элитных (детерминизм пилен в qa_lp T47). Вид-обличье
+		# t26 может быть элитным — «Элитный Снежный шептун» из вердикта.
+		ELITES.apply(m, "bz%d:%s" % [belt, biome],
+			Vector2i(int((ent as Array)[1]), int((ent as Array)[2])), eidx)
 
 func _spawn_chest() -> void:
 	if chest_tile.x < 0:

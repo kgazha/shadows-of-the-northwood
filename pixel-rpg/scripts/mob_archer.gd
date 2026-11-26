@@ -304,7 +304,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Achv.count("kill_archer")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Лесокров-лучник повержен! (+9 опыта)")
-		Loot.on_mob_death(loot_kind if loot_kind != "" else "archer", global_position, world)
+		Loot.on_mob_death(loot_kind if loot_kind != "" else "archer", global_position, world, self)  # t34: who — элита
 		GameState.quest_changed.emit()
 		queue_free()
 

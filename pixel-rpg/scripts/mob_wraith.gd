@@ -375,7 +375,7 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Achv.count("kill_wraith")  # счётчик убийств (achv.gd)
 		GameAudio.sfx("coin")
 		GameState.toast.emit("Тенеплёт рассеян! (+15 опыта)")
-		Loot.on_mob_death(loot_kind if loot_kind != "" else "wraith", global_position, world)
+		Loot.on_mob_death(loot_kind if loot_kind != "" else "wraith", global_position, world, self)  # t34: who — элита
 		GameState.quest_changed.emit()
 		queue_free()
 
