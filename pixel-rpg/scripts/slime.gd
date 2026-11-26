@@ -34,6 +34,10 @@ var anim: AnimatedSprite2D
 var wander_t := 0.0
 var dirv := Vector2.ZERO
 var hurt_t := 0.0
+## t28 «Тень-заимка» (26.11): множитель скорости, когда слизень — хозяин
+## занятого тенеплёта (mob_wraith._feel_apply_buff). 1.0 = никто не занят:
+## velocity бит-в-бит прежние (пины движения целы).
+var feel_spd_mult := 1.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не бьёт, синий тинт.
 var freeze_t := 0.0
 ## Смерть: тайм-аут до возрождения у «дома».
@@ -122,7 +126,7 @@ func _physics_process(delta: float) -> void:
 		# 16.11 юзер-фикс: преследование через «усы» — за стеной моб обходит
 		# камень, а не дрожит у него (mob_avoid.gd; призрак не подключён — его
 		# проход сквозь стены канон).
-		velocity = AVOID.steer(self, dirv * SPEED_CHASE)
+		velocity = AVOID.steer(self, dirv * SPEED_CHASE * feel_spd_mult)
 	else:
 		wander_t -= delta
 		if wander_t <= 0.0:

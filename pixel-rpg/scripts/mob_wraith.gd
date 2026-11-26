@@ -6,9 +6,12 @@ extends CharacterBody2D
 ## Нечестного «неуязвимого тарана» нет: фаза не наносит урона вовсе.
 ## «Вечного призрака» нет: в эфире/фазе тело прозрачно для героя (слой 0,
 ## маска без слоя 1), а ETHEREAL ограничен ETH_MAX_TIME — дальше форс-окно.
-## HP 8, урон 2. Появляется ближе к нише босса пещеры (позиционирует world.gd,
-## интеграционный запрос в отчёте). Лист assets/mobs_wraith.png — 48x64:
-## 3 кадра (парение / взмах / материализация) на 4 ряда (вниз / влево / вправо / вверх).
+## HP 8, урон 2. НИША ПЕЩЕРЫ СНЯТА вердиктом 26.11 (т28, «Тень-заимка»):
+## в пещере и деревне тенеплётов нет и не было с c21 (qa_wr0 ноль-пины);
+## живут Пепелище (ashen_zone, координаты mobs.wraiths, row=4 — часть вердикта)
+## и подземелье (biome_zone/BESTIARY). Лист assets/mobs_wraith.png — 48x64:
+## 3 кадра (парение / взмах / материализация) на 4 ряда (вниз / влево / вправо / вверх);
+## состояния «Тень-заимка» — отдельный носитель assets/mobs_wraith_state_v1.png.
 
 enum { ETHEREAL, PHASING, MATERIALIZING }
 
@@ -28,6 +31,51 @@ const ETH_MAX_TIME := 3.5     # кап «вечного эфира»: прину
 ## t51 (возврат «до Крупного мира»): тенеплёт 16 px 1:1 (коллайдер 10x8,
 ## фазы/скорости — прежние). Якорь ZERO, призрак «парит» там же, где был.
 const VISUAL_SCALE := 1.0
+
+# ---------------------------------------------------------------------------
+# t28 «Ощущение v1» C «Тень-заимка» (26.11, вердикт «принимай пока что слизня
+# и призрака»; лист W5 §4, PINS_W5.md). ОПТ-ИН: feel_v1=true выставляют
+# спавнеры базовых тенеплётов — ashen_zone (Пепелище, row=4) и biome_zone
+# (подземелье). Носители видов t26 ( whisperer/miner) и мини-боссы ездят на
+# ЛЕГАСИ-движке: лицо вида — не смена механики (закон листа). Ядро ETHEREAL/
+# PHASING/MATERIALIZING ниже не тронуто — прежние пины qa_wr/qa_wr0 зелёные.
+# Автомат: CHASE (3.0 c, видим, уязвим, контакт бьёт) -> FLIGHT (1.5 c,
+# ВСЕГДА фаза сквозь стены, кадр possess 4x180мс — окно наказания) ->
+# OCCUPIED (6.0 c в хозяине: кант occupied 2x300мс, хозяин урон x1.5 скорость
+# x1.4, призрак не достать; ХОЗЯИН сквозь стены НЕ ходит) -> урон по хозяину
+# или его смерть = BANISH (3x60мс, тряска banish 1.0px/100мс из таблицы §3) ->
+# STUN 2.0 c (звёзды stun 2x250мс, без фазы, честное анти-окно: бьётся freely
+# — для игрока) -> CHASE. Хозяин: ближайший моб/слизень в G_HOST_R=96, живой,
+# не призрак, не занятый чужим. Фаза — ТОЛЬКО в полёте вселения.
+# ---------------------------------------------------------------------------
+var feel_v1 := false
+enum { F_CHASE, F_FLIGHT, F_OCCUPIED, F_STUN }
+const G_CHASE_S := 3.0      # погоня не дольше; дальше ищет хозяина
+const G_FLIGHT_S := 1.0     # полёт вселения: окно урона, фаза сквозь стены
+                            # ^ правка вердикта 26.11 11:26: 1.5 -> 1.0 (доля уязвимого времени)
+const G_HOLD_S := 3.5       # оккупация: хозяин buff, призрак в нём
+                            # ^ правка вердикта 26.11 11:26: 6.0 -> 3.5 (там же)
+const G_STUN_S := 2.5       # изгнание: отшатнулся, без фазы
+                            # ^ правка вердикта 26.11 11:26: 2.0 -> 2.5 (там же)
+const G_REPOS_S := 2.5      # анти-захватный замок: после изгнания/выкуривания
+                            # не тянется к хозяину — игрок видит открытую фигуру
+const G_TORCH_R := 72.0     # факел в руках героя: радиус выкуривания/устрашения
+const G_SMOKE_S := 0.8      # факел: задержка выкуривания из хозяина
+const FLASH_MAT := 0.15     # золотой блик ВХОДА в уязвимость (правка 11:26, п.3)
+const G_HOST_R := 96.0      # радиус поиска хозяина
+const G_BUFF_DMG := 1.5     # хозяин: урон (round)
+const G_BUFF_SPD := 1.4     # хозяин: скорость (где var speed есть)
+const G_FLIGHT_SPEED := 80.0
+const ALPHA_OCC := 0.18     # в хозяине: призрак — дымка-намёк
+var f_state := F_CHASE
+var f_t := 0.0
+var f_host: Node2D = null
+var f_host_hp := 0
+var f_dir := Vector2.ZERO
+var f_ovl: AnimatedSprite2D = null   # кадры листа C: mobs_wraith_state_v1.png
+var f_lock := 0.0     # анти-захватный замок (правка вердикта 26.11 11:26)
+var f_flash := 0.0    # >0 — золотой блик входа в уязвимость (тот же пункт)
+var f_smoke := 0.0    # отсчёт выкуривания факелом из хозяина
 
 var world: Node2D
 var hp := MAX_HP
@@ -102,12 +150,24 @@ func setup(p_world: Node2D, tile: Vector2i) -> void:
 		ph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(ph)
 	modulate = Color(1, 1, 1, ALPHA_ETH)
+	if feel_v1:
+		feel_start()
 
 func _physics_process(delta: float) -> void:
 	if dying:
 		return
 	hurt_t = maxf(0.0, hurt_t - delta)
 	freeze_t = maxf(0.0, freeze_t - delta)
+	if feel_v1:
+		# t28 «Тень-заимка»: собственный автомат; заморозка — тот же стоп-кадр,
+		# что у легаси (окно урона не отменяется: в OCCUPIED мороз не прячет).
+		if GameState.input_locked or world.player == null or GameState.hp <= 0:
+			velocity = Vector2.ZERO
+			return
+		_tick_feel(0.0 if freeze_t > 0.0 else delta)
+		if hurt_t > 0.0:
+			modulate = Color(1.8, 0.62, 0.55, modulate.a)
+		return
 	if GameState.input_locked or world.player == null or GameState.hp <= 0:
 		velocity = Vector2.ZERO
 		return
@@ -284,7 +344,12 @@ func hurt(dmg: int, from: Vector2) -> void:
 	if dying:
 		return  # труп не получает урон: XP и quest_changed — ровно один раз
 	GameState.entered_combat()  # контакт с врагом — реген паузится
-	if state != MATERIALIZING:
+	if feel_v1 and f_state == F_OCCUPIED:
+		# t28: в хозяине призрак не достать — клинок проходит дымкой.
+		# Изгнание рождает удар ПО ХОЗЯИНУ (poll его hp в _tick_feel).
+		_hurt_flash()
+		return
+	if not feel_v1 and state != MATERIALIZING:
 		# эфир и фаза неуязвимы: клинок проходит сквозь дымку — только вспыхнет
 		_hurt_flash()
 		return
@@ -306,3 +371,355 @@ func hurt(dmg: int, from: Vector2) -> void:
 		Loot.on_mob_death(loot_kind if loot_kind != "" else "wraith", global_position, world)
 		GameState.quest_changed.emit()
 		queue_free()
+
+# ============================================================ t28 «Тень-заимка»
+# Автомат feel_v1 (см. константы выше). Кадры — лист W5 секция C, рантайм-носитель
+# assets/mobs_wraith_state_v1.png (кодо-бейк feel_v1_bake.gd, FNV-равен листу).
+
+func feel_start() -> void:
+	# вызывается спавнером ДО/ПОСЛЕ setup(): состояние стартует с погони.
+	f_state = F_CHASE
+	f_t = G_CHASE_S
+	f_host = null
+	f_lock = 0.0
+	f_flash = 0.0
+	f_smoke = G_SMOKE_S
+	feel_build_state_frames()
+
+static func feel_state_frames(fr: SpriteFrames, tex: Texture2D) -> void:
+	# Единый раскладка-канон носителя (см. feel_v1_bake.gd): ряды 16px-клеток.
+	var defs := {
+		"possess": [[0, 0], [1, 0], [2, 0], [3, 0]],
+		"occupied": [[0, 1], [1, 1]],
+		"banish": [[2, 1], [3, 1], [0, 2]],
+		"stun": [[1, 2], [2, 2]],
+	}
+	var speeds := {"possess": 5.556, "occupied": 3.333, "banish": 16.667, "stun": 4.0}
+	for an: String in defs:
+		fr.add_animation(an)
+		fr.set_animation_loop(an, an != "banish")
+		fr.set_animation_speed(an, float(speeds[an]))
+		for cell: Array in defs[an]:
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = Rect2(int(cell[0]) * 16, int(cell[1]) * 16, 16, 16)
+			fr.add_frame(an, at, 0.0)
+
+func feel_build_state_frames() -> void:
+	if f_ovl != null or not ResourceLoader.exists("res://assets/mobs_wraith_state_v1.png"):
+		return
+	var fr := SpriteFrames.new()
+	fr.remove_animation("default")
+	feel_state_frames(fr, load("res://assets/mobs_wraith_state_v1.png"))
+	f_ovl = AnimatedSprite2D.new()
+	f_ovl.sprite_frames = fr
+	add_child(f_ovl)
+	f_ovl.z_index = 5
+	f_ovl.visible = false
+
+func _feel_hostable(n: Node) -> bool:
+	if n == self or not (n is Node2D):
+		return false
+	if not n.has_method("hurt"):
+		return false
+	var scres: Script = n.get_script()
+	if scres != null and String(scres.resource_path).ends_with("mob_wraith.gd"):
+		return false  # призрак хозяином не бывает (и чужим тенеплётом тоже)
+	var bossv: Variant = n.get("boss")
+	if bossv != null and bool(bossv):
+		return false  # боссы не заимуются: лицо вида/боя не ломаем
+	var hpv: Variant = n.get("hp")
+	if hpv == null or int(hpv) <= 0:
+		return false
+	var dyv: Variant = n.get("dying")
+	if dyv != null and bool(dyv):
+		return false
+	if n.has_meta("feel_prev"):
+		return false  # уже занят чужим призраком
+	return true
+
+func _feel_find_host() -> Node2D:
+	var best: Node2D = null
+	var bd := G_HOST_R
+	for n: Node in get_tree().get_nodes_in_group("enemy"):
+		if not _feel_hostable(n):
+			continue
+		var d: float = global_position.distance_to((n as Node2D).global_position)
+		if d < bd:
+			bd = d
+			best = n as Node2D
+	return best
+
+func _tick_feel(delta: float) -> void:
+	if delta <= 0.0:
+		velocity = Vector2.ZERO  # заморозка: автомат ждёт (окно урона сохраняется)
+		return
+	match f_state:
+		F_CHASE:
+			_feel_chase(delta)
+		F_FLIGHT:
+			_feel_flight(delta)
+		F_OCCUPIED:
+			_feel_occupied(delta)
+		F_STUN:
+			_feel_stun(delta)
+	if f_lock > 0.0:
+		f_lock = maxf(0.0, f_lock - delta)  # тикает всегда: замок считается по часам
+	if f_flash > 0.0:
+		f_flash = maxf(0.0, f_flash - delta)
+	if hurt_t <= 0.0 and f_state != F_OCCUPIED:
+		if f_state == F_FLIGHT:
+			modulate = Color(0.85, 0.7, 1.0, ALPHA_PHASE)
+		elif f_flash > 0.0:
+			modulate = Color(1.0, 0.93, 0.55, 1.0)  # блик ВХОДА в уязвимость (11:26, п.3)
+		else:
+			modulate = Color(1, 1, 1, 1.0)
+
+func _feel_chase(delta: float) -> void:
+	# видимая медленная погоня героя; гость в радиусе хозяев -> выбор цели.
+	collision_layer = 4
+	collision_mask = 2 | 4
+	if anim != null:
+		anim.visible = true
+	f_t -= delta
+	var player: CharacterBody2D = world.player
+	var to_p := player.global_position - global_position
+	if _feel_torch() and to_p.length() <= G_TORCH_R:
+		# правка вердикта 26.11 11:26 (п.2): огонь в руках — призрак боится
+		# пламени: не преследует и не хватает хозяина, стоит открыто у огня.
+		# Факел — существующая система с гейтами (Дран/Гриим, подземелье);
+		# «зажжённый» = факел в руках (единый носитель, new не плодим), не сгорает.
+		f_lock = maxf(f_lock, 0.5)
+		velocity = -to_p.normalized() * SPEED_MAT
+		_face(-to_p)
+		_anim(true)
+		move_and_slide()
+		return
+	# под анти-захватным замком хозяина не ищем (11:26, п.2)
+	var h := _feel_find_host() if f_lock <= 0.0 else null
+	if h != null:
+		_feel_start_flight(h)
+		return
+	if f_t <= 0.0 and global_position.distance_to(home) > 10.0:
+		# «дальше ищет хозяина»: не висит у героя, возвращается к своей нише
+		velocity = (home - global_position).normalized() * SPEED_DRIFT
+	else:
+		velocity = to_p.normalized() * SPEED_MAT if to_p.length() <= LEASH else Vector2.ZERO
+	_face(to_p)
+	_anim(true)
+	move_and_slide()
+	_push_from_hero()
+	if to_p.length() < HIT_DIST:
+		player.take_damage(maxi(1, int(round(2.0 * dmg_mult))), (kill_kind if kill_kind != "" else "wraith"))
+	modulate = Color(1, 1, 1, 1.0)
+
+func _feel_start_flight(h: Node2D) -> void:
+	f_state = F_FLIGHT
+	f_t = G_FLIGHT_S
+	f_host = h
+	f_host_hp = int(h.get("hp"))
+	f_dir = (h.global_position - global_position).normalized()
+	collision_layer = 0
+	collision_mask = 4  # фаза сквозь стены — единственное такое состояние
+	if anim != null:
+		anim.visible = false
+	if f_ovl != null:
+		f_ovl.visible = true
+		f_ovl.play("possess")
+	GameAudio.sfx("roll")
+
+func _feel_flight(delta: float) -> void:
+	f_t -= delta
+	if _feel_torch() and world.player != null \
+			and global_position.distance_to(world.player.global_position) <= G_TORCH_R:
+		# 11:26 (п.2): вселение срывается у огня — приземляется открытой фигурой
+		_feel_end_flight_to_chase()
+		return
+	if f_host == null or not is_instance_valid(f_host) or int(f_host.get("hp")) <= 0 or (f_host.get("dying") != null and bool(f_host.get("dying"))):
+		f_host = null
+		_feel_end_flight_to_chase()
+		return
+	velocity = (f_host.global_position - global_position).normalized() * G_FLIGHT_SPEED
+	move_and_slide()
+	if f_ovl != null and f_ovl.visible:
+		f_ovl.position = f_host.global_position - global_position
+	if f_t <= 0.0:
+		if global_position.distance_to(f_host.global_position) <= 16.0:
+			_feel_occupy()
+		else:
+			_feel_end_flight_to_chase()
+
+func _feel_end_flight_to_chase() -> void:
+	if not _tile_walkable(global_position):
+		global_position = last_safe
+	f_host = null
+	f_state = F_CHASE
+	f_t = G_CHASE_S
+	collision_layer = 4
+	collision_mask = 2 | 4
+	if anim != null:
+		anim.visible = true
+	if f_ovl != null:
+		f_ovl.visible = false
+	dash_cd = 0.8  # сразу не взлетает: герой видит открытую фигуру
+	f_lock = maxf(f_lock, 1.0)  # и секунду не хватает хозяина (11:26, п.2)
+	_feel_mark_materialize()  # 11:26 (п.3): маркер ВХОДА в уязвимость — блик+звук
+
+func _feel_occupy() -> void:
+	f_state = F_OCCUPIED
+	f_t = G_HOLD_S
+	f_host_hp = int(f_host.get("hp"))
+	_feel_apply_buff(true)
+	velocity = Vector2.ZERO
+	collision_layer = 0
+	collision_mask = 2 | 4
+	if anim != null:
+		anim.visible = false
+	modulate = Color(1, 1, 1, ALPHA_OCC)
+	if f_ovl != null:
+		f_ovl.visible = true
+		f_ovl.play("occupied")
+		f_ovl.position = f_host.global_position - global_position
+
+func _feel_occupied(delta: float) -> void:
+	if f_host == null or not is_instance_valid(f_host):
+		f_host = null
+		_feel_enter_stun(Vector2.ZERO)  # хозяин испарился — призрак вылетает ошмётком
+		return
+	global_position = f_host.global_position  # «в хозяине»: тело дышит рядом
+	velocity = Vector2.ZERO
+	# 11:26 (п.1): дымка НЕ статична — мерцание читается как «прячется, не достать»
+	modulate = Color(1, 1, 1, ALPHA_OCC + 0.10 * absf(sin(f_t * 9.0)))
+	if f_ovl != null:
+		f_ovl.position = f_host.global_position - global_position
+	var hp_now := int(f_host.get("hp"))
+	if (f_host.get("dying") != null and bool(f_host.get("dying"))) or hp_now < f_host_hp:
+		feel_banish()  # удар по занятому изгоняет (полл hp — ноль правок в хостах)
+		return
+	f_host_hp = hp_now
+	# 11:26 (п.2): факел выкуривает — у огня призрак принудительно вылетает
+	# из хозяина (короткое окно; тот же канал изгнания, что у удара по хозяину)
+	if _feel_torch() and world.player != null \
+			and world.player.global_position.distance_to(global_position) <= G_TORCH_R:
+		f_smoke -= delta
+		if f_smoke <= 0.0:
+			f_smoke = G_SMOKE_S
+			GameState.toast.emit("Факел выкуривает тень!")
+			feel_banish()
+			return
+	else:
+		f_smoke = G_SMOKE_S
+	f_t -= delta
+	if f_t <= 0.0:
+		_feel_apply_buff(false)
+		# «resurfaces near host» — выныривает у хозяина, без фазы
+		var off := Vector2(0, -12)
+		if not _tile_walkable(f_host.global_position + off):
+			off = Vector2(12, 0)
+		global_position = f_host.global_position + off
+		f_host = null
+		f_state = F_CHASE
+		f_t = G_CHASE_S
+		collision_layer = 4
+		collision_mask = 2 | 4
+		f_lock = G_REPOS_S  # 11:26 (п.2): вынырнул — и стоит открыто, не хватает
+		_feel_mark_materialize()  # 11:26 (п.3): вынырнул = уязвим — блик+звук
+		if anim != null:
+			anim.visible = true
+		if f_ovl != null:
+			f_ovl.visible = false
+		dash_cd = 0.8
+
+func feel_banish() -> void:
+	if f_state != F_OCCUPIED or f_host == null or not is_instance_valid(f_host):
+		return
+	var hpos: Vector2 = f_host.global_position
+	_feel_apply_buff(false)
+	_feel_pop_at(hpos, "banish")  # 3 кадра x 60 мс — вспышка на хозяине
+	Juice.shake(1.0, 0.10)              # строка banish таблицы тряски (лист §3)
+	GameAudio.sfx("roll")
+	var away := (global_position - hpos)
+	_feel_enter_stun(away.normalized() * 70.0 if away != Vector2.ZERO else Vector2(0, -70))
+
+func _feel_enter_stun(kick: Vector2) -> void:
+	f_state = F_STUN
+	f_t = G_STUN_S
+	# 11:26 (п.2): анти-захватный замок переживает оглушение — игрок получает
+	# честное окно: stun 2.5 с + погоня без захвата ~2.5 с
+	f_lock = G_STUN_S + G_REPOS_S
+	f_host = null
+	velocity = kick
+	collision_layer = 4
+	collision_mask = 2 | 4
+	if anim != null:
+		anim.visible = true
+	if f_ovl != null:
+		f_ovl.visible = true
+		f_ovl.play("stun")
+		f_ovl.position = Vector2.ZERO
+	_feel_mark_materialize()  # 11:26 (п.3): изгнание = вход в честное окно — блик+звук
+
+func _feel_stun(delta: float) -> void:
+	f_t -= delta
+	velocity = velocity.move_toward(Vector2.ZERO, 140.0 * delta)
+	_anim(false)
+	move_and_slide()
+	if f_ovl != null:
+		f_ovl.position = Vector2.ZERO
+	if f_t <= 0.0:
+		if f_ovl != null:
+			f_ovl.visible = false
+		f_state = F_CHASE
+		f_t = G_CHASE_S
+		_feel_mark_materialize()  # 11:26 (п.3): из оглушения — тоже вход в окно
+
+func _feel_torch() -> bool:
+	# правка вердикта 26.11 11:26 (п.2): дополнительный способ достать призрака —
+	# факел в руках героя. Факел — существующая система с гейтами (GameState.torches:
+	# покупка у Драна/крафт у Гриима, подземельный кредит); нового состояния
+	# «горение/рука» не заводим: факел при себе = огонь под рукой. Не сгорает.
+	return world != null and world.player != null and int(GameState.torches) > 0
+
+func _feel_mark_materialize() -> void:
+	# пункт 3 той же правки: маркер ВХОДА в уязвимость — золотой блик FLASH_MAT
+	# (modulate, читается в _tick_feel) + существующий звук "spell" (pitch 1.3).
+	# Новых ассетов/систем нет.
+	f_flash = FLASH_MAT
+	GameAudio.sfx("spell", 0.7, 1.3)
+
+func _feel_pop_at(pos: Vector2, an: String) -> void:
+	# одноразовый кадр-вспышка в мировой точке (изгнание вспыхивает на хозяине)
+	if f_ovl == null:
+		return
+	var sp := AnimatedSprite2D.new()
+	sp.sprite_frames = f_ovl.sprite_frames
+	sp.z_index = 6
+	get_parent().add_child(sp)
+	sp.global_position = pos
+	sp.play(an)
+	# самоуборка по последнему кадру: без SceneTreeTimer — он не висит над
+	# уничтоженным миром (урок «Lambda capture was freed» из qa_wr0)
+	sp.animation_finished.connect(func() -> void: sp.queue_free())
+
+func _feel_apply_buff(on: bool) -> void:
+	if f_host == null or not is_instance_valid(f_host):
+		return
+	if on:
+		var prev := {}
+		for v: String in ["speed", "dmg", "dmg_mult", "feel_spd_mult"]:
+			var cur: Variant = f_host.get(v)
+			if cur != null:
+				prev[v] = cur
+				if v == "dmg":
+					f_host.set(v, int(round(int(cur) * G_BUFF_DMG)))
+				elif v == "speed" or v == "feel_spd_mult":
+					f_host.set(v, float(cur) * G_BUFF_SPD)
+				else:
+					f_host.set(v, float(cur) * G_BUFF_DMG)
+		f_host.set_meta("feel_prev", prev)
+	else:
+		if f_host.has_meta("feel_prev"):
+			var prev2: Dictionary = f_host.get_meta("feel_prev")
+			for v: String in prev2:
+				f_host.set(v, prev2[v])
+			f_host.remove_meta("feel_prev")

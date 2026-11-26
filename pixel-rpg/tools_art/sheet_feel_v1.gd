@@ -93,7 +93,7 @@ func _init() -> void:
 		print("SELF-CHECK: PASS")
 		quit(0)
 
-func _c(rn: String, t: int) -> Color:
+static func _c(rn: String, t: int) -> Color:
 	return P.RAMPS[rn][t]
 
 # ============================================================ A1: ИСКРА ПОПАДАНИЯ
@@ -280,7 +280,7 @@ func _dissolve(f: int) -> Image:
 
 ## Новый слизень: низкий широкий купол, глаза-тарелки с белками и зрачками,
 ## улыбка, два рожка-антенны; frame1 — присед-дрожь (ниже на 1, шире на 1).
-func _slime(pal: String, stalk: String, dot: String, frame: int) -> Image:
+static func _slime(pal: String, stalk: String, dot: String, frame: int) -> Image:
 	var im := _im(16, 16)
 	var L := _c(pal, P.T_LIGHT)
 	var M := _c(pal, P.T_MID)
@@ -350,7 +350,7 @@ func _slime(pal: String, stalk: String, dot: String, frame: int) -> Image:
 # ============================================================ C: ПРИЗРАК
 
 ## Мини-хозяин (правая половина клетки): купол 8 px, для клеток призрака.
-func _host_mini(hurt: bool) -> Image:
+static func _host_mini(hurt: bool) -> Image:
 	var im := _im(16, 16)
 	var L := _c("LEAF", P.T_LIGHT)
 	var M := _c("LEAF", P.T_MID)
@@ -375,7 +375,7 @@ func _host_mini(hurt: bool) -> Image:
 
 ## Призрак: капюшон + волнистый подол; вид stretched(сжат к хозяину) /
 ## slumped(ошмёток со звёздами). Глаза CRYSTAL — фирменная «призрачная пара».
-func _ghost(kind: String, f: int) -> Image:
+static func _ghost(kind: String, f: int) -> Image:
 	var im := _im(16, 16)
 	var M := _c("VIOLET", P.T_MID)
 	var D := _c("VIOLET", P.T_DARK)
@@ -412,7 +412,7 @@ func _ghost(kind: String, f: int) -> Image:
 			_put(im, 13, 9, _c("UI_BLUE", P.T_MID))
 	return im
 
-func _star(im: Image, x: int, y: int) -> void:
+static func _star(im: Image, x: int, y: int) -> void:
 	var g: Color = _c("HUD_GOLD", P.T_LIGHT)
 	_put(im, x, y, g)
 	_put(im, x - 1, y, _c("HUD_GOLD", P.T_MID))
@@ -421,7 +421,7 @@ func _star(im: Image, x: int, y: int) -> void:
 	_put(im, x, y + 1, _c("HUD_GOLD", P.T_MID))
 
 ## Клетка вселения: призрак слева, хозяин справа, нить CRYSTAL жиреет, рвётся.
-func _possession_cell(f: int) -> Image:
+static func _possession_cell(f: int) -> Image:
 	var im := _im(16, 16)
 	_blit_into(im, _host_mini(f >= 2), 0, 0, 1)
 	if f < 3:
@@ -433,12 +433,12 @@ func _possession_cell(f: int) -> Image:
 	return im
 
 ## Клетка оккупации: хозяин светится кантом VIOLET + глаза призрака; f — пульс.
-func _occupied_cell(f: int) -> Image:
+static func _occupied_cell(f: int) -> Image:
 	var im := _blank_host_frame(f)
 	return im
 
 ## Общий кадр занятого хозяина с пульсом канта.
-func _blank_host_frame(f: int) -> Image:
+static func _blank_host_frame(f: int) -> Image:
 	var im := _im(16, 16)
 	_blit_into(im, _host_mini(false), 0, 0, 1)
 	var rim: Color = _c("VIOLET", P.T_LIGHT) if f == 0 else _c("VIOLET", P.T_MID)
@@ -450,7 +450,7 @@ func _blank_host_frame(f: int) -> Image:
 	return im
 
 ## Клетка изгнания: вспышка на хозяине, клочок призрака летит влево-вверх.
-func _banish_cell(f: int) -> Image:
+static func _banish_cell(f: int) -> Image:
 	var im := _im(16, 16)
 	# пустой хозяин без свечения (призрак выгнан)
 	var M := _c("LEAF", P.T_MID)
@@ -479,23 +479,23 @@ func _banish_cell(f: int) -> Image:
 
 # ============================================================ примитивы
 
-func _put(im: Image, x: int, y: int, col: Color) -> void:
+static func _put(im: Image, x: int, y: int, col: Color) -> void:
 	if x >= 0 and y >= 0 and x < im.get_width() and y < im.get_height():
 		im.set_pixel(x, y, col)
 
-func _span(im: Image, x0: int, x1: int, y: int, col: Color) -> void:
+static func _span(im: Image, x0: int, x1: int, y: int, col: Color) -> void:
 	for x in range(x0, x1 + 1):
 		_put(im, x, y, col)
 
-func _rect16(im: Image, x0: int, y0: int, x1: int, y1: int, col: Color) -> void:
+static func _rect16(im: Image, x0: int, y0: int, x1: int, y1: int, col: Color) -> void:
 	for y in range(y0, y1 + 1):
 		for x in range(x0, x1 + 1):
 			_put(im, x, y, col)
 
-func _im(w: int, h: int) -> Image:
+static func _im(w: int, h: int) -> Image:
 	return Image.create(w, h, false, Image.FORMAT_RGBA8)
 
-func _blit_into(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
+static func _blit_into(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
 	for y in src.get_height():
 		for x in src.get_width():
 			var col := src.get_pixel(x, y)
@@ -805,7 +805,12 @@ func _strict_scan(img: Image) -> bool:
 		_fails += 1
 	return ok
 
-func _fnv32_hex(img: Image) -> String:
+## ^ t28 (26.11, интеграция «Ощущение v1» B+C, вердикт «принимай пока что
+## слизня и призрака»): билдеры секций B/C объявлены static-ами — единый
+## источник арта для листа и рантайм-бейка feel_v1_bake.gd; pre-save hash
+## 6C5131C2 после рефакторинга обязан остаться равным (самопроверка ниже).
+
+static func _fnv32_hex(img: Image) -> String:
 	var h := 2166136261
 	for b in img.save_png_to_buffer():
 		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)

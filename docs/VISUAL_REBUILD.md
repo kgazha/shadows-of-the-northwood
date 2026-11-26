@@ -50,7 +50,10 @@ npc/, items/, skills/, ui/, environment/, _otbrakovka/) — в игру инте
 | `mob_witch.png` (497×974) | `mob_boss2.gd` : `gen_tex_path`:86, `gen_canon_h`:89 (51 px), `gen_foot_old`:92 (13.91375) | Ведьма Пепелища | fail-safe → ветка `brute.png` в `brute.setup` (scale 51/32 :79) |
 
 Тенеплёт (`mob_wraith`) в ген-ассет НЕ интегрирован (решение пользователя) —
-`art/mob_wraith*` в игре отсутствует.
+`art/mob_wraith*` в игре отсутствует. ^ t28 (26.11): решение в силе — но по
+листу «Ощущение v1» C принятые состояния «Тень-заимки» влиты отдельным
+кодо-бейком `assets/mobs_wraith_state_v1.png` (FNV-равен листу, qa_lp
+`_t28_feel`); базовый лист `mobs_wraith.png` не перерисован.
 
 ### 1.3. UI и портреты (9 файлов)
 

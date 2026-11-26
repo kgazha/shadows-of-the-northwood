@@ -50,6 +50,9 @@ var kill_kind := ""  # t26 «Бестиарий v2»: имя вида (песч�
 var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
+## t28 «Тень-заимка» (26.11): множитель погони, пока мглокрыс — хозяин занятого
+## тенеплёта. 1.0 = никто не занят — velocity бит-в-бит прежние.
+var feel_spd_mult := 1.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не кусает, синий тинт.
 var freeze_t := 0.0
 var wander_t := 0.0
@@ -203,7 +206,7 @@ func _physics_process(delta: float) -> void:
 			_seen_t -= delta
 		if sees or _seen_t > 0.0:
 			var goal := player.global_position if sees else _seen_pos
-			velocity = AVOID.steer(self, (goal - global_position).normalized() * SPEED_CHASE)
+			velocity = AVOID.steer(self, (goal - global_position).normalized() * SPEED_CHASE * feel_spd_mult)
 		else:
 			velocity = Vector2.ZERO  # потеряла из виду — стая сбивается, не летит сквозь камень
 		if d < HIT_DIST and sees:

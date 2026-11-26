@@ -13,6 +13,13 @@ extends SceneTree
 ##   Godot ... -s res://tools_art/mob_variants_v1.gd -- bake <out_dir>
 ##   Godot ... -s res://tools_art/mob_variants_v1.gd -- check
 ## Выход 0 — все пиксели в RAMPS (off:0), размеры совпали, иначе 1.
+##
+## ^ t28 (26.11, вердикт «Ощущение v1» B): ЛИСТЫ СЛИЗНЯ mobs_slime_{biome}_v1.png
+## более НЕ продукт этого пека — их печатает tools_art/feel_v1_bake.gd coat-ами
+## листа B (FNV-равенство кадрам листа держат пины qa_lp _t28_feel; SUBS-рампы
+## этого инструмента не воспроизводят шарик-антенну BRONZE/CRYSTAL/VIOLET и
+## глаза BONE_L новой формы). Ре-пек этого tools НЕ должен затрагивать slime-
+## файлы: побайтовый пин — qa_lp, легитимное изменение — только через feel_v1.
 
 const P := preload("res://scripts/pixel_palette.gd")
 

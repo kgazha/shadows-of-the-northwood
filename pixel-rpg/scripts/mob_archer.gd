@@ -44,6 +44,9 @@ var loot_kind := ""
 var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
+## t28 «Тень-заимка» (26.11): множитель боевого перемещения (сход/отход), пока
+## лучник — хозяин занятого тенеплёта. 1.0 = никто не занят — бит-в-бит прежние.
+var feel_spd_mult := 1.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не стреляет, синий тинт.
 var freeze_t := 0.0
 var shot_cd := 1.2            # первый выстрел не мгновенно: у героя есть время войти
@@ -160,12 +163,12 @@ func _physics_process(delta: float) -> void:
 			var goal := player.global_position if sees else _seen_pos
 			# 16.11 юзер-фикс: сближение через «усы» (mob_avoid.gd); отход — прямой,
 			# спина к цели не путается.
-			velocity = AVOID.steer(self, (goal - global_position).normalized() * SPEED_ADVANCE)
+			velocity = AVOID.steer(self, (goal - global_position).normalized() * SPEED_ADVANCE * feel_spd_mult)
 		else:
 			velocity = Vector2.ZERO
 	elif d < HOLD_MIN:
 		# герой сел в плотную — отходим, стрелок в упор бессилен
-		velocity = -to_p.normalized() * SPEED_RETREAT
+		velocity = -to_p.normalized() * SPEED_RETREAT * feel_spd_mult
 	else:
 		velocity = Vector2.ZERO
 	# телеграф выстрела: стоим и тянем тетиву (допускается доворот на героя)

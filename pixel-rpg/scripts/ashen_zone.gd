@@ -13,7 +13,9 @@ extends Node2D
 ## сидов не менялись) и спавнит ровно их тем же паттерном, что лучники/стая;
 ## лист assets/mobs_wraith.png и скрипт mob_wraith.gd — без правок кадра, тинт
 ## не вешается (перекраска — отдельная волна c22); персиста individual-смертей
-## нет — паритет с archers/swarm. Реестры/волны
+## нет — паритет с archers/swarm. ^ t28 (26.11, вердикт «Тень-заимка»): ряд =
+## ровно 4 (часть вердикта), тенеплёты спавнятся оп-ином feel_v1 (автомат
+## вселения; кадр-состояния mobs_wraith_state_v1.png == лист W5 C). Реестры/волны
 ## мобов — без изменений. Персист — GameState.flags: "ashen.boss" = "dead",
 ## "ashen.chest" = "taken" (cave_state/boss_defeated НЕ трогаем — у пещеры свой путь).
 ## Тинты мобов — через self_modulate: скрипты мобов перекрашивают modulate каждый
@@ -260,6 +262,10 @@ func _spawn_entities(meta: Dictionary) -> void:
 	for wr: Array in mobs.get("wraiths", []):
 		if wr.size() == 2:
 			var wt = wraith_script.new()
+			# t28 (26.11, вердикт «Тень-заимка»): ряд Пепелища = ровно 4
+			# тенеплёта (ASHEN_MOBS.wraiths=4 — часть вердикта) и они живут
+			# новым автоматом вселения; пещерная ниша вердиктом снята совсем.
+			wt.feel_v1 = true
 			add_child(wt)
 			wt.setup(world, Vector2i(int(wr[0]), int(wr[1])))
 	var swarm: Array = mobs.get("swarm", [])

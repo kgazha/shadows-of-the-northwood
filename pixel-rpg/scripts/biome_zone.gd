@@ -353,6 +353,11 @@ func _spawn_bestiary() -> void:
 		if not MOB_SCRIPTS.has(fam):
 			continue
 		var m = load(MOB_SCRIPTS[fam]).new()
+		if fam == "wraith" and not is_species:
+			# t28 (26.11, «Тень-заимка»): базовые тенеплёты подземелья живут
+			# автоматом вселения; вид-носитель (шахтёр/шептун) остаётся на
+			# легаси-движке — лицо вида не смена механики (лист t26).
+			m.feel_v1 = true
 		if fam == "brute":
 			m.boss = false
 			m.tier = OW.brute_tier(belt)

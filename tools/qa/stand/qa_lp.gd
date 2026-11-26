@@ -144,6 +144,7 @@ func _ready() -> void:
 	await _t42()
 	await _t44()
 	await _t46()
+	_t28_feel()
 	var total: int = pass_n + fail_n
 	print("QA_LP %d/%d" % [pass_n, total])
 	get_tree().quit(0 if fail_n == 0 else 1)
@@ -2452,7 +2453,11 @@ func _t23() -> void:
 		"npc_hermit": "res://assets/npc_hermit.png",
 		"npc_merchant": "res://assets/npc_merchant.png",
 		"npc_smith": "res://assets/npc_smith.png",
-		"slime": "res://assets/slime.png",
+		# t28 (26.11, вердикт «Ощущение v1» B): slime УБРАН из 13-атласного
+		# золотого сравнения c23 — лист W5 кодом перерисовал слизня (новая
+		# форма: купол+антенны, альфа-маска листа не может равняться маске
+		# легаси-bob по построению). Побайтовая целостность нового носителя
+		# и FNV-равенство кадрам листа — в _t28_feel (сильнее, чем c23).
 		"swarmling": "res://assets/mobs_swarmling.png",
 		"mob_archer": "res://assets/mobs_archer.png",
 		"wraith": "res://assets/mobs_wraith.png",
@@ -2515,12 +2520,15 @@ func _t23() -> void:
 					var k2: int = PAL.key(Color(c2.r, c2.g, c2.b, 1.0))
 					if not cidx.has(k2):
 						off_after_set[k2] = true
-	chk(sizes_ok, "c23: размеры 13 атласов заморожены (ни нового кадра/рисовалки)")
+	chk(sizes_ok, "c23: размеры 12 атласов заморожены (ни нового кадра/рисовалки)")
 	chk(alpha_all_ok, "c23: альфа (маска/силуэт) каждого кадра == золотая побайтово")
 	chk(raw_all_ok, "c23: каждый атлас == карта c22, применённая к золотому легаси, побайтово")
-	chk(legacy_uniq.size() == 606, "c23: соответствий в карте — 606 (золото дало %d)" % legacy_uniq.size())
-	chk(off_before_set.size() == 486, "c23: легаси off (union 13 атласов) = 486 (золото дало %d)" % off_before_set.size())
-	chk(off_after_set.size() == 0, "c23: PixelPalette off в игровых атласах = 0 (486 -> %d)" % off_after_set.size())
+	# t28 (26.11): 606/486 — union 13 атласов ДО вывода slime из сравнения
+	# (вердикт «Ощущение v1» B перерисовал его кодом, см. комментарий в assets).
+	# ДАТИРОВАННЫЙ РЕПИН счётчиков: union 12 атласов — 564 соответствий, off 447.
+	chk(legacy_uniq.size() == 564, "c23: соответствий в карте — 564 (12 атласов; было 606 на 13; золото дало %d)" % legacy_uniq.size())
+	chk(off_before_set.size() == 447, "c23: легаси off (union 12 атласов) = 447 (было 486 на 13; золото дало %d)" % off_before_set.size())
+	chk(off_after_set.size() == 0, "c23: PixelPalette off в игровых атласах = 0 (447 -> %d)" % off_after_set.size())
 
 ## c25 «предметные иконки в игре» (вердикт по листу c24 «берём, мешочек не надо»).
 ## Пины: инструмент листа в репо; рантайм item_icon() шести id — 0 пикселей вне
@@ -3045,7 +3053,10 @@ const C33_MD5_KEPT29 := {
 	# Прежний 1c42a8a4ab75766c04b0f293fb506e93 = стрела 15×8 (91 px); новый — 10×4 (40 px).
 	"projectiles.png": "b431df027ec21c11f4f0896f3725cd75",
 	"shadow.png": "5f64bf91032ef8fdf4b13da11cbf6bbf",
-	"slime.png": "7c07d4f502451dbdfe031bc0af345b3f",
+	# t28 (26.11, вердикт «принимай слизня»): лист «Ощущение v1» B перерисовал
+	# слизня кодом — slime.png = кодо-бейк feel_v1_bake.gd, кадры FNV-равны листу
+	# (равенство держит _t28_feel ниже). Прежний пин 7c07d4f5… — ручной лист bob.
+	"slime.png": "12eb65fa925ba5d291f223c1b68bd9b9",
 	"tiles.png": "cb3e05695831f27d6b183140441a2a80",
 	"ui/cursor_arrow.png": "714ba88ea5a5550d1040eaa726136820",
 	"ui/cursor_crosshair.png": "f5bd8926cffbbef7f62f694d00e3ca36",
@@ -3268,6 +3279,12 @@ const C33_FNV_BESTIARY_V2 := {
 
 ## FNV-1a 32 от PNG-байтов кадра — тот же метод, что _fnv32_hex в
 ## sheet_bestiary_v2.gd/bestiary_v2_bake.gd (байт-равенство Image <=> FNV).
+## ^ t28 (26.11) КАНОН для будущих растр-пинов (урок t26, фиксирую по просьбе
+## капитана): Image обязан приходить RAW-чтением файла (FileAccess +
+## load_png_from_buffer). load("res://*.png") возвращает ИМПОРТИРОВАННЫЙ
+## ресурс, декодированный через компрессор движка с потерями, — байт PNG-буфера
+## такого кадра не равен канону листа, и FNV «уезжает» относительно листа
+## (в t26 так ловили 429/1). Путь-проверки (resource_path) на импортированном — безопасны.
 func _t26_fnv(img: Image) -> String:
 	var h := 2166136261
 	for b in img.save_png_to_buffer():
@@ -5044,3 +5061,69 @@ func _t46() -> void:
 		if is_instance_valid(e) and world.cave_zone.is_ancestor_of(e as Node):
 			free_lights += 1
 	print("qa_lp t46: юзер-фиксы 16.11 запинены: рывок у стены, усы (обход + тупик), агро по LOS + память %.1f с, возврат к арке (пещера + Пепелище); стендовых мобов в пещере осталось %d" % [float(T46_SEE_FRAMES) / 60.0, free_lights])
+
+## t28 (26.11, вердикт «принимай пока что слизня и призрака») — закон ART для
+## листа «Ощущение v1» (diag-w5/sheet_feel_v1.png, pre-save FNV 6C5131C2,
+## PINS_W5.md §5): рантайм-носители секций B/C Побитово равны кадрам листа.
+## Метод FNV — только от RAW-байтов файла (урок t26: load() возвращает
+## импортированный ресурс, декодированный с потерями — не канон).
+const T28_MD5 := {
+	"res://assets/slime.png": "12eb65fa925ba5d291f223c1b68bd9b9",
+	"res://assets/world/mobs_slime_forest_v1.png": "12eb65fa925ba5d291f223c1b68bd9b9",
+	"res://assets/world/mobs_slime_steppe_v1.png": "9d5624d06cee8d9ad3762884d13d114f",
+	"res://assets/world/mobs_slime_snow_v1.png": "7f9855ff1328d247546e9362def8449c",
+	"res://assets/world/mobs_slime_dungeon_v1.png": "bd706b5169cb1201d781c9e005f29753",
+	"res://assets/mobs_wraith_state_v1.png": "541918aec58f48881963c24304f01c7a",
+}
+## Кадр -> [файл, x, y] — FNV-пины PINS_W5 §5 (лист 6C5131C2).
+const T28_FRAMES := {
+	"slime_new0": ["res://assets/slime.png", 0, 0, "4E377B06"],
+	"slime_new1": ["res://assets/slime.png", 16, 0, "5D728633"],
+	"biome_forest": ["res://assets/world/mobs_slime_forest_v1.png", 0, 0, "4E377B06"],
+	"biome_steppe": ["res://assets/world/mobs_slime_steppe_v1.png", 0, 0, "3872E37C"],
+	"biome_snow": ["res://assets/world/mobs_slime_snow_v1.png", 0, 0, "73761CE9"],
+	"biome_dungeon": ["res://assets/world/mobs_slime_dungeon_v1.png", 0, 0, "0819B9AF"],
+	"possess0": ["res://assets/mobs_wraith_state_v1.png", 0, 0, "75C0C165"],
+	"possess1": ["res://assets/mobs_wraith_state_v1.png", 16, 0, "BCDB47F0"],
+	"possess2": ["res://assets/mobs_wraith_state_v1.png", 32, 0, "62DFB52A"],
+	"possess3": ["res://assets/mobs_wraith_state_v1.png", 48, 0, "13FDDACF"],
+	"occupied0": ["res://assets/mobs_wraith_state_v1.png", 0, 16, "E536BCE7"],
+	"occupied1": ["res://assets/mobs_wraith_state_v1.png", 16, 16, "52B39B15"],
+	"banish0": ["res://assets/mobs_wraith_state_v1.png", 32, 16, "B313358C"],
+	"banish1": ["res://assets/mobs_wraith_state_v1.png", 48, 16, "936CF059"],
+	"banish2": ["res://assets/mobs_wraith_state_v1.png", 0, 32, "090E59C0"],
+	"stun0": ["res://assets/mobs_wraith_state_v1.png", 16, 32, "9F870489"],
+	"stun1": ["res://assets/mobs_wraith_state_v1.png", 32, 32, "CE5F5113"],
+}
+
+func _t28_raw_img(path: String) -> Image:
+	var img := Image.new()
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null or img.load_png_from_buffer(f.get_buffer(f.get_length())) != OK:
+		return null
+	return img
+
+func _t28_feel() -> void:
+	for path: String in T28_MD5:
+		var got: String = _t11_md5(path)
+		chk(got == String(T28_MD5[path]),
+			"t28: md5 %s == бейк feel_v1_bake (лист W5) [%s]" % [path, got])
+	var img_cache := {}
+	for fr: String in T28_FRAMES:
+		var d: Array = T28_FRAMES[fr]
+		var path := String(d[0])
+		if not img_cache.has(path):
+			img_cache[path] = _t28_raw_img(path)
+		var img: Image = img_cache[path]
+		if img == null:
+			chk(false, "t28: кадр %s — файл %s не читается raw" % [fr, path])
+			continue
+		if img.get_width() <= int(d[1]) or img.get_height() <= int(d[2]):
+			chk(false, "t28: кадр %s — клетка выходит за носитель" % fr)
+			continue
+		var got := _t26_fnv(img.get_region(Rect2i(int(d[1]), int(d[2]), 16, 16)))
+		chk(got == String(d[3]),
+			"t28: FNV-в-FNV лист->рантайм: %s == %s [%s]" % [fr, String(d[3]), got])
+	# бейкер-свидетель в репо (ноль hand-raster: весь t28-арт из static-билдеров листа)
+	chk(ResourceLoader.exists("res://tools_art/feel_v1_bake.gd"),
+		"t28: генератор-свидетель tools_art/feel_v1_bake.gd в репо")
