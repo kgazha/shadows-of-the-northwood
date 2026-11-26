@@ -16,6 +16,17 @@
 			],
 			"src": "res://assets/mobs_boar_v1.png"
 		},
+		"castle/knight": {
+			"fam": "brute",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "knight",
+			"row": 4,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_boar_v1.png"
+		},
 		"desert/brute": {
 			"file": "mobs_brute_desert_v1.png",
 			"size": [
@@ -32,6 +43,17 @@
 			],
 			"src": "res://assets/mobs_swarmling.png"
 		},
+		"desert/worm": {
+			"fam": "swarmling",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "worm",
+			"row": 2,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_swarmling.png"
+		},
 		"dungeon/brute": {
 			"file": "mobs_brute_dungeon_v1.png",
 			"size": [
@@ -39,6 +61,17 @@
 				32
 			],
 			"src": "res://assets/mobs_boar_v1.png"
+		},
+		"dungeon/miner": {
+			"fam": "wraith",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "miner",
+			"row": 5,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_wraith.png"
 		},
 		"dungeon/slime": {
 			"file": "mobs_slime_dungeon_v1.png",
@@ -55,6 +88,17 @@
 				64
 			],
 			"src": "res://assets/mobs_wraith.png"
+		},
+		"forest/ambusher": {
+			"fam": "brute",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "ambusher",
+			"row": 0,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_boar_v1.png"
 		},
 		"forest/brute": {
 			"file": "mobs_brute_forest_v1.png",
@@ -96,6 +140,28 @@
 			],
 			"src": "res://assets/slime.png"
 		},
+		"snow/whisperer": {
+			"fam": "wraith",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "whisperer",
+			"row": 3,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_wraith.png"
+		},
+		"snow/wraith": {
+			"fam": "wraith",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "whisperer",
+			"row": 3,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_wraith.png"
+		},
 		"steppe/archer": {
 			"file": "mobs_archer_steppe_v1.png",
 			"size": [
@@ -112,6 +178,17 @@
 			],
 			"src": "res://assets/mobs_boar_v1.png"
 		},
+		"steppe/forerunner": {
+			"fam": "archer",
+			"file": "mobs_bestiary_v2.png",
+			"kind": "forerunner",
+			"row": 1,
+			"size": [
+				64,
+				96
+			],
+			"src": "res://assets/mobs_archer.png"
+		},
 		"steppe/slime": {
 			"file": "mobs_slime_steppe_v1.png",
 			"size": [
@@ -121,5 +198,5 @@
 			"src": "res://assets/slime.png"
 		}
 	},
-	"status": "WIRED t3 (18.11) - скины локаций мира"
+	"status": "WIRED t3 (18.11) - скины локаций мира; t26 (26.11) - Бестиарий v2: 6 kind-строк + починка snow/wraith"
 }

@@ -35,6 +35,7 @@ var max_hp := MAX_HP
 ## t3 «Мир v1» (локации): kind дропа с поясом и множитель урона — по умолчанию
 ## канон ("wraith", ×1).
 var loot_kind := ""
+var kill_kind := ""  # t26 «Бестиарий v2»: имя вида (шептун/рудокоп); пусто — «wraith»
 var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
@@ -190,7 +191,7 @@ func _tick_materialize(delta: float, player: CharacterBody2D) -> void:
 	move_and_slide()
 	_push_from_hero()  # только «в теле»: эфирное прошлое тело героя не трогает и не пилит
 	if to_p.length() < HIT_DIST:
-		player.take_damage(maxi(1, int(round(2.0 * dmg_mult))), "wraith")  # t20: kind убийцы для экрана смерти
+		player.take_damage(maxi(1, int(round(2.0 * dmg_mult))), (kill_kind if kill_kind != "" else "wraith"))  # t20: kind убийцы для экрана смерти
 	if mat_t <= 0.0:
 		_enter_ethereal()
 		dash_cd = DASH_CD_MIN + randf_range(0.0, DASH_CD_JITTER)

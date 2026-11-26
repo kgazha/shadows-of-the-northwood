@@ -46,6 +46,7 @@ var max_hp := MAX_HP
 ## t3 «Мир v1» (локации): kind дропа с поясом и множитель урона — по умолчанию
 ## канон ("swarmling", ×1).
 var loot_kind := ""
+var kill_kind := ""  # t26 «Бестиарий v2»: имя вида (песчаный червь); пусто — «swarmling»
 var dmg_mult := 1.0
 var anim: AnimatedSprite2D
 var hurt_t := 0.0
@@ -206,7 +207,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			velocity = Vector2.ZERO  # потеряла из виду — стая сбивается, не летит сквозь камень
 		if d < HIT_DIST and sees:
-			player.take_damage(maxi(1, int(round(1.0 * dmg_mult))), "swarmling")  # t20: kind убийцы для экрана смерти
+			player.take_damage(maxi(1, int(round(1.0 * dmg_mult))), (kill_kind if kill_kind != "" else "swarmling"))  # t20: kind убийцы для экрана смерти
 			bit_t = 0.25
 	else:
 		wander_t -= delta

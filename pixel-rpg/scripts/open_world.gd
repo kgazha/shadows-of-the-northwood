@@ -840,15 +840,146 @@ static func _load_skins() -> void:
 		if parts.size() != 2:
 			continue
 		var biome := String(parts[0])
+		# t26 «Бестиарий v2»: kind-строка (поле "kind") — НЕ region-swap: у неё
+		# своя раскладка (bestiary_v2-атлас 64x96), она едет новым путём
+		# (_apply_kind_frames). В _skins_by_src её не пускаем — иначе region-swap
+		# чужой раскладки дал бы мусор.
+		if (e as Dictionary).has("kind"):
+			if not _kinds_by_biome.has(biome):
+				_kinds_by_biome[biome] = {}
+			(_kinds_by_biome[biome] as Dictionary)[String((e as Dictionary)["fam"])] = e
+			continue
 		if not _skins_by_src.has(biome):
 			_skins_by_src[biome] = {}
 		(_skins_by_src[biome] as Dictionary)[String((e as Dictionary)["src"])] = \
 			String(VARIANTS_DIR) + String((e as Dictionary)["file"])
 
+## t26 «Бестиарий v2» (вердикт 26.11 «принимаем бестиарий всех»): виды-обличья
+## листа t21. Каждый вид ездит ПОВЕДЕНИЕМ и статами семейства-носителя
+## (KIND_FAMILY), обличье — кодо-бейк mobs_bestiary_v2.png (FNV-в-FNV листу).
+## BESTIARY/loc_map-метки не тронуты — GOLDEN побайтно цел; переметку вида
+## делает слой спавна (biome_zone) детерминированно по позиции в mobs_meta.
+const KIND_BY_BIOME := {
+	"forest": "ambusher", "steppe": "forerunner", "desert": "worm",
+	"snow": "whisperer", "castle": "knight", "dungeon": "miner",
+}
+const KIND_FAMILY := {
+	"ambusher": "brute", "forerunner": "archer", "worm": "swarmling",
+	"whisperer": "wraith", "knight": "brute", "miner": "wraith",
+}
+static var _kinds_by_biome: Dictionary = {}   # биом -> {семейство: строка манифеста}
+static var _kind_tex_cache: Dictionary = {}   # путь -> Texture2D|null
+
+## Явная выдача обличья (спавн вида, мини-боссы). kind=="" — единственный kind
+## биома. Идемпотентно: повторная выдача пересобирает те же кадры.
+static func apply_kind_skin(node: Node, biome: String, kind := "") -> void:
+	_load_skins()
+	var kinds: Dictionary = _kinds_by_biome.get(biome, {})
+	for fam in kinds:
+		var e: Dictionary = kinds[fam]
+		if kind != "" and String(e.get("kind", "")) != kind:
+			continue
+		_apply_kind_frames(node, String(e.get("file", "")), int(e.get("row", -1)), String(fam))
+		return
+
+## Тихая выдача: если у носителя в поддереве есть атлас src kind-строки И для
+## этого src в биоме НЕТ plain-скина — надеваем face. Так честный факт t21 №1
+## (снежный wraith без скина = silent no-op) чинится существующим вызовом
+## apply_biome_skin, а dungeon/wraith остаётся plain-remap'ом (miner — только
+## явная выдача).
+static func _maybe_kind_skin(node: Node, kinds: Dictionary, by_src: Dictionary) -> bool:
+	for fam in kinds:
+		var e: Dictionary = kinds[fam]
+		var src := String(e.get("src", ""))
+		if src == "" or by_src.has(src):
+			continue
+		if _tree_has_atlas_path(node, src):
+			_apply_kind_frames(node, String(e.get("file", "")), int(e.get("row", -1)), String(fam))
+			return true
+	return false
+
+static func _tree_has_atlas_path(node: Node, src: String) -> bool:
+	if node is AnimatedSprite2D:
+		var aspr := node as AnimatedSprite2D
+		if aspr.sprite_frames != null:
+			for anim_name in aspr.sprite_frames.get_animation_names():
+				if aspr.sprite_frames.get_frame_count(String(anim_name)) > 0:
+					var at := aspr.sprite_frames.get_frame_texture(String(anim_name), 0) as AtlasTexture
+					if at != null and at.atlas != null and String(at.atlas.resource_path) == src:
+						return true
+	elif node is Sprite2D:
+		var at2 := (node as Sprite2D).texture as AtlasTexture
+		if at2 != null and at2.atlas != null and String(at2.atlas.resource_path) == src:
+			return true
+	for c in node.get_children():
+		if _tree_has_atlas_path(c, src):
+			return true
+	return false
+
+static func _apply_kind_frames(node: Node, file: String, row: int, fam: String) -> void:
+	if file == "" or row < 0:
+		return
+	var path := VARIANTS_DIR + file
+	if not _kind_tex_cache.has(path):
+		_kind_tex_cache[path] = load(path) if ResourceLoader.exists(path) else null
+	var tex: Texture2D = _kind_tex_cache[path]
+	if tex == null:
+		return
+	var fr := SpriteFrames.new()
+	fr.remove_animation("default")
+	# скорости походок — матрицы носителей (_ready семейств), приём (act) —
+	# телеграф->удар двумя кадрами T0/T1 листа на 2 к/с внутри существующего
+	# окна телеграфа (WINDUP/tele_t/bit_t/материализация) — без новой архитектуры.
+	var idle_fps := 2.5
+	var walk_fps := 2.5
+	match fam:
+		"archer":
+			idle_fps = 2.5; walk_fps = 6.0
+		"swarmling":
+			idle_fps = 4.0; walk_fps = 9.0
+		"wraith":
+			idle_fps = 2.0; walk_fps = 4.0
+	var _add_an := func(an: String, cols: Array, loop: bool, fps: float) -> void:
+		fr.add_animation(an)
+		fr.set_animation_loop(an, loop)
+		fr.set_animation_speed(an, fps)
+		for col: int in cols:
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = Rect2(col * 16, row * 16, 16, 16)
+			fr.add_frame(an, at, 0.0)
+	if fam == "brute":
+		# носитель-вепрь однонаправлен (лист 64x32, один «walk»): у вида тот же
+		# набор имён анимаций, что строит brute.gd + приёмный «act».
+		_add_an.call("walk", [0, 1], true, 2.5)
+		_add_an.call("act", [2, 3], false, 2.0)
+	else:
+		# раскладка вида однорядна: направление не перерисовано (вердикт листа),
+		# ряды направлений получают одни и те же кадры.
+		for dir_name: String in ["down", "left", "right", "up"]:
+			_add_an.call("idle_%s" % dir_name, [0, 1], true, idle_fps)
+			_add_an.call("walk_%s" % dir_name, [0, 1], true, walk_fps)
+			_add_an.call("act_%s" % dir_name, [2, 3], false, 2.0)
+	var pend: Array[AnimatedSprite2D] = []
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is AnimatedSprite2D:
+			pend.append(n)
+		for c in n.get_children():
+			stack.append(c)
+	for aspr in pend:
+		aspr.sprite_frames = fr
+
+
 ## Покрасить моба (поддерево) в палитру биома. Тихий no-op без скина/листа.
+## t26: перед region-swap'ом проверяется kind-face (правило «plain > kind >
+## no-op» — см. _maybe_kind_skin): так snow/wraith перестаёт быть silent no-op.
 static func apply_biome_skin(node: Node, biome: String) -> void:
 	_load_skins()
 	var by_src: Dictionary = _skins_by_src.get(biome, {})
+	if _maybe_kind_skin(node, _kinds_by_biome.get(biome, {}), by_src):
+		return
 	if by_src.is_empty():
 		return
 	_swap_rec(node, by_src)

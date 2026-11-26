@@ -3173,6 +3173,54 @@ func _t34() -> void:
 			keep_ok = false
 			print("c33: ИЗМЕНЁН сверх scope: ", rel)
 	chk(keep_ok, "c33: остальные %d трекаемых PNG бит-в-бит HEAD (md5)" % C33_MD5_KEPT29.size())
+	# 5) t26 «Бестиарий v2» (вердикт пользователя 26.11 «принимаем всех», лист
+	# diag-w7 t21): рантайм-атлас шести видов = лист FNV-в-FNV (метод-прецедент
+	# этого же c33: md5-пин арта + покадровое равенство канону).
+	var img26 := Image.new()
+	var f26 := FileAccess.open("res://assets/world/mobs_bestiary_v2.png", FileAccess.READ)
+	if f26 != null:
+		# Raw-чтение файла, НЕ load(): импортированный ресурс декодируется через
+		# компрессор движка (lossy), и байт PNG-буфера кадра не равен канону
+		# листа; канон FNV — файл на диске (тот же путь, что у md5-пина ниже).
+		img26.load_png_from_buffer(f26.get_buffer(f26.get_length()))
+	var have26 := img26.get_width() == 64 and img26.get_height() == 96
+	chk(have26,
+		"t26: атлас mobs_bestiary_v2.png 64x96 (6 видов x K0/K1/T0/T1) существует")
+	chk(_t11_md5("res://assets/world/mobs_bestiary_v2.png") == C33_MD5_BESTIARY_V2,
+		"t26: md5 атласа == пин %s (кодо-бейк bestiary_v2_bake.gd неизменен)" % C33_MD5_BESTIARY_V2)
+	var fnv26 := img26 != null
+	var n26 := 0
+	for kind in C33_FNV_BESTIARY_V2:
+		var row26: int = T26_ROWS.find(String(kind))
+		for c in 4:
+			n26 += 1
+			if not have26:
+				fnv26 = false
+				continue
+			var got: String = _t26_fnv(img26.get_region(Rect2i(c * 16, row26 * 16, 16, 16)))
+			if got != String((C33_FNV_BESTIARY_V2[kind] as Array)[c]):
+				fnv26 = false
+				print("t26: FNV разошёлся: %s кадр %d -> %s" % [kind, c, got])
+	chk(fnv26, "t26: все %d кадров атласа FNV32 == PINS_W7 (атлас==лист 1:1)" % n26)
+	# манифест: шесть kind-строк по поясам + починка честного факта t21 №1
+	# (snow/wraith был silent no-op — снежный мини-босс ездил на голом базовом
+	# листе); легаси-строки region-swap не тронуты (их md5 — qa_world W6).
+	var man26: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/world/mobs_variants.json"))
+	var sk26: Dictionary = (man26.get("skins", {}) if typeof(man26) == TYPE_DICTIONARY else {}) as Dictionary
+	var rows26 := sk26.size() == 22
+	for kind in T26_ROWS:
+		var e26: Dictionary = sk26.get("%s/%s" % [T26_BIOME[kind], kind], {}) as Dictionary
+		if e26.get("kind") != kind or e26.get("file") != "mobs_bestiary_v2.png" \
+				or int(e26.get("row", -1)) != T26_ROWS.find(String(kind)) \
+				or e26.get("fam") != T26_FAM[kind] \
+				or e26.get("src") != T26_FAM_SRC[T26_FAM[kind]]:
+			rows26 = false
+			print("t26: kind-строка испорчена: ", kind)
+	var fix26: Dictionary = sk26.get("snow/wraith", {}) as Dictionary
+	chk(rows26, "t26: 6 kind-строк манифеста на месте (вид/пояс/носитель/ряд)")
+	chk(fix26.get("kind") == "whisperer" and int(fix26.get("row", -1)) == 3 \
+			and fix26.get("src") == T26_FAM_SRC["wraith"],
+		"t26: ПОЧИНКА snow/wraith — снежный носитель получает face шептуна (был silent no-op)")
 	# 4) POTENTIAL_GRAY легаси — нетронутость доказывается п.3 (tiles/player) и
 	# п.2 для dungeon_tiles: diff там строго из old-домена snap/CAVE (bad==0).
 	print("qa_lp c33: GOLDEN-пины сеток (CHAR_TO_TILE/BLOCKING t16) выше, без пересчёта")
@@ -3190,6 +3238,42 @@ const C34_BASE_MD5_UNTOUCHED := {  # чужие сундуки (деревня t
 	# сбора (сейв-формат и сундучная ветка не тронуты); поведение запинено в _t41.
 	"res://assets/tiles.png": "cb3e05695831f27d6b183140441a2a80",
 }
+
+# ------------------------------------------------------------------ t26 «Бестиарий v2» (26.11)
+# Пины листа diag-w7 (t21, PINS_W7.md): атлас рантайма обязан совпадать с листом
+# покадровым FNV32 (метод c33 выше: md5-пин + покадровое равенство). Таблица —
+# дословная ко столбцу «FNV32 новых кадров» PINS_W7.md (K0/K1/T0/T1).
+const C33_MD5_BESTIARY_V2 := "2a524ca833d34c0a1a079895b915e394"
+const T26_ROWS := ["ambusher", "forerunner", "worm", "whisperer", "knight", "miner"]
+const T26_BIOME := {
+	"ambusher": "forest", "forerunner": "steppe", "worm": "desert",
+	"whisperer": "snow", "knight": "castle", "miner": "dungeon",
+}
+const T26_FAM := {
+	"ambusher": "brute", "forerunner": "archer", "worm": "swarmling",
+	"whisperer": "wraith", "knight": "brute", "miner": "wraith",
+}
+const T26_FAM_SRC := {
+	"brute": "res://assets/mobs_boar_v1.png", "archer": "res://assets/mobs_archer.png",
+	"swarmling": "res://assets/mobs_swarmling.png", "wraith": "res://assets/mobs_wraith.png",
+}
+const C33_FNV_BESTIARY_V2 := {
+	"ambusher": ["0F2EA201", "E2A3AD2B", "FCA9BAE5", "A305CE04"],
+	"forerunner": ["307229E9", "1B906573", "FF25DA5E", "133F6DE3"],
+	"worm": ["EA2115E9", "87254D82", "EF713FC6", "9A2BAA9B"],
+	"whisperer": ["990B3790", "6A74B86B", "C7B80731", "1FD72A56"],
+	"knight": ["79E20412", "02DE0C57", "766D3504", "B5ACA077"],
+	"miner": ["55BB94E0", "9763B483", "565238AB", "75ECC43F"],
+}
+
+## FNV-1a 32 от PNG-байтов кадра — тот же метод, что _fnv32_hex в
+## sheet_bestiary_v2.gd/bestiary_v2_bake.gd (байт-равенство Image <=> FNV).
+func _t26_fnv(img: Image) -> String:
+	var h := 2166136261
+	for b in img.save_png_to_buffer():
+		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
+	return "%08X" % h
+
 
 func _t35() -> void:
 	# 1) кадр v2 в атласе: prop-зона строки 1 (96,16,16,16) побайтово == доставленный v2

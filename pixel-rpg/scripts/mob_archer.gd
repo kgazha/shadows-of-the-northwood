@@ -47,6 +47,8 @@ var hurt_t := 0.0
 ## Заморозка («Морозная нова» мага): >0 — не двигается и не стреляет, синий тинт.
 var freeze_t := 0.0
 var shot_cd := 1.2            # первый выстрел не мгновенно: у героя есть время войти
+# t26 «Бестиарий v2»: имя вида для атрибуции убийства (застрельщик); пусто — "archer".
+var kill_kind := ""
 var tele_t := 0.0             # >0 — идёт подготовка выстрела
 var tele_dir := Vector2.RIGHT # направление, зафиксированное в начале телеграфа
 var facing := "down"
@@ -243,7 +245,7 @@ func _shoot() -> void:
 		dirv = tele_dir
 	var a := Arrow.new()
 	world.add_child(a)
-	a.setup(global_position + dirv * 8.0, dirv, world.player, maxi(1, int(round(2.0 * dmg_mult))))
+	a.setup(global_position + dirv * 8.0, dirv, world.player, maxi(1, int(round(2.0 * dmg_mult))), kill_kind)
 
 ## Прямая видимость героя: луч до героя блокируют только стены (слой 2).
 func _has_los(player: Node2D) -> bool:
@@ -315,12 +317,14 @@ class Arrow extends Area2D:
 	var life := 1.6
 	var target: Node2D
 	var dmg := 2
+	var kill_kind := ""  # t26: kind убийцы долетевшей стрелы (застрельщик/«archer»)
 
-	func setup(from: Vector2, dir: Vector2, p_target: Node2D, p_dmg: int) -> void:
+	func setup(from: Vector2, dir: Vector2, p_target: Node2D, p_dmg: int, p_kind := "") -> void:
 		global_position = from
 		dirv = dir.normalized() if dir != Vector2.ZERO else Vector2.RIGHT
 		target = p_target
 		dmg = maxi(1, p_dmg)
+		kill_kind = p_kind
 		rotation = dirv.angle()
 		collision_layer = 0
 		collision_mask = 1 | 2  # герой + стены: вражеская стрела гаснет о препятствия
@@ -358,5 +362,5 @@ class Arrow extends Area2D:
 		# маска 1|2: сюда долетает только герой (слой 1) или преграда — как в
 		# projectile.gd (фикс T9): во всё, что не цель, стрела гаснет
 		if b == target and b.has_method("take_damage"):
-			b.take_damage(dmg, "archer")  # кадры неуязвимости героя (hurt_cd/кувырок) — на его стороне; t20: kind убийцы
+			b.take_damage(dmg, (kill_kind if kill_kind != "" else "archer"))  # кадры неуязвимости героя (hurt_cd/кувырок) — на его стороне; t20: kind убийцы
 		queue_free()

@@ -326,8 +326,30 @@ const MOB_SCRIPTS := {
 
 func _spawn_bestiary() -> void:
 	var mult := OW.belt_mult(belt)
+	# t26 «Бестиарий v2» (вердикт 26.11): один новый вид на пояс — детермини-
+	# рованная подмена ПОСЛЕДНЕЙ сущности семейства-носителя в mobs_meta
+	# (порядок мета фиксирован генератором). BESTIARY/loc_map-метки и GOLDEN
+	# побайтно целы; счёт слотов сохранён. Если сущностей семейства вида в
+	# локации нет (снег: призраков не было), подменяется последняя slime-
+	# сущность — «шептун лечит соседей» читается; иного носителя нет нигде.
+	var kind := String(OW.KIND_BY_BIOME.get(biome, ""))
+	var want_fam := String(OW.KIND_FAMILY.get(kind, ""))
+	var species_idx := -1
+	if kind != "":
+		for si in mobs_meta.size():
+			if String((mobs_meta[si] as Array)[0]) == want_fam:
+				species_idx = si
+		if species_idx < 0:
+			for si in mobs_meta.size():
+				if String((mobs_meta[si] as Array)[0]) == "slime":
+					species_idx = si
+	var eidx := -1
 	for ent in mobs_meta:
+		eidx += 1
 		var fam := String((ent as Array)[0])
+		var is_species := eidx == species_idx
+		if is_species:
+			fam = want_fam
 		if not MOB_SCRIPTS.has(fam):
 			continue
 		var m = load(MOB_SCRIPTS[fam]).new()
@@ -337,6 +359,8 @@ func _spawn_bestiary() -> void:
 			m.belt_loot = "brute_t%d@b%d" % [m.tier, belt]
 		else:
 			m.loot_kind = "%s@b%d" % [fam, belt]
+		if "kill_kind" in m and is_species:
+			m.kill_kind = kind  # t26: атрибуция убийцы — имя вида (реестр MOBS)
 		add_child(m)
 		m.setup(world, Vector2i(int((ent as Array)[1]), int((ent as Array)[2])))
 		# поясной множитель — ПОСЛЕ setup() (паттерн _apply_ng_stats)
@@ -349,6 +373,8 @@ func _spawn_bestiary() -> void:
 		if "dmg_mult" in m:
 			m.dmg_mult = mult
 		OW.apply_biome_skin(m, biome)
+		if is_species:
+			OW.apply_kind_skin(m, biome, kind)  # t26: лицо вида поверх ремэпа
 
 func _spawn_chest() -> void:
 	if chest_tile.x < 0:

@@ -64,7 +64,12 @@ const WORLD_REGIONS_MD5 := "6d72298ace3e1c4654a162786446c2f9"
 ## носитель семейства brute перепечён с кодо-бейка assets/mobs_boar_v1.png
 ## (boar_sprite_v1.gd), геомет 64x32 и skins(15) не изменились; в json сменился
 ## только src шести brute-скинов. Прежний bake 18.11: 89fed95c18bc32b6443d6d3d7b046e78.
-const MOBS_VARIANTS_MD5 := "6f167c6dd078aaadf30071110f8fc61f"   # skins(15), bake 25.11 (brute->вепрь)
+## ^ ПЕРЕПИН 26.11 «Бестиарий v2» (t26, вердикт 26.11 «принимаем всех»):
+## +6 kind-строк (вид/пояс/носитель/ряд) + починка честного факта t21 №1
+## (snow/wraith — silent no-op снежного мини-босса); легаси-строки побайтно
+## целы (diff = только добавления + строка status). Прежний bake 25.11:
+## 6f167c6dd078aaadf30071110f8fc61f (skins(15), brute->вепрь).
+const MOBS_VARIANTS_MD5 := "d3be6b872419900661a9b5c493e1c8db"   # skins(22), бестиарий v2 (26.11)
 const VILLAGE_V4_MD5 := "3159f23a2da9303b8771099b09f23a21"     # t65-прецедент: деревня байт-цела
 const FOREST_PROPS_MD5 := "f1451755ade072a458b077dbd946d255"
 
@@ -127,6 +132,7 @@ func _ready() -> void:
 	w9_boar()
 	await w10_mini()
 	await w11_minis()
+	await w12_bestiary()
 	# и после себя не оставляем: автосейвы чекпойнтов/фикстуры W3 — на диске
 	_wipe_save()
 	GameState.start_fresh_game()
@@ -622,7 +628,7 @@ func w6_hygiene() -> void:
 	chk(_md5_file("res://assets/world/world_regions.json") == WORLD_REGIONS_MD5,
 			"W6 world_regions.json по пину")
 	chk(_md5_file("res://assets/world/mobs_variants.json") == MOBS_VARIANTS_MD5,
-			"W6 mobs_variants.json по пину (bake 25.11: brute->Тлель-вепрь)")
+			"W6 mobs_variants.json по пину (перепин 26.11: skins(22), бестиарий v2)")
 	var skins := 0
 	var da := DirAccess.open("res://assets/world")
 	if da != null:
@@ -1233,6 +1239,21 @@ func w11_minis() -> void:
 						and int(boss.kill_xp) == int(bb["xp"]) * 3 \
 						and absf(float(boss.dmg_mult) - mult * 1.5) < 1e-6
 		chk(ok_b, "W11[%s]c мини-босс=%s и статы по формуле (пояс %d)" % [bio, fam, belt])
+		# t26 (26.11 «Бестиарий v2», вердикт «принимаем всех»): мини-босс едет
+		# ЛИСТОМ КОЖЕЙ — face атласа равенства + kind-атрибуция убийцы. Статы
+		# выше (W11]c) не двигнуты ни на единицу: пины 20/2/18 и 35/45 в силе.
+		if boss != null:
+			var fbx = boss.get("anim")
+			var fbt := false
+			if fbx != null and fbx.sprite_frames != null:
+				var fban := "walk" if fam == "brute" else "walk_down"
+				if fbx.sprite_frames.has_animation(fban) \
+						and fbx.sprite_frames.get_frame_count(fban) > 0:
+					var fbat := fbx.sprite_frames.get_frame_texture(fban, 0) as AtlasTexture
+					fbt = fbat != null and fbat.atlas != null \
+							and String(fbat.atlas.resource_path).ends_with("mobs_bestiary_v2.png")
+			chk(fbt and String(boss.get("kill_kind")) == String(OWg.KIND_BY_BIOME.get(bio, "")),
+					"W11[%s]f мини-босс в обличье вида (лицо==лист, kind-атрибуция)" % bio)
 		var chest = mz.chest_node
 		chk(chest != null and String(chest.get_hint()) == "Открыть сундук",
 				"W11[%s]d реликтовый сундук стоит" % bio)
@@ -1243,3 +1264,98 @@ func w11_minis() -> void:
 				"W11[%s]e выход на клетку хода" % bio)
 	var cnt1: int = world.find_children("*", "", true, false).size()
 	chk(cnt1 == cnt0, "W11.x обход биомов: утечек нод нет (%d == %d)" % [cnt1, cnt0])
+
+## t26 «Бестиарий v2» (26.11, вердикт пользователя «принимаем бестиарий всех»):
+## спавн-пины поясов. BESTIARY/loc_map-метки и GOLDEN побайтно целы — вид
+## подменяет детерминированную сущность на слое спавна (biome_zone), поэтому
+## стенд проверяет ЖИВОЙ пояс: ровно один вид биома, скрипт-носитель, лицо из
+## атласа равенства, лут семейный, статы = семейство × множитель пояса (та же
+## control-методика, что W4.6a/c), плюс починка честного факта t21 №1.
+func w12_bestiary() -> void:
+	if world == null:
+		chk(false, "t26: живой world не поставлен — спавн не проверен")
+		return
+	for bio in OWg.ZONES:
+		world.enter_location(String(bio))
+		var waited := 0
+		while String(world.active_area) != "loc_" + String(bio) and waited < 300:
+			await get_tree().process_frame
+			waited += 1
+		await _frames(20)
+		var zn = (world.get("biome_grids") as Dictionary).get(String(bio), null)
+		if zn == null:
+			chk(false, "t26[%s]: локация не построена" % bio)
+			continue
+		var kind := String(OWg.KIND_BY_BIOME.get(String(bio), ""))
+		var want_fam := String(OWg.KIND_FAMILY.get(kind, ""))
+		var found := 0
+		var sp = null
+		var face_ok := false
+		var stack: Array = [zn]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			for c in n.get_children():
+				stack.append(c)
+			var scr := n.get_script() as Script
+			if scr == null or not String(scr.resource_path).ends_with(want_fam + ".gd"):
+				continue
+			if String(n.get("kill_kind")) != kind:
+				continue
+			found += 1
+			sp = n
+			var aspr = n.get("anim")
+			if aspr != null and aspr.sprite_frames != null:
+				var aname := "walk" if want_fam == "brute" else "walk_down"
+				if aspr.sprite_frames.has_animation(aname) \
+						and aspr.sprite_frames.get_frame_count(aname) > 0:
+					var at := aspr.sprite_frames.get_frame_texture(aname, 0) as AtlasTexture
+					face_ok = at != null and at.atlas != null \
+							and String(at.atlas.resource_path).ends_with("mobs_bestiary_v2.png")
+		chk(found == 1 and face_ok,
+				"t26[%s]: вид %s один в поясе и одет в атлас равенства" % [bio, kind])
+		if found == 1 and sp != null:
+			var belt12 := int(OWg.zone_belt(String(bio)))
+			var loot_ok: bool
+			if want_fam == "brute":
+				loot_ok = String(sp.belt_loot) == "brute_t%d@b%d" % [int(sp.tier), belt12]
+			else:
+				loot_ok = String(sp.loot_kind) == "%s@b%d" % [want_fam, belt12]
+			var m2 = load("res://scripts/" + ("brute.gd" if want_fam == "brute"
+					else "mob_" + want_fam + ".gd")).new()
+			world.get_node("Village").add_child(m2)
+			if want_fam == "brute":
+				m2.boss = false
+				m2.tier = int(sp.tier)
+			m2.setup(world, Vector2i(2, 2))
+			var want_hp := maxi(1, int(round(float(int(m2.hp)) * float(OWg.belt_mult(belt12)))))
+			m2.queue_free()
+			chk(loot_ok and int(sp.hp) == want_hp,
+					"t26[%s]: статы/лут вида = семейство × пояс (BALANCE-формула, не новая строка)" % bio)
+	# Починка честного факта t21 №1: ГОЛЫЙ apply_biome_skin носителя надевает
+	# face (snow/wraith больше не silent no-op) — без всякой явной выдачи.
+	var wfix = load("res://scripts/mob_wraith.gd").new()
+	world.get_node("Village").add_child(wfix)
+	wfix.setup(world, Vector2i(2, 2))
+	OWg.apply_biome_skin(wfix, "snow")
+	var wtx := false
+	if wfix.anim != null and wfix.anim.sprite_frames != null \
+			and wfix.anim.sprite_frames.has_animation("idle_down"):
+		var wat := wfix.anim.sprite_frames.get_frame_texture("idle_down", 0) as AtlasTexture
+		wtx = wat != null and wat.atlas != null \
+				and String(wat.atlas.resource_path).ends_with("mobs_bestiary_v2.png")
+	wfix.queue_free()
+	chk(wtx, "t26: ПОЧИНКА — apply_biome_skin(snow) на носителе даёт face шептуна (был no-op)")
+	# Правило «plain > kind»: подземельный wraith сохраняет свой plain-remap —
+	# рудокоп надевается только явной выдачей спавну вида.
+	var wpl = load("res://scripts/mob_wraith.gd").new()
+	world.get_node("Village").add_child(wpl)
+	wpl.setup(world, Vector2i(2, 2))
+	OWg.apply_biome_skin(wpl, "dungeon")
+	var ptx := false
+	if wpl.anim != null and wpl.anim.sprite_frames != null \
+			and wpl.anim.sprite_frames.has_animation("idle_down"):
+		var pat := wpl.anim.sprite_frames.get_frame_texture("idle_down", 0) as AtlasTexture
+		ptx = pat != null and pat.atlas != null \
+				and String(pat.atlas.resource_path).ends_with("mobs_wraith_dungeon_v1.png")
+	wpl.queue_free()
+	chk(ptx, "t26: plain-remap старший — скин dungeon/wraith лицом вида не заменён")

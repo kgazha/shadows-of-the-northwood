@@ -114,6 +114,10 @@ var stance_dir := Vector2.ZERO
 ## (тот же фильтр get_script(), что у венцов §D): ярусные отпрыски и Ведьма
 ## (mob_boss2.gd) сохраняют прежнее поведение контакты-урона.
 var fair := false
+# t26 «Бестиарий v2»: имя вида для атрибуции убийства (засадчик/рыцарь);
+# пусто — семейное «brute» (легаси-поведение побайтно прежнее).
+var kill_kind := ""
+var act_hold_t := 0.0      # t26: сколько ещё держать кадр удара T1 вида (0 — не держать)
 var windup_t := 0.0        # >0 — замах: телеграф висит, урона нет, позиция зафиксирована
 var recover_t := 0.0       # >0 — окно наказания: не бьёт, герой долбит без сопротивления
 var strike_dir := Vector2.RIGHT  # направление замаха, фиксируется в начале замаха (телеграф честен)
@@ -252,6 +256,13 @@ func _physics_process(delta: float) -> void:
 			ash_timer = SWARM_CD
 			_spawn_ash()
 	# t19 «честный Гром»: замах и окно наказания — состояния с приоритетом над ИИ.
+	# t26: досмотр кадра T1 у вида — возврат в поход (act есть только у вида).
+	if act_hold_t > 0.0:
+		act_hold_t -= delta
+		if act_hold_t <= 0.0 and windup_t <= 0.0 and stance_t <= 0.0 and rush_t <= 0.0 \
+				and anim != null and anim.sprite_frames != null \
+				and anim.sprite_frames.has_animation("act"):
+			anim.play("walk")
 	if fair:
 		if windup_t > 0.0:
 			windup_t -= delta
@@ -307,6 +318,11 @@ func _physics_process(delta: float) -> void:
 			modulate = Color(1.15, 0.7, 0.55)
 		velocity = rush_dir * CHARGE_SPEED
 	else:
+		# t26: таран вида закончился (act-приём отыгран T0->T1) — возврат в поход.
+		if anim != null and anim.sprite_frames != null \
+				and anim.sprite_frames.has_animation("act") \
+				and String(anim.animation) == "act":
+			anim.play("walk")
 		# 16.11 юзер-фикс (агро через стены): видим — помним место; не видим —
 		# бежим к последнему видимому ещё SEE_MEMORY с (Гром-memory умнее
 		# крысы), потом встаём и ждём. Бросок (rush) — только по актуально
@@ -324,6 +340,11 @@ func _physics_process(delta: float) -> void:
 			# (направление зафиксирована), таран поджигается в стойка-ветке выше.
 			stance_t = RAM_STANCE
 			stance_dir = (player.global_position - global_position).normalized()
+			# t26: вид «Бестиарий v2» отыгрывает приём кадрами листа — стойка
+			# тарана = act (T0 телеграф → T1 исполнение, 2 к/с == RAM_STANCE 0.5 с).
+			if anim != null and anim.sprite_frames != null \
+					and anim.sprite_frames.has_animation("act"):
+				anim.play("act")
 			if boss:
 				GameState.toast.emit("Гром бросается вперёд — отходи!")
 		elif sees or _seen_t > 0.0:
@@ -367,6 +388,11 @@ func strike_contains(p: Vector2) -> bool:
 func _begin_windup() -> void:
 	Sfx.play("grom_windup")  # t31: нарастающий гул замахa ровно на WINDUP_TIME — телеграф слышно
 	windup_t = WINDUP_TIME
+	# t26: у вида «Бестиарий v2» телеграф ещё и рисуется (act = T0 телеграф ->
+	# T1 удар листа); у легаси-вепря act-анимации нет — ветка молчит.
+	if anim != null and anim.sprite_frames != null \
+			and anim.sprite_frames.has_animation("act"):
+		anim.play("act")
 	var p: Vector2 = world.player.global_position - global_position
 	strike_dir = p.normalized() if p.length_squared() > 0.0001 else Vector2.RIGHT
 	if tg != null:
@@ -375,6 +401,11 @@ func _begin_windup() -> void:
 
 func _strike() -> void:
 	Sfx.play("grom_slam")  # t31: суб-удар «в землю» — кульминация телеграфа
+	# t26: кадр удара (T1) — ровно в момент подведения итогов замаха, держим
+	# его 0.3 с (кадр «исполнения» листа видим), только у вида с act.
+	if anim != null and anim.sprite_frames != null \
+			and anim.sprite_frames.has_animation("act"):
+		act_hold_t = 0.3
 	if tg != null:
 		tg.visible = false
 	recover_t = STRIKE_RECOVER  # и после попадания тоже: окно, чтобы добить не отвечающего
@@ -386,6 +417,8 @@ func _strike() -> void:
 ## не вида: «Тлель-вепрь» (моб), «Осквернённый Гром» (босс), Ведьма переопределяет
 ## на "boss2" в mob_boss2.gd. Реестр имён — AchvCatalog.MOBS (run_summary).
 func kill_src() -> String:
+	if kill_kind != "":
+		return kill_kind  # t26: вид листа «Бестиарий v2»
 	return "boss" if boss else "brute"
 
 ## «Стенка без пиления» (дребезг экрана вплотную): герой (слой 1) убран из маски —

@@ -69,7 +69,12 @@ func _init() -> void:
 		print("SELF-CHECK: PASS")
 		quit(0)
 
-func _c(rn: String, t: int) -> Color:
+# t26 (26.11, интеграция «Бестиарий v2»): билдеры кадров и хэш-метод объявлены
+# static-ами — единый источник арта для листа и рантайм-бейка
+# bestiary_v2_bake.gd (pre-save hash BE81DD9D после рефакторинга обязан быть
+# равным пину: самопроверка ниже это и держит).
+
+static func _c(rn: String, t: int) -> Color:
 	return P.RAMPS[rn][t]
 
 # ============================================================ заглушки рантайма
@@ -131,27 +136,27 @@ func _stub(biome: String, family: String) -> Dictionary:
 ## Все новые кадры — честные 16x16 (hero-канон), примитивы+акценты, палитра
 ## закрытая. Кадры: K0/K1 поход, T0 телеграф приёма, T1 исполнение.
 
-func _im(w: int, h: int) -> Image:
+static func _im(w: int, h: int) -> Image:
 	return Image.create(w, h, false, Image.FORMAT_RGBA8)
 
-func _px(img: Image, x: int, y: int, col: Color) -> void:
+static func _px(img: Image, x: int, y: int, col: Color) -> void:
 	if x >= 0 and y >= 0 and x < img.get_width() and y < img.get_height():
 		img.set_pixel(x, y, col)
 
-func _rect(img: Image, xa: int, ya: int, xb: int, yb: int, col: Color) -> void:
+static func _rect(img: Image, xa: int, ya: int, xb: int, yb: int, col: Color) -> void:
 	for yy in range(ya, yb + 1):
 		for xx in range(xa, xb + 1):
 			_px(img, xx, yy, col)
 
-func _hrow(img: Image, xa: int, xb: int, y: int, col: Color) -> void:
+static func _hrow(img: Image, xa: int, xb: int, y: int, col: Color) -> void:
 	_rect(img, xa, y, xb, y, col)
 
-func _dcol(img: Image, x: int, ya: int, yb: int, col: Color) -> void:
+static func _dcol(img: Image, x: int, ya: int, yb: int, col: Color) -> void:
 	_rect(img, x, ya, x, yb, col)
 
 # ---- (1) Корневой засадчик (лес): низкий зверь в мху; приём — прыжок ----
 
-func _amb(f: int) -> Image:
+static func _amb(f: int) -> Image:
 	var im := _im(16, 16)
 	var mlo := _c("MOSS_GLOW", P.T_LIGHT)
 	var mmid := _c("MOSS_GLOW", P.T_MID)
@@ -222,7 +227,7 @@ func _amb(f: int) -> Image:
 
 # ---- (2) Степной застрельщик: лучник, держит дистанцию отступая ----
 
-func _forr(f: int) -> Image:
+static func _forr(f: int) -> Image:
 	var im := _im(16, 16)
 	var cl := _c("CLOTH", P.T_LIGHT)
 	var cm := _c("CLOTH", P.T_MID)
@@ -284,7 +289,7 @@ func _forr(f: int) -> Image:
 
 # ---- (3) Песчаный червь: выныривание по телеграфу ----
 
-func _worm(f: int) -> Image:
+static func _worm(f: int) -> Image:
 	var im := _im(16, 16)
 	var pl := _c("PATH", P.T_LIGHT)
 	var pm := _c("PATH", P.T_MID)
@@ -347,7 +352,7 @@ func _worm(f: int) -> Image:
 
 # ---- (4) Снежный шептун: парит, лечит соседей (жрица льда) ----
 
-func _whisp(f: int) -> Image:
+static func _whisp(f: int) -> Image:
 	var im := _im(16, 16)
 	var crl := _c("CRYSTAL", P.T_LIGHT)
 	var crm := _c("CRYSTAL", P.T_MID)
@@ -394,7 +399,7 @@ func _whisp(f: int) -> Image:
 
 # ---- (5) Краденый рыцарь: блок фронта, спина x2 ----
 
-func _knight(f: int) -> Image:
+static func _knight(f: int) -> Image:
 	var im := _im(16, 16)
 	var il := _c("IRON", P.T_LIGHT)
 	var imid := _c("IRON", P.T_MID)
@@ -464,7 +469,7 @@ func _knight(f: int) -> Image:
 	return im
 
 ## Маркер «x2» над спиной — из глифов бортового шрифта, рисуется точками
-func _text_x2(im: Image) -> void:
+static func _text_x2(im: Image) -> void:
 	var g := FONT["X"]
 	var col := _c("HUD_GOLD", P.T_LIGHT)
 	for r in 5:
@@ -479,7 +484,7 @@ func _text_x2(im: Image) -> void:
 
 # ---- (6) Скелет-рудокоп: мечет обломки дугой ----
 
-func _miner(f: int) -> Image:
+static func _miner(f: int) -> Image:
 	var im := _im(16, 16)
 	var bl := _c("BONE", P.T_LIGHT)
 	var bm := _c("BONE", P.T_MID)
@@ -562,7 +567,7 @@ func _miner(f: int) -> Image:
 		_hrow(im, 2, 4, 10, imid)
 	return im
 
-func _new_frame(key: String, f: int) -> Image:
+static func _new_frame(key: String, f: int) -> Image:
 	match key:
 		"ambusher":
 			return _amb(f)
@@ -579,7 +584,7 @@ func _new_frame(key: String, f: int) -> Image:
 
 # ============================================================ пол биома 16px
 
-func _floor(biome: String) -> Dictionary:
+static func _floor(biome: String) -> Dictionary:
 	match biome:
 		"snow":
 			return {"a": _c("STONE", P.T_LIGHT), "b": _c("STONE", P.T_MID), "acc": _c("CRYSTAL", P.T_MID)}
@@ -596,7 +601,7 @@ func _floor(biome: String) -> Dictionary:
 
 ## Контекстная полоса: спрайт на полу биома 1:1 (размер как в игре).
 ## Оба контекста блока — одной высоты 32: линия земли общая.
-func _context_strip(biome: String, spr: Image) -> Image:
+static func _context_strip(biome: String, spr: Image) -> Image:
 	var h := 32
 	var w := 64
 	var im := _im(w, h)
@@ -859,7 +864,7 @@ func _strict_scan(img: Image) -> bool:
 		_fails += 1
 	return ok
 
-func _fnv32_hex(img: Image) -> String:
+static func _fnv32_hex(img: Image) -> String:
 	var h := 2166136261
 	for b in img.save_png_to_buffer():
 		h = int(((h ^ int(b)) * 16777619) & 0xFFFFFFFF)
@@ -958,7 +963,7 @@ func _ru(img: Image, x0: int, y0: int, txt: String, sc: int, col: Color) -> int:
 
 # ---- примитивы ----
 
-func _blit_into(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
+static func _blit_into(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
 	for y in src.get_height():
 		for x in src.get_width():
 			var col := src.get_pixel(x, y)
@@ -968,9 +973,9 @@ func _blit_into(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
 				for dx in sc:
 					_px(dst, x0 + x * sc + dx, y0 + y * sc + dy, col)
 
-func _blit_sc(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
+static func _blit_sc(dst: Image, src: Image, x0: int, y0: int, sc: int) -> void:
 	_blit_into(dst, src, x0, y0, sc)
 
-func _hline_px(sheet: Image, xa: int, xb: int, y: int, col: Color) -> void:
+static func _hline_px(sheet: Image, xa: int, xb: int, y: int, col: Color) -> void:
 	for xx in range(mini(xa, xb), maxi(xa, xb) + 1):
 		_px(sheet, xx, y, col)

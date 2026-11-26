@@ -247,6 +247,15 @@ func _spawn_boss() -> void:
 	if "boss_leash" in m:
 		m.boss_leash = MINI_LEASH
 	OW.apply_biome_skin(m, biome)
+	# t26 «Бестиарий v2» (вердикт 26.11): мини-босс получает обличье вида КОЖЕЙ
+	# (лицо листа t21 поверх ремэпа; статы/пины этого тикета не касаются —
+	# формула пояса выше не двигалась). Снег чинит и честный факт t21 №1:
+	# apply_biome_skin уже надел бы face по строке snow/wraith, явная выдача
+	# идемпотентна и единая для всех шести биомов.
+	if OW.KIND_BY_BIOME.has(biome):
+		if "kill_kind" in m:
+			m.kill_kind = String(OW.KIND_BY_BIOME[biome])
+		OW.apply_kind_skin(m, biome)
 	boss_node = m
 	var w := MiniBossWatch.new()
 	add_child(w)
