@@ -1328,6 +1328,10 @@ func w12_bestiary() -> void:
 				m2.tier = int(sp.tier)
 			m2.setup(world, Vector2i(2, 2))
 			var want_hp := maxi(1, int(round(float(int(m2.hp)) * float(OWg.belt_mult(belt12)))))
+			# Ветка элит (26.11, каноn t41): ролл Elites мог накрыть носителя вида —
+			# тогда BALANCE-формула честно ожидаем hp x2 (meta «elite» ставит Elites.apply).
+			if bool(sp.get_meta("elite", false)):
+				want_hp = maxi(1, int(round(float(want_hp) * 2.0)))
 			m2.queue_free()
 			chk(loot_ok and int(sp.hp) == want_hp,
 					"t26[%s]: статы/лут вида = семейство × пояс (BALANCE-формула, не новая строка)" % bio)
