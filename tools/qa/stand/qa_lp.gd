@@ -4163,13 +4163,16 @@ func _t41() -> void:
 			and str(GameState.flags.get("q.uta_talked", "")) == "1",
 		"g12: флаги встреч в разрешённом пространстве имён q.* (assert qa_q3)")
 	# 3) регресс: g12 не трогала чужие файлы (Esc-меню, RunSummary/мета, HUD…)
+	# F-8 (аудит t27) чинит t31 (26.11): String(Variant-строка) — НЕ конструктор
+	# в Godot 4.7 ("Invalid call 'String' constructor" на md5), _t41 обрывался
+	# молча и сторож не выполнялся ни разу. Приведение — только str().
 	var touched: Array = []
 	for p in G12_UNTOUCHED:
 		var want = G12_UNTOUCHED[p]
-		var got := _t11_md5(String(p))
-		var ok_pin: bool = (got == String(want)) or (want is Array and (want as Array).has(got))
+		var got := _t11_md5(str(p))
+		var ok_pin: bool = (got == str(want)) or (want is Array and (want as Array).has(got))
 		if not ok_pin:
-			touched.append(String(p))
+			touched.append(str(p))
 	chk(touched.is_empty(), "g12: Esc-меню/RunSummary/мета/npc/FirstHint/alchemy/journal бит-в-бит (%s)" % str(touched))
 	# порядок: сейв-тест не оставляет мусора
 	if FileAccess.file_exists(SAVE_PATH):
