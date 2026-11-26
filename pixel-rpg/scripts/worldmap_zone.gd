@@ -22,8 +22,10 @@ const FOREST_FLOOR := "res://assets/forest/forest_floor_v1.png"
 
 const OW := preload("res://scripts/open_world.gd")
 const ENV := preload("res://scripts/env_art.gd")
+const BD := preload("res://scripts/bounties.gd")  # t36 I3: маркер охоты «†»
 
 var world: Node2D
+var hunt_marks: Array = []   # t36 I3: маркеры охот «†» (redraw по событию тумана)
 var map_rows: Array = []
 var map_w := 0
 var map_h := 0
@@ -299,6 +301,11 @@ func build_fog_overlay() -> void:
 ## Перерисовка всей клеточной вуали (map_w*map_h пикселей — микросекунды) и
 ## push в живую текстуру. Вызывается миром на reveal-событиях, не каждый кадр.
 func refresh_fog() -> void:
+	# t36 I3: туман сдвинулся — маркеры охот перерисовываются событием
+	# (поллинга по кадрам нет: R8.1-киноканон карты мира не трогаем).
+	for mk in hunt_marks:
+		if is_instance_valid(mk):
+			mk.queue_redraw()
 	if _fog_img == null:
 		return
 	var fog = GameState.wm_fog
@@ -407,6 +414,14 @@ class WorldPortal:
 				zone.ENV.T_TORCH, 4,
 				zone.ENV.cell_phase(int(tile.x), int(tile.y), zone.ENV.T_TORCH, 4))
 		add_child(t)
+		# t36 I3 (26.11): маркер активной охоты «†» над створом портала —
+		# код-графика (арт-закон: ноль растров); «в радиусе» = клетка портала
+		# открыта туманом (t7 канон portal_fogged), новой системы близости нет.
+		var hm := HuntMark.new()
+		hm.setup(zone, biome)
+		hm.position = Vector2(0, -10)
+		add_child(hm)
+		zone.hunt_marks.append(hm)
 		var cs := CollisionShape2D.new()
 		var sh := CircleShape2D.new()
 		sh.radius = 14.0
@@ -466,3 +481,28 @@ class WorldArchBack:
 	func _on_exit(b: Node) -> void:
 		if b.is_in_group("player"):
 			zone.world.near.erase(self)
+
+class HuntMark:
+	extends Node2D
+	## t36 I3 (26.11, волна «Интерес v1»): «†» активной охоты над порталом зоны.
+	## Рисунок кодом (арт-закон), цвет — багровая аура цели (bounties.AURA).
+	## Показан, только если зона — цель охоты И портал не в тумане («в радиусе»
+	## = клетка открыта t7-моделью; скрытого знания о недосягаемом не даём).
+	## ПЕРЕРАБОТКА (т36, тот же день): прежний _process-опрос поднимал кадр
+	## карты мира (R8.1 x2.76) — redraw чисто событийный: quest_changed (взял/
+	## закрыл/истекло) и refresh_fog (туман сдвинулся), поллинга по кадрам нет.
+	var zone
+	var biome := ""
+	func setup(p_zone, p_biome: String) -> void:
+		zone = p_zone
+		biome = p_biome
+		z_index = 50
+		GameState.quest_changed.connect(queue_redraw)
+	func _draw() -> void:
+		if BD.map_marker_zone(GameState) != biome:
+			return
+		if zone == null or not is_instance_valid(zone) or zone.portal_fogged(biome):
+			return
+		var c: Color = BD.AURA
+		draw_rect(Rect2(-0.5, -8.0, 1.0, 7.0), c)     # вертикаль кинжала
+		draw_rect(Rect2(-2.5, -6.0, 5.0, 1.0), c)    # перекрестье

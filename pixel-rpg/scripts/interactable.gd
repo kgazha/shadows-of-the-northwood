@@ -4,6 +4,7 @@ extends Area2D
 ## Травы — возобновляемый ресурс (зелья): через ~50 с отрастают на месте.
 
 const HERB_RESPAWN := 50.0
+const BD := preload("res://scripts/bounties.gd")  # t36 I3: охоты на той же доске
 ## Травы в бою (combat_t > 0) — правило «на шуму боя»: сбор не запрещён, но
 ## количество HERB_PICK режется множителем COMBAT_HERB_MULT с округлением вверх
 ## и нижним пределом COMBAT_HERB_MIN (минимум 1, если куст не пустой).
@@ -81,11 +82,19 @@ func get_hint() -> String:
 		# «смотри объявления» = можно взять, «сдай» = цель закрыта).
 		var i := QuestsData.belt_current(GameState)
 		if i >= QuestsData.BELT_CHAIN.size():
-			return "Доска: цепочка закрыта"
+			# t36 I3: цепочка закрыта — доска работает охотой дня.
+			var hs0 := BD.hunt_hint(GameState)
+			return ("Доска: %s" % hs0) if hs0 != "" else "Доска: цепочка закрыта"
 		match QuestsData.belt_status(GameState, i):
 			QuestsData.STATUS_NONE:
-				return "Доска: смотри объявления" \
-						if QuestsData.belt_can_offer(GameState, i) else "Доска: объявление не по пути"
+				if QuestsData.belt_can_offer(GameState, i):
+					return "Доска: смотри объявления"
+				# t36 I3: «не по пути» — единственная ветка NONE без действия
+				# цепочки, сюда подмешивается охота; «смотри объявления» —
+				# строка-пин цепочки, не тронута.
+				var hs1 := BD.hunt_hint(GameState)
+				return "Доска: объявление не по пути" \
+						+ ("; %s" % hs1 if hs1 != "" else "")
 			QuestsData.STATUS_ACTIVE:
 				return "Доска: сдай" if QuestsData.belt_ready(GameState, i) \
 						else "Доска: работаешь — %s" % QuestsData.belt_progress_line(GameState, i)
@@ -190,28 +199,34 @@ func _sync_shadow() -> void:
 ## Ритуал доски: первое несданное звено цепочки. Взять (если пояс открыт),
 ## сдать (если цель закрыта) или честная подсказка, что мешает. Идемпотентность
 ## наград — в QuestsData.belt_turnin (флаг 2 до выдачи).
+## t36 I3 (26.11): доска — одно место двух потоков. Если у цепочки есть
+## НАВЕШАННОЕ действие (взять/сдать) — нажатие её, без изменений; иначе
+## нажатие забирает охота (взятие бесплатное / статус). belt-цепь не тронута.
 func _interact_board() -> void:
 	GameAudio.sfx("ui_click")
 	var i := QuestsData.belt_current(GameState)
+	var st := QuestsData.belt_status(GameState, i)
+	var chain_pending := i < QuestsData.BELT_CHAIN.size() \
+			and ((st == QuestsData.STATUS_NONE and QuestsData.belt_can_offer(GameState, i)) \
+				or (st == QuestsData.STATUS_ACTIVE and QuestsData.belt_ready(GameState, i)))
+	if chain_pending:
+		if st == QuestsData.STATUS_NONE:
+			QuestsData.belt_offer(GameState, i)
+		else:
+			QuestsData.belt_turnin(GameState, i)
+		return
+	if BD.board_press(GameState):
+		return
 	if i >= QuestsData.BELT_CHAIN.size():
 		GameState.toast.emit("На доске — старые адреса. Старейшина больше ни о чём не просит.")
 		return
 	var title := String(QuestsData.belt_link(i).get("title", ""))
-	match QuestsData.belt_status(GameState, i):
-		QuestsData.STATUS_NONE:
-			if QuestsData.belt_can_offer(GameState, i):
-				QuestsData.belt_offer(GameState, i)
-			else:
-				GameState.toast.emit("Объявление «%s» не по пути: сперва доберись до «%s»."
-						% [title, QuestsData.belt_zone_name(GameState, i)])
-		QuestsData.STATUS_ACTIVE:
-			if QuestsData.belt_ready(GameState, i):
-				QuestsData.belt_turnin(GameState, i)
-			else:
-				GameState.toast.emit("«%s» ещё не закрыто: %s."
-						% [title, QuestsData.belt_progress_line(GameState, i)])
-		_:
-			pass
+	if st == QuestsData.STATUS_ACTIVE:
+		GameState.toast.emit("«%s» ещё не закрыто: %s."
+				% [title, QuestsData.belt_progress_line(GameState, i)])
+	else:
+		GameState.toast.emit("Объявление «%s» не по пути: сперва доберись до «%s»."
+				% [title, QuestsData.belt_zone_name(GameState, i)])
 
 class _BoardArt:
 	extends Node2D

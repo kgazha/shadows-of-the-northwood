@@ -245,16 +245,21 @@ static func _patrols_for_area(area: String) -> Array:
 
 ## Перестановка дома: дошёл (или прилип) — следующая дорожная клетка ТОЛЬКО
 ## проходимая (условие капитана: никаких новых трупов у стен).
+## t36-хвост (26.11, qa_c1): валидность проверяется ДО типизированного
+## присваивания — `var m: Node = p["mob"]` от уже freed-инстанса сам поднимает
+## SCRIPT ERROR (кадр с гибелью патруля засорял лог; длинный c1-плейт ловил TMO
+## на потоке ошибок). Вариант-чтение безопасно, тип — только после гейта.
 static func _tick_patrols() -> void:
 	var i := _patrols.size() - 1
 	while i >= 0:
 		var p: Dictionary = _patrols[i]
-		var m: Node = p["mob"]
-		var z: Node = p["zone"]
-		if not is_instance_valid(m) or bool(m.get("dying")) or not is_instance_valid(z):
+		if not is_instance_valid(p["mob"]) or not is_instance_valid(p["zone"]) \
+				or bool((p["mob"] as Node).get("dying")):
 			_patrols.remove_at(i)
 			i -= 1
 			continue
+		var m: Node = p["mob"]
+		var z: Node = p["zone"]
 		var home_pos: Vector2 = m.home
 		if m.global_position.distance_to(home_pos) <= PATROL_NEAR:
 			var path: Array = p["path"]
@@ -274,9 +279,8 @@ static func _tick_patrols() -> void:
 
 static func _disperse_patrols() -> void:
 	for p in _patrols:
-		var m: Node = p["mob"]
-		if is_instance_valid(m):
-			m.queue_free()
+		if is_instance_valid(p["mob"]):
+			(p["mob"] as Node).queue_free()
 	_patrols.clear()
 
 ## Полный сброс памяти (стенды/тесты): патрули сняты, шум чист.

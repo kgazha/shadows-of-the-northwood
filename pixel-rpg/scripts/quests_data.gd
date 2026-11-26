@@ -21,6 +21,8 @@ extends RefCounted
 ## автостарт побочек не происходит — это штатная деградация.
 
 const FLAG_PREFIX := "q."        # статусы побочных квестов: "q." + id
+
+const BTY := preload("res://scripts/bounties.gd")  # t36 I3: охоты доски (журнал)
 const GOT_PREFIX := "q.got."     # накоплено материала: "q.got." + material id
 const LAST_PREFIX := "q.last."   # последнее виденное кол-во: "q.last." + id
 
@@ -321,6 +323,10 @@ static func entries(gs) -> Array:
 			"targets": [{"label": String(def.get("label", "")),
 					"cur": need if done else p, "need": need, "done": done}],
 		})
+	# t36 I3 (26.11, волна «Интерес v1»): охота дня — той же формой строки в тот
+	# же список; journal.gd НЕ тронут (g12-пин), цепочку слияние не касается.
+	for raw_b in BTY.journal_entries(gs):
+		out.append(raw_b)
 	return out
 
 ## Тик системы (вызывает journal.gd): счётчики материалов + автостарты +

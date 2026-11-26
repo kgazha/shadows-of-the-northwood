@@ -114,6 +114,7 @@ const WORLD_ARCH_TILE := Vector2i(22, 2)
 ## к stale global_script_class_cache в headless-прогонах, тот же приём, что DZ).
 const OW := preload("res://scripts/open_world.gd")
 const ENR := preload("res://scripts/enroute.gd")  # I2 «Ритм в пути» (t35, 26.11)
+const BTY := preload("res://scripts/bounties.gd")  # I3 «Доска охот» (t36, 26.11)
 ## t19 «Глубина v2 §2а» (25.11): микро-подземелья — чистый генератор и
 ## внутренняя сцена. «Этаж» хода — MD.MINI_Y (48000 = 10×YS_CYCLE, новый
 ## верхний ярус над лентой локаций: карта мира и геометрия локаций НЕ
@@ -1922,6 +1923,9 @@ func apply_area(area: String, teleport: bool = true) -> void:
 	# I2 «Ритм в пути» (t35, 26.11): заход в сцену — новый лист шума и, если
 	# ночь, ночной патруль на дорогах (только loc-сцены, кроме подземелья).
 	ENR.on_area_enter(self, prev)
+	# I3 «Доска охот» (t36, 26.11): заход в зону охоты — пересадка именной
+	# цели (детерминированно, той же клеткой; в сейв моб не пишется).
+	BTY.ensure_target(self)
 
 func _set_cam_limits(area: String) -> void:
 	if area == "cave" and dungeon_zone != null:

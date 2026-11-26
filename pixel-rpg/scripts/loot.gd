@@ -8,6 +8,7 @@ extends RefCounted
 const OW := preload("res://scripts/open_world.gd")  # t3: GOLD_BELT_STEP — реестр поясов
 const ELIT := preload("res://scripts/elites.gd")    # t34 I1: GOLD_MULT — серебро элит
 const ENR := preload("res://scripts/enroute.gd")    # t35 I2: шум убийств -> ответка
+const BTY := preload("res://scripts/bounties.gd")   # t36 I3: смерть цели охоты
 
 ## g20b TEST-ONLY: если >= 0, каждый бросок таблицы на смерть моба берётся
 ## отсюда вместо randf() — детерминированная проверка 5%-дропа снаряжения
@@ -46,6 +47,10 @@ static func on_mob_death(kind: String, world_pos: Vector2, world: Node2D = null,
 		# I2 «Ритм в пути» (t35, 26.11): тот же прецедент канала — шум убийств
 		# слышит Enroute (3 килла за заход -> ответка; гейты — в модуле).
 		ENR.note_kill(String(world.active_area))
+	# I3 «Доска охот» (t36, 26.11): смерть именной цели — вне гейта world:
+	# выдача награды мира не требует (headless-пробы зовут without).
+	if who != null and who.has_meta("i3_bounty"):
+		BTY.on_bounty_death(GameState, who)
 	var table: Variant = GearData.LOOT.get(kind, [])
 	if typeof(table) != TYPE_ARRAY or table.is_empty():
 		push_warning("Loot: неизвестный вид моба: %s" % kind)

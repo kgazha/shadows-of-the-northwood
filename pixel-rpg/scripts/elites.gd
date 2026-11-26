@@ -53,6 +53,27 @@ static func apply(mob: Node, salt: String, tile: Vector2i, ordinal: int) -> bool
 		return false  # не моб (страж/босс-обёртка/нечто чужое) — мимо
 	if not roll(int(GameState.run_seed), salt, tile, ordinal):
 		return false
+	_ascend(mob, fam)
+	_decorate(mob, fam)
+	return true
+
+## t36 I3 (26.11): именованная элита охоты — тот же I1-комплект (статы/флаг
+## meta "elite"/украшение), но БЕЗ жребия (цель детерминирована доской) и со
+## СВОИМ именем вместо «Элитный <вид>» и СВОИМ цветом ауры. Возвращает true.
+static func apply_named(mob: Node, pname: String, aura: Color = Color(0, 0, 0, 0)) -> bool:
+	if mob == null or not is_instance_valid(mob):
+		return false
+	var base := String(mob.get_script().resource_path.get_file().get_basename())
+	var fam := String(FAM_BY_SCRIPT.get(base, ""))
+	if fam == "":
+		return false
+	_ascend(mob, fam)
+	_decorate(mob, fam, pname, aura)
+	return true
+
+## Комплект статов (hp x2 + урон x1.5 по каналу семейства) — выделен из apply()
+## без изменения поведения (qa_el S3 — регрессионный пин канала).
+static func _ascend(mob: Node, fam: String) -> void:
 	mob.set_meta("elite", true)
 	if "hp" in mob:
 		mob.hp = maxi(1, int(round(int(mob.hp) * HP_MULT)))
@@ -69,58 +90,71 @@ static func apply(mob: Node, salt: String, tile: Vector2i, ordinal: int) -> bool
 			if "dmg_mult" in mob:
 				mob.dmg_mult = float(mob.dmg_mult) * DMG_MULT
 	# скорость НЕ трогаем — вердикт (t34): тягость элиты в туче hp и ударе.
-	_decorate(mob, fam)
-	return true
 
-## Украшение: золотое пульсирующее кольцо (смелое — тумблер bold_fx) и кодо-
-## подпись над головой. Оба — дети моба: живут и умирают вместе с ним, в
-## save/load не лезут (пересборка перерисует по флагу meta на apply).
-## t41-хвост (б, 26.11): кадры ауры — ОДИН кэш на класс (static): три
-## ImageTexture строятся при первой элите и переиспользуются всеми (ресурс
-## в рантайме read-only). Прежняя сборка 3×Image на каждого моба осаживала
+## Украшение: пульсирующее кольцо (золото I1; свой цвет — именованная цель
+## охоты I3) и подпись над головой (тумблер bold_fx — закон t23). Оба — дети
+## моба: живут и умирают вместе с ним, в save/load не лезут (пересборка
+## перерисует по флагу meta на apply).
+## Кэш кадров — ОДИН на ЦВЕТ (static, t41-хвост б + t36 I3): три ImageTexture
+## строятся при первом требовании цвета и переиспользуются всеми (ресурс в
+## рантайме read-only). Прежняя сборка 3×Image на каждого моба осаживала
 ## загрузку текстур в ближайший переход (perf-пик 191 мс при медиане 29 мс
-## в qa_c1) — после первой элиты цена украшения нулевая.
-static var _aura_frames: SpriteFrames = null
+## в qa_c1) — после первого моба цвета цена украшения нулевая.
+static var _aura_cache := {}
 
-static func _aura_sprite_frames() -> SpriteFrames:
-	if _aura_frames != null and is_instance_valid(_aura_frames):
-		return _aura_frames
+static func _aura_sprite_frames(col: Color = Color(0, 0, 0, 0)) -> SpriteFrames:
+	var custom := col.a > 0.0
+	var key := "gold" if not custom else "%.3f,%.3f,%.3f" % [col.r, col.g, col.b]
+	var hit: Variant = _aura_cache.get(key)
+	if hit != null and is_instance_valid(hit):
+		return hit
 	var frames := SpriteFrames.new()
 	frames.remove_animation("default")
 	frames.add_animation("aura")
-	# три кадра пульса: тонок/жирно/тонок — рампа HUD_GOLD (канон палитры).
+	# три кадра пульса: тонок/жирно/тонок — рампа HUD_GOLD (канон палитры);
+	# кастомный цвет — своя рампа из него же (2 темно / 0 база / 1 светло)
 	var radii := [7.0, 8.0, 7.0]
 	var tones := [2, 0, 1]
 	for f in 3:
 		var im := Image.create(20, 20, false, Image.FORMAT_RGBA8)
-		BFX._ring(im, 10.0, 10.0, radii[f], BFX._c("HUD_GOLD", tones[f]), 1)
+		var c := _aura_tone(col, tones[f]) if custom else BFX._c("HUD_GOLD", tones[f])
+		BFX._ring(im, 10.0, 10.0, radii[f], c, 1)
 		frames.add_frame("aura", ImageTexture.create_from_image(im))
 	frames.set_animation_speed("aura", 3.0)
 	frames.set_animation_loop("aura", true)
-	_aura_frames = frames
+	_aura_cache[key] = frames
 	return frames
 
-static func _decorate(mob: Node, fam: String) -> void:
+static func _aura_tone(col: Color, tone: int) -> Color:
+	match tone:
+		1:
+			return col.lightened(0.25)
+		2:
+			return col * 0.65
+	return col
+
+static func _decorate(mob: Node, fam: String, pname: String = "", aura: Color = Color(0, 0, 0, 0)) -> void:
 	if not BFX.enabled():
 		return
 	var spr := AnimatedSprite2D.new()
 	spr.name = "EliteAura"
-	spr.sprite_frames = _aura_sprite_frames()
+	spr.sprite_frames = _aura_sprite_frames(aura)
 	spr.z_index = -1          # под спрайтом моба: ободок у ног, не visor-линза
 	spr.offset = Vector2(0, 2)
 	mob.add_child(spr)
-	# подпись: kill_kind (вид t26) -> имя вида, иначе имя семейства.
+	# подпись: именованная цель (охота I3) — СВОИМ именем; иначе kill_kind
+	# (вид t26) -> имя вида, иначе имя семейства — с префиксом «Элитный ».
 	var lbl := Label.new()
 	lbl.name = "ElitePlate"
 	var nm := String(FAM_NAME.get(fam, fam))
 	var kk := String(mob.get("kill_kind")) if "kill_kind" in mob else ""
 	if kk != "" and AchvCatalog.MOBS.has(kk):
 		nm = String(AchvCatalog.MOBS[kk])
-	lbl.text = PREFIX + nm
+	lbl.text = pname if pname != "" else PREFIX + nm
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	lbl.add_theme_constant_override("outline_size", 3)
-	lbl.add_theme_color_override("font_color", BFX._c("HUD_GOLD", 0))
+	lbl.add_theme_color_override("font_color", aura if aura.a > 0.0 else BFX._c("HUD_GOLD", 0))
 	var fnt := UIFont.get_font()
 	if fnt != null:
 		lbl.add_theme_font_override("font", fnt)
