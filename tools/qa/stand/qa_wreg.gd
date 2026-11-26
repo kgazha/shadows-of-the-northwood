@@ -20,9 +20,11 @@ extends Node2D
 ##     user:// на dungeon и worldmap (точка входа = спавн зоны);
 ##  R7 утечки нод: туда-обратно x6 локаций x3 раунда, дельта OBJECT_NODE_COUNT
 ##     между раундами == 0, мобы не накапливаются;
-##  R8 перф: кадр худшей зоны/карты к деревне <= x1,3 (медиана пула, perf-метод);
-##     генерация: warm-up стабильность <= x1,1 + абсолютный бюджет; аллокации
-##     на покое: OBJECT_NODE_COUNT/RESOURCE дельта == 0;
+##  R8 перф: кадр худшей зоны/карты к деревне <= x1,3 (метод v5.2 — max-знаменатель
+##     по смежным замерам деревни с отсевом раундов-сталлов; история и основание
+##     в r8_perf, старшая версия метода в шапке perf_world.gd); генерация: warm-up
+##     стабильность <= x1,1 + абсолютный бюджет; аллокации на покое:
+##     OBJECT_NODE_COUNT/RESOURCE дельта == 0;
 ##  R9 кадры: PNG-схема карты мира и шести локаций (QA-артефакт, вне палитры).
 ##
 ## Формат: "QA_WREG x/y" (manifest mode "xy").
@@ -706,6 +708,26 @@ func _med(arr: Array) -> float:
 	s.sort()
 	return float(s[int(s.size() / 2)])
 
+## Замер одного кадра-окна: перевод мира в зону + N кадров PROCESS_TIME (мкс).
+func _probe(area: String, n: int) -> Array:
+	world.call("apply_area", area)
+	await get_tree().process_frame
+	var arr: Array = []
+	await _harvest(arr, n)
+	return arr
+
+## База v5.1 для одного окна: МАКС по смежным замерам деревни, раунды-сталлы
+## (медиана > 2 x медузы деревенского пула) отсеиваются; если сталловые оба —
+## берём медузу пула (пусть лучше будет честный красный, чем зелёная ложь).
+func _village_base(before: Array, after: Array, pool_med: float) -> float:
+	var best := 0.0
+	for a in [before, after]:
+		var m: float = _med(a)
+		if m > 2.0 * pool_med:
+			continue
+		best = maxf(best, m)
+	return best if best > 0.0 else pool_med
+
 func r8_perf() -> void:
 	var w = world
 	if w == null:
@@ -713,29 +735,69 @@ func r8_perf() -> void:
 		return
 	await _fr(60)
 	var N := 80
-	var zones := ["village", "worldmap", "loc_snow", "loc_desert", "loc_steppe", "loc_forest", "loc_castle", "loc_dungeon"]
-	var pool := {}
+	# Метод R8.1 — v5.1 (26.11.2026, бэклог t40), тот же, что в perf_world.gd;
+	# ИСТОРИЯ МЕТОДА (полная — в шапке perf_world.gd):
+	#   v1 (t3)  — медиана пула 4 зон, прогрева не было;
+	#   v2 (t10) — warm-up-круг 240 кадров на зону;
+	#   v3 (t10) — интерливинг зон, медиана пула, порог 1.3 (контракт перф-
+	#              допуска; не двигался ни в v3, ни в v5.2);
+	#   v4 (пара «деревня+зона», худший раунд) — откатана: 60-кадровые окна
+	#              шумят сильнее (1.08-2.23 при равных деревне медузах);
+	#   v5 (26.11, t27) — знаменатель = МАКС по раундам медианы деревни: медуза
+	#              деревни бимодальна и квантована вертикалкой (плато ~17,8 мс
+	#              или ~25,5 мс при ТОМ ЖЕ коде), поэтому быстрое плато само
+	#              рождало красный;
+	#   v5.1 (26.11, t27 в perf_world / t40 здесь) — из базы отсекаются
+	#              раунды-сталлы (медиана раунда > 2 x медузы деревенского
+	#              пула): чистый max менял ложные красные на ложные зелёные
+	#              (один раунд 66891 мкс раздувал базу втрое, ratio падал до
+	#              0.47 при честных ~1.2).
+	# Сюда метод приехал потому, что R8.1 была последней плато-жертвой батареи:
+	# 26.11 три красных подряд под нагрузкой (1.36/1.39/2.27) и зелёные в тишине.
+	#   v5.2 (здесь, 26.11, та же пена) — чистый v5.1 в нагруженном окне ПРОВАЛИЛСЯ
+	#              (эксперимент t40: второй живой world-sim рядом, ratio 1.57;
+	#              раунды деревни 36048/23842/34655 — помеха приходит
+	#              асимметрично: деревня меряется в тихую секунду, зона — в пик).
+	#              Поэтому база берётся не «по раундам вообще», а по ДВУМ ЗАМЕРАМ
+	#              ДЕРЕВНИ, ОБРАМЛЯЮЩИМ ИЗМЕРЕНИЕ ЗОНЫ (до и сразу после): та же
+	#              пара «max + отсев сталлов», но знаменатель живёт в том же
+	#              временном окне, что и числитель. Это не v4: окна по-прежнему
+	#              N=80 кадров (не 60) и медуза, а не худший кадр.
+	# Раундов 2: плечо «обрамление x 7 зон» дороже одинарного круга, а max по
+	# смежным замерам не нуждается в длинной истории. Числитель (медиана худшей
+	# зоны) и порог 1.3 не тронуты; имя проверки не тронуто, чтобы не ломать
+	# разбор логов.
+	var ROUNDS := 2
+	var zones := ["worldmap", "loc_snow", "loc_desert", "loc_steppe", "loc_forest", "loc_castle", "loc_dungeon"]
+	var village_pool: Array = []
+	var zone_med := {}          # зона -> худшая (max) медуза по раундам
 	for z in zones:
-		pool[z] = []
-	for rd in 2:
+		zone_med[z] = 0.0
+	var ratio := 0.0
+	var worstz := ""
+	var brackets: Array = []
+	for rd in ROUNDS:
 		for z in zones:
-			w.call("apply_area", z)
-			await get_tree().process_frame
-			await _harvest(pool[z], N)
+			var vb: Array = await _probe("village", N)
+			var zm: Array = await _probe(String(z), N)
+			var va: Array = await _probe("village", N)
+			village_pool.append_array(vb)
+			village_pool.append_array(va)
+			var pv: float = _med(village_pool)
+			var base: float = _village_base(vb, va, pv)
+			var m: float = _med(zm)
+			zone_med[z] = maxf(float(zone_med[z]), m)
+			var r: float = m / maxf(base, 0.5)
+			brackets.append("%s r%.0f/%.1f=%.2f" % [String(z), rd, m, r])
+			if r > ratio:
+				ratio = r
+				worstz = String(z)
 	w.call("apply_area", "village")
 	await _wait_area(w, "village")
-	var pv: float = _med(pool["village"])
-	var worst := 0.0
-	var worstz := ""
 	for z in zones:
-		if z == "village":
-			continue
-		var m: float = _med(pool[z])
-		print("WREG perf %s med=%.1f мкс" % [z, m])
-		if m > worst:
-			worst = m
-			worstz = z
-	var ratio: float = worst / maxf(pv, 0.5)
+		print("WREG perf %s med=%.1f мкс" % [z, float(zone_med[z])])
+	print("WREG perf v5.2: деревня медуза=%.1f (пул %d кадров); поплечо (зона раунд/медуза=отношение): %s" % [
+			_med(village_pool), village_pool.size(), " ".join(PackedStringArray(brackets))])
 	chk(ratio <= 1.3, "R8.1 кадр худшей зоны (%s) к деревне = %.2f <= 1.3" % [worstz, ratio])
 	# генерация: warm-up стабильность x1.1 + бюджет
 	var t0 := Time.get_ticks_usec()
