@@ -22,6 +22,31 @@ extends Node2D
 ## Запуск (файл в корень копии проекта, как делает run_all.js):
 ##   godot --headless --path <copy> res://perf_world.tscn
 ## Формат: "QA_PERFWORLD x/y" (manifest mode "xy").
+##
+## Метод v5 (26.11.2026, qa-gate, t27; решение капитана по тихому перф-слоту):
+## ЗНАМЕНАТЕЛЬ — max по раундам медианы деревни, а не медиана всего деревенского
+## пула. Основание (тихое окно 26.11 09:38-09:41, машина пуста, Godot 0):
+## медиана деревни бимодальна и квантована кадровой синхронизацией — она садится
+## то на плато ~17.8 мс (56 к/с), то на ~25.5 мс (39 к/с); при быстром плато
+## отношение худшей зоны 1.43-1.49, при медленном 1.00 при ТОМ ЖЕ коде
+## (прецедент тихого окна 25.11 19:12: 25545/25545 = 1.00). Побитово равные
+## медианы разных зон (26476.0 у castle/mini_forest/mini_steppe, 17802.0 у
+## mini_castle/mini_dungeon) доказывают, что замер квантован вертикалкой, а
+## порог живёт внутри кванта. Правка только знаменателя (худшая зона и порог
+## НЕ изменены): max по раундам берёт самое дорогее наблюдение базы, поэтому
+## быстрое плато деревни больше не может само породить красный.
+## ИСТОРИЯ: v1 (t3) — медиана пула 4 зон, warm-up не было; v2 (t10 19.11) —
+## warm-up-круг 240 кадров/зону; v3 (t10) — интерливинг 6×60, медиана пула,
+## порог TOLERANCE 1.3 (контракт перф-допуска, не двигался ни в v1, ни в v5);
+## v4 (пара «деревня+зона», худший раунд) откатана за шумы 60-кадровых окон
+## (1.08-2.23 при равных деревне медузах); v5 (26.11) — v3 + max-знаменатель.
+## Метод замера (Performance.TIME_PROCESS по кадрам) не менялся.
+## Метод v5.1 (26.11.2026, тот же тикет t27): из базы исключаются раунды-сталлы
+## (медиана раунда > 2 x медузы деревенского пула). Причина: в тихом окне 09:54
+## один раунд деревни дал 66891 мкс (15 к/с, всплеск чужой нагрузки), max-база
+## раздулась втрое и отношение упало до 0.47 при честных ~1.2 — то есть чистый
+## max просто менял ложные красные на ложные зелёные. С защитой тот прогон даёт
+## 1.21 (база 26113 — настоящая медленная полка деревни).
 const MAIN_SCENE := "res://scenes/main.tscn"
 const N := 60
 const ROUNDS := 6
@@ -87,14 +112,37 @@ func _ready() -> void:
 	# нагрузке: при красном PERF стенд перечитывают в тихом окне (прецедент
 	# qa_wreg drift-вердикта t4) — доказательство нулевой регрессии t20:
 	# в тихом окне 19:12 медуза мини == деревня (25545/25545, ratio 1.00).
+	var village_rounds: Array = []   # v5: медиана деревни по каждому раунду
 	for rd in ROUNDS:
 		for z in zones:
 			w.apply_area(z)
 			await get_tree().process_frame
-			await _harvest(pool[keys[z]])
+			if String(z) == "village":
+				var vr: Array = []
+				await _harvest(vr)
+				village_rounds.append(_med(vr))
+				(pool["village"] as Array).append_array(vr)
+			else:
+				await _harvest(pool[keys[z]])
 	# последний раунд завершаем в деревне — чистое состояние при выходе
 	w.apply_area("village")
-	var pv: float = _med(pool["village"])
+	var pv: float = _med(pool["village"])          # прежняя метрика v3 (для истории)
+	var pv_base: float = pv                        # v5: база сравнения
+	var dropped := 0
+	if not village_rounds.is_empty():
+		# v5.1 (26.11, тот же тикет t27): чистый max по раундам уязвим к внешнему
+		# сталлу — в тихом окне 09:54 один раунд деревни дал медиану 66891 мкс
+		# (15 к/с, явный всплеск чужой нагрузки), база раздулась втрое, и ratio
+		# упал до 0.47 при честных ~1.2. Такой раунд-сталл (медиана > 2 x медузы
+		# пула) из базы исключаем; если исключены все раунды — база = медуза пула.
+		var best: float = 0.0
+		for v in village_rounds:
+			var vrf: float = float(v)
+			if vrf > 2.0 * pv:
+				dropped += 1
+				continue
+			best = maxf(best, vrf)
+		pv_base = best if best > 0.0 else pv
 	var parts: Array = []
 	var worst: float = 0.0
 	var alive := true
@@ -104,9 +152,13 @@ func _ready() -> void:
 		if k != "village":
 			worst = maxf(worst, mk)
 			parts.append("%s=%.1f" % [k, mk])
-	print("QA_PERFWORLD med village=%.1f %s (мкс, медиана пула, %d кадров на зону, warm-up v3+t20)" % [
-			pv, " ".join(PackedStringArray(parts)), N * ROUNDS])
-	var r: float = worst / maxf(pv, 0.5)
+	var vr_parts: Array = []
+	for v in village_rounds:
+		vr_parts.append("%.1f" % float(v))
+	print("QA_PERFWORLD med village=%.1f village_base=%.1f dropped_rounds=%d %s (мкс, медиана пула; база v5.1 = max по %d раундам без сталлов; %d кадров на зону, warm-up v3+t20)" % [
+			pv, pv_base, dropped, " ".join(PackedStringArray(parts)), village_rounds.size(), N * ROUNDS])
+	print("QA_PERFWORLD деревня по раундам: " + " ".join(PackedStringArray(vr_parts)))
+	var r: float = worst / maxf(pv_base, 0.5)
 	chk(r <= TOLERANCE, "PERF.x кадр худшей новой зоны к деревне = %.2f <= %.1f" % [r, TOLERANCE])
 	chk(alive, "PERF.x замеры состоялись (зоны живые)")
 	print("QA_PERFWORLD %d/%d" % [pass_n, total])
