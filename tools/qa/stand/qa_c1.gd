@@ -1035,6 +1035,7 @@ func _run() -> void:
 		stage_nav_p206,
 		stage_village_done, stage_forest_poi, stage_cave, stage_ashen,
 		stage_worldmap_and_loc, stage_belt1_mini, stage_return_rest, stage_belt1_board,
+		stage_pushout,
 		stage_death,
 	]
 	for f in seq:
@@ -1697,6 +1698,24 @@ func stage_return_rest() -> void:
 	chk("возврат с карты мира в деревню (полный путь замкнут)", String(world.active_area) == "village",
 		"active=%s ok=%s" % [world.active_area, str(ok)])
 	await checkpoint("village_return", "village")
+	# t41 (а, СВОЯ СТРОКА 27.11, artist-cave): автономная аудит-строка элитной
+	# ветки econ-вилки. Надстройка в stage_end перестраивает gold/mat-полосу
+	# ФОРМУЛОЙ из флагов rs.elite.<kind> (пишет loot.gd по meta "elite" килла,
+	# а не по номеру килла — потому вилка сходится на любом сиде); эта строка
+	# независимым источником подтверждает, что ветка на этом сиде ЖИВА: ноль
+	# элитных киллов на целом плейте = мёртвый код вилки (12% роли I1 при
+	# сотнях киллов плейта — на фиксированном сиде это детерминировано).
+	var el_total := 0
+	var el_brk := ""
+	for k in GameState.flags:
+		var ks := String(k)
+		if ks.begins_with("rs.elite."):
+			var ev := int(GameState.flags[k])
+			el_total += ev
+			if ev > 0:
+				el_brk += "%s=%d " % [ks.substr(9), ev]
+	chk("econ[plate].элитная надбавка: элитных киллов %d > 0 — вилка ×3+гарант не мёртвый код [%s]" % [el_total, el_brk],
+		el_total > 0, "rs.elite.* пуст — элитная ветка I1 на плейте молчала")
 	# ночлег: отдых у костра Campfire-каналом 4c (штатные гейты: урон есть, пыл боя 0)
 	var camp = world.campfires[0] if world.campfires.size() > 0 else null
 	if not chk("костёр существует", camp != null, "пусто"):
@@ -1727,6 +1746,89 @@ func stage_return_rest() -> void:
 	await frames(10)
 	await settle()
 	chk("F5+F9: сейв-файл есть, золото сохранилось", saved and GameState.gold == g0, "saved=%s gold=%d/%d" % [str(saved), GameState.gold, g0])
+
+# ==================================================================================
+# t43 (27.11, artist-cave) «Страж выталкивания» (находка t42): герой не может
+# остаться в стене — три канала (сейв/резюме, посадка «Рывка вепря», переход)
+# синтетическими кейсами на ЖИВОЙ сетке деревни. Карта не меняется — ноль
+# перепинов; кейсы лишь читают map_rows и ставят героя в заранее найденную
+# пару «свободная клетка / стена восточнее» (детерминированный скан).
+# ==================================================================================
+func stage_pushout() -> void:
+	stage("pushout_guard")
+	var p := world.player
+	# W1. Страж молчит на свободном: легаси-позиция возвращается КАК ЕСТЬ.
+	var here: Vector2 = p.global_position
+	chk("t43: страж молчит на свободном (легаси-позиция как есть)",
+		world.clear_player_pos(here) == here, "here=%s -> %s" % [str(here), str(world.clear_player_pos(here))])
+	# Детерминированный скан: первая свободная клетка со стеной восточнее.
+	var free_cell := Vector2i(-1, -1)
+	var wall_cell := Vector2i(-1, -1)
+	for y in world.map_rows.size():
+		var row := String(world.map_rows[y])
+		for x in row.length() - 1:
+			var t := Vector2i(x, y)
+			if world._pos_walkable(world.tile_to_world(t)) \
+					and not world._pos_walkable(world.tile_to_world(t + Vector2i(1, 0))):
+				free_cell = t
+				wall_cell = t + Vector2i(1, 0)
+				break
+		if free_cell.x >= 0:
+			break
+	if not chk("t43: пара «свободная/стена восток» найдена на карте деревни", free_cell.x >= 0, str(free_cell)):
+		return
+	# W2. Сейв в стену (центр в стене): лоад обязан посадить на чистое.
+	GameState.player_pos = world.tile_to_world(wall_cell)
+	GameState.pos_valid = true
+	world._place_resumed_player()
+	await frames(6)
+	chk("t43: сейв в стену грузится на чистую клетку", world._box_clear(p.global_position),
+		"pos=%s" % str(p.global_position))
+	# W3. Вросший бокс (центр свободен, восток-угол в стене — класс t42):
+	# страж сдвигает в ближайшую свободную, позиция НЕ остаётся запрошенной.
+	var embed := world.tile_to_world(free_cell) + Vector2(4.0, 0.0)
+	GameState.player_pos = embed
+	GameState.pos_valid = true
+	world._place_resumed_player()
+	await frames(6)
+	chk("t43: вросший бокс (центр свободен) сдвинут со стены", p.global_position != embed and world._box_clear(p.global_position),
+		"запрошено=%s факт=%s" % [str(embed), str(p.global_position)])
+	# W4. Посадка «Рывка вепря» в центр стены: финиш-хэндлер обязан вытолкнуть
+	# в соседнюю свободную (сам рейкаст угла не видит — канал проверяем точкой).
+	p.global_position = world.tile_to_world(free_cell)
+	await frames(4)
+	p.boar_from = p.global_position
+	p.boar_mid = Vector2.ZERO
+	p.boar_dest = world.tile_to_world(wall_cell)
+	p.boar_target = null
+	p.boar_t = 0.02
+	await frames(6)
+	chk("t43: рывок в стену сажает рядом (бокс чист, не в камне)",
+		p.global_position != world.tile_to_world(wall_cell) and world._box_clear(p.global_position) \
+		and p.global_position.distance_to(world.clear_player_pos(world.tile_to_world(wall_cell))) < 0.5,
+		"dest=%s факт=%s" % [str(p.boar_dest), str(p.global_position)])
+	# W5. Подвижность после стража: штатный ввод ведёт (мягкий софтлок снят).
+	# Ось берём детерминированно по первой проходимой соседней клетке — страж
+	# мог посадить героя хоть у какой стены, тыкать в заблокированную честно.
+	var p0: Vector2 = p.global_position
+	var cur_tile: Vector2i = Vector2i(roundf((p0.x - 8.0) / 16.0), roundf((p0.y - 2.0 - 8.0) / 16.0))
+	var ax := Vector2.ZERO
+	for d in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]:
+		if world._pos_walkable(world.tile_to_world(cur_tile + d)):
+			if d == Vector2i(1, 0):
+				ax = Vector2.RIGHT
+			elif d == Vector2i(0, 1):
+				ax = Vector2.DOWN
+			elif d == Vector2i(-1, 0):
+				ax = Vector2.LEFT
+			else:
+				ax = Vector2.UP
+			break
+	axes(ax)
+	await frames(24)
+	axes(Vector2.ZERO)
+	chk("t43: после выталкивания герой подвижен (шаг штатным вводом)",
+		p.global_position.distance_to(p0) > 2.0, "сдвиг %.1f px ось=%s" % [p.global_position.distance_to(p0), str(ax)])
 
 func stage_death() -> void:
 	stage("death_snow")
