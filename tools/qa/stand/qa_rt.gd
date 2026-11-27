@@ -22,6 +22,7 @@ func _ready() -> void:
 	_s1()
 	await _s2()
 	await _s3()
+	await _s3b()
 	await _s4()
 	await _s5()
 	await _s6()
@@ -186,6 +187,34 @@ func _s3() -> void:
 	ENR.note_kill("loc_forest")
 	await _advance_rs(96.0)
 	check("S3 после сноса наряда новый заход снова стреляет (retrib=%d rs=%.0f)" % [ENR._retrib.size(), _rs_now()], _squads() == 1)
+	ENR.reset_all()
+
+## S3b t44 (27.11, находка ворот t39): честная отмена ответки при смене зоны.
+## Прежнее поведение молчало: due=-1, счётчик килов висел, повторный заказ
+## в заходе был невозможен. Ныне: запись шума стирается, возврат = чистый
+## старт с новым тостом; в чужой зоне наряд НЕ телепортируется.
+func _s3b() -> void:
+	ENR.reset_all()
+	GameState.enroute_events = true
+	await _set_phase(false)
+	await _enter("loc_forest")
+	_toasts.clear()
+	ENR.note_kill("loc_forest")
+	ENR.note_kill("loc_forest")
+	ENR.note_kill("loc_forest")
+	check("S3b заказ поставлен (тост)", _toasts.has(ENR.TOAST_NOISE))
+	await _enter("village")
+	await _advance_rs(ENR.NOISE_MIN + ENR.NOISE_SPAN + 6.0)
+	check("S3b честная отмена: запись шума стёрта (не due=-1-призрак)",
+		not ENR._noise.has("loc_forest"))
+	check("S3b в чужой зоне наряд не прилетает (отмена, не телепорт)", _squads() == 0)
+	_toasts.clear()
+	await _enter("loc_forest")
+	ENR.note_kill("loc_forest")
+	ENR.note_kill("loc_forest")
+	ENR.note_kill("loc_forest")
+	check("S3b счётчик обнулён: на возврате заказ снова встаёт (тост)",
+		_toasts.has(ENR.TOAST_NOISE))
 	ENR.reset_all()
 
 # ----------------------------------------------------------------- гейты

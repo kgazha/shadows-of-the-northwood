@@ -47,7 +47,13 @@ static func roll(run_seed: int, salt: String, tile: Vector2i, ordinal: int) -> b
 static func apply(mob: Node, salt: String, tile: Vector2i, ordinal: int) -> bool:
 	if mob == null or not is_instance_valid(mob):
 		return false
-	var base := String(mob.get_script().resource_path.get_file().get_basename())
+	# t44 (27.11, находка ворот t39): узел без скрипта — get_script() в null,
+	# .resource_path на нём ронял SCRIPT ERROR. Модуль обязан быть тотально
+	# безопасным: без скрипта это не моб — мимо.
+	var scr: Script = mob.get_script()
+	if scr == null:
+		return false
+	var base := String(scr.resource_path.get_file().get_basename())
 	var fam := String(FAM_BY_SCRIPT.get(base, ""))
 	if fam == "":
 		return false  # не моб (страж/босс-обёртка/нечто чужое) — мимо
@@ -63,7 +69,11 @@ static func apply(mob: Node, salt: String, tile: Vector2i, ordinal: int) -> bool
 static func apply_named(mob: Node, pname: String, aura: Color = Color(0, 0, 0, 0)) -> bool:
 	if mob == null or not is_instance_valid(mob):
 		return false
-	var base := String(mob.get_script().resource_path.get_file().get_basename())
+	# t44 (27.11): тот же null-страж, что в apply() — дыра была идентичная.
+	var scr: Script = mob.get_script()
+	if scr == null:
+		return false
+	var base := String(scr.resource_path.get_file().get_basename())
 	var fam := String(FAM_BY_SCRIPT.get(base, ""))
 	if fam == "":
 		return false

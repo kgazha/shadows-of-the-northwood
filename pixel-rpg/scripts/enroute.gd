@@ -20,6 +20,11 @@ extends RefCounted
 ## с кругом). Цикл: DAY_LEN дня + NIGHT_LEN ночи. Ночь = ЕДИНСТВЕННОЕ время
 ## патрулей; day/night-вариантов арт-скелетов у мобов нет (ночь в мире —
 ## легальное ВРЕМЯ, а не перекраска — перекраски и не делаем).
+## t44 ЗАМЕТКА О МЕРЕ (27.11, находка ворот t39): harness-стенды после смены
+## сцены (reload_current_scene) могут НЕ вести world._process — единственный
+## тикер часов. На стендах I2 время гонят вручную (qa_rt._advance_rs/_set_phase
+## через pump); при «часы стоят» сначала смотреть, жив ли _process сцены,
+## а не часы I2.
 ## Тумблер «События в пути» (GameState.enroute_events, default ON, сейв
 ## аддитивно, Settings-строка по образцу bold_fx) глушит ОБА события; статы
 ## существ не меняются нигде.
@@ -97,14 +102,25 @@ static func _tick_noise(world: Node) -> void:
 				 # заказа не принимаем; срок жизни/смерть освобождают слот)
 	if not _noise.is_empty():
 		var rs_t := float(GameState._num(GameState.flags.get("rs.t", 0), 0))
+		var cancel: Array = []
 		for area in _noise:
 			var st: Dictionary = _noise[area]
 			if bool(st["fired"]) or float(st["due"]) <= 0.0 or rs_t < float(st["due"]):
 				continue
-			st["due"] = -1.0
 			if String(GameState.area) == String(area):
 				_spawn_retrib(world, String(area))
 				st["fired"] = true
+			else:
+				# t44 (27.11, находка ворот t39): герой сменил зону, пока тикала
+				# пауза 45-90 с. Прежде заказ умирал МОЛЧА (due=-1, счётчик
+				# килов оставался висеть, повторный заказ в этом заходе был
+				# невозможен). Честная отмена: запись шума этой сцены стирается
+				# целиком (тот же чистый лист, что при входе), в тишине только
+				# тихая отладочная строка.
+				cancel.append(area)
+		for area in cancel:
+			_noise.erase(area)
+			print("i2 debug: ответка отменена — герой покинул зону %s (t44)" % String(area))
 
 static func _spawn_retrib(world: Node, area: String) -> void:
 	# biome_grids[биом] — УЗЕЛ зоны (biome_zone.gd), не контейнер Loc_*:

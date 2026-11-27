@@ -118,6 +118,12 @@ func _s2() -> void:
 	check("S2 bold_fx OFF: элитизация всё равно случилась (статы — не украшение)", ok_off and int(s_off.hp) > int(s_n.hp))
 	check("S2 bold_fx OFF: ни ауры, ни подписи (закон t23)", s_off.get_node_or_null("EliteAura") == null and s_off.get_node_or_null("ElitePlate") == null)
 	GameState.bold_fx = true
+	# t44 (27.11, находка ворот t39): узел без скрипта — get_script() в null.
+	# Модуль обязан быть тотально безопасным на обоих входах (apply/apply_named).
+	var bare := Node2D.new()
+	check("S2/t44: apply() без скрипта = false без SCRIPT ERROR", not EL.apply(bare, "t44", Vector2i(0, 0), 0))
+	check("S2/t44: apply_named() без скрипта = false без SCRIPT ERROR", not EL.apply_named(bare, "Т44"))
+	bare.free()
 	s_off.free()
 	s_n.free()
 	s_l.free()
