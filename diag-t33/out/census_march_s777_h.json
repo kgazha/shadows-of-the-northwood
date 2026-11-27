@@ -1,0 +1,238 @@
+{
+  "areas": [
+    [
+      6864,
+      "village",
+      "cave"
+    ],
+    [
+      7106,
+      "cave",
+      "village"
+    ],
+    [
+      8936,
+      "village",
+      "loc_forest"
+    ],
+    [
+      10755,
+      "loc_forest",
+      "mini_forest"
+    ],
+    [
+      13158,
+      "mini_forest",
+      "loc_forest"
+    ],
+    [
+      22801,
+      "village",
+      "loc_forest"
+    ],
+    [
+      29215,
+      "loc_forest",
+      "mini_forest"
+    ],
+    [
+      31047,
+      "mini_forest",
+      "cave"
+    ],
+    [
+      31078,
+      "cave",
+      "village"
+    ],
+    [
+      32908,
+      "village",
+      "loc_forest"
+    ],
+    [
+      33672,
+      "loc_forest",
+      "mini_forest"
+    ]
+  ],
+  "best_quality": 2,
+  "bets": 5,
+  "bfs_fail": 1,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "march",
+    "seconds": 600.0,
+    "seed": 777.0,
+    "trace": 1.0
+  },
+  "chests": 2,
+  "cm_frames": 675,
+  "cm_stall_rp_max": 7,
+  "contact_events": 39,
+  "contacts_per_min": 3.9,
+  "death_log": [
+    [
+      13856,
+      "loc_forest"
+    ],
+    [
+      15914,
+      "village"
+    ]
+  ],
+  "deaths": 2,
+  "decisions": 26,
+  "decisions_fled": 18,
+  "dialog_sec": 4.22,
+  "dmg_dealt": 18,
+  "dmg_taken": 81,
+  "dry_max_sec": 61.58,
+  "dry_sum_sec": 474.0,
+  "dungeons": 5,
+  "dungeons_before_wow": 2,
+  "encounter_groups": 26,
+  "enemies_met": 31,
+  "first_strike": 20,
+  "forced_flee": 5,
+  "forced_heal": 1,
+  "frames": 36000,
+  "gear_items": 2,
+  "gold_total": 79,
+  "in_contact_sec": 116.28,
+  "interacts": 9,
+  "kills": 4,
+  "leg_max": 8,
+  "levels": 4,
+  "lock_board_sec": 0.0,
+  "lock_inv_sec": 0.0,
+  "lock_other_sec": 5.5,
+  "lock_shop_sec": 0.0,
+  "lock_summary_sec": 0.0,
+  "locked_sec": 9.72,
+  "minutes": 10.0,
+  "modal_sec": 0.0,
+  "notes": [
+    [
+      2401,
+      "плечо «деревня: ПОИ «лес запад» (5,21) — Д2» пройдено, у цели простояли 12.0 с"
+    ],
+    [
+      3365,
+      "встанка у (346.9258, 388.0015): цели сброшены, идём дальше"
+    ],
+    [
+      4206,
+      "встанка у (346.9985, 388.0742): цели сброшены, идём дальше"
+    ],
+    [
+      5047,
+      "встанка у (346.9258, 388.0015): цели сброшены, идём дальше"
+    ],
+    [
+      6848,
+      "зона не та (village), ждём transition 30 с — программный переход enter_cave()"
+    ],
+    [
+      8920,
+      "зона не та (village), ждём transition 30 с — программный переход enter_location(forest)"
+    ],
+    [
+      17983,
+      "встанка у (83.42033, 356.0879): цели сброшены, идём дальше"
+    ],
+    [
+      20384,
+      "встанка у (90.3766, 346.939): цели сброшены, идём дальше"
+    ],
+    [
+      22785,
+      "зона не та (village), ждём transition 40 с — программный переход enter_location(forest)"
+    ],
+    [
+      29230,
+      "зона не та (mini_forest), ждём transition 106 с — дальше бродим здесь"
+    ],
+    [
+      31031,
+      "зона не та (mini_forest), ждём transition 30 с — программный переход enter_cave()"
+    ],
+    [
+      32892,
+      "зона не та (village), ждём transition 30 с — программный переход enter_location(forest)"
+    ]
+  ],
+  "order_fails": 0,
+  "orders": 42,
+  "panels_closed": 0,
+  "retries": 4,
+  "sec_total": 600.0,
+  "stuck_geom_sec": 20.0,
+  "stuck_lock_sec": 0.0,
+  "stuck_sec": 20.0,
+  "threat_share": 0.645,
+  "threats": 20,
+  "walk_pure_min": 5.03,
+  "wow_item": "leather",
+  "wow_sec": 196.57,
+  "wow_zone": "mini_forest",
+  "wp_hits": 908,
+  "zones": {
+    "cave": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 0.03,
+      "dry_sec": 0.03,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 4.55,
+      "walk_px": 47969.97
+    },
+    "loc_forest": {
+      "contacts": 19,
+      "contacts_per_min": 7.04,
+      "dmg_dealt": 0,
+      "dmg_taken": 16,
+      "dry_max_sec": 120.78,
+      "dry_sec": 120.78,
+      "enemies_met": 15,
+      "heals": 0,
+      "interacts": 4,
+      "loot_items": 0,
+      "sec": 161.93,
+      "walk_px": 109205.82
+    },
+    "mini_forest": {
+      "contacts": 4,
+      "contacts_per_min": 2.19,
+      "dmg_dealt": 0,
+      "dmg_taken": 36,
+      "dry_max_sec": 71.23,
+      "dry_sec": 71.23,
+      "enemies_met": 2,
+      "heals": 2,
+      "interacts": 2,
+      "loot_items": 1,
+      "sec": 109.38,
+      "walk_px": 52994.96
+    },
+    "village": {
+      "contacts": 16,
+      "contacts_per_min": 2.96,
+      "dmg_dealt": 18,
+      "dmg_taken": 29,
+      "dry_max_sec": 281.95,
+      "dry_sec": 281.95,
+      "enemies_met": 14,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 1,
+      "sec": 324.13,
+      "walk_px": 61168.84
+    }
+  }
+}

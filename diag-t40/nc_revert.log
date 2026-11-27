@@ -1,0 +1,94 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[qa_wreg] begin
+WREG beat r1
+WREG MYPIN seed=97531 h=7537080674183788661
+WREG MYPIN seed=105450 h=2797681100009836924
+WREG MYPIN seed=113369 h=-2896983677630182774
+WREG MYPIN seed=121288 h=7547205301623735724
+WREG MYPIN seed=129207 h=-8273286034137620872
+PASS R1.1 GOLDEN-WM-PIN composition x5 (пересчёт побайтово равен)
+PASS R1.2 кросс-хэш composition x5 == второй пин MY_COMP_PIN и стабилен при пересчёте
+WREG beat r2
+PASS R2.1 карта мира x16: отрезанных walkable-клеток 0
+PASS R2.2 карта мира x16: 6 порталов + арка достижимы от входа
+PASS R2.3 локация snow x16: отрезанных клеток 0
+PASS R2.4 локация snow: портал-выход/сундук/мобы достижимы
+PASS R2.5 локация snow: мобы >=8 от входа, разнесены >=3
+PASS R2.3 локация desert x16: отрезанных клеток 0
+PASS R2.4 локация desert: портал-выход/сундук/мобы достижимы
+PASS R2.5 локация desert: мобы >=8 от входа, разнесены >=3
+PASS R2.3 локация steppe x16: отрезанных клеток 0
+PASS R2.4 локация steppe: портал-выход/сундук/мобы достижимы
+PASS R2.5 локация steppe: мобы >=8 от входа, разнесены >=3
+PASS R2.3 локация forest x16: отрезанных клеток 0
+PASS R2.4 локация forest: портал-выход/сундук/мобы достижимы
+PASS R2.5 локация forest: мобы >=8 от входа, разнесены >=3
+PASS R2.3 локация castle x16: отрезанных клеток 0
+PASS R2.4 локация castle: портал-выход/сундук/мобы достижимы
+PASS R2.5 локация castle: мобы >=8 от входа, разнесены >=3
+PASS R2.3 локация dungeon x16: отрезанных клеток 0
+PASS R2.4 локация dungeon: портал-выход/сундук/мобы достижимы
+PASS R2.5 локация dungeon: мобы >=8 от входа, разнесены >=3
+WREG beat r3
+WREG r3 wm seed=97531
+WREG r3 wm seed=105450
+WREG r3 wm seed=113369
+WREG r3 wm seed=121288
+WREG r3 wm seed=129207
+PASS R3.1 локации x5: 0 достижимых центров на пиксельной границе (t59)
+PASS R3.2 карта мира x5: 0 достижимых центров на пиксельной границе (t59); факт: 0 px в клетках []
+PASS R3.3 контроль: заделанные ворота -> кольцо герметично (сканер различает)
+WREG beat r4
+PASS R4.1 минимальная замкнутая щель = 16 px >= 14 (канон t58), x16 сидов
+WREG beat r5
+PASS R5.1 таблица поясов: свой Chebyshev == пин == OpenWorld (двойной пин)
+PASS R5.2 формулы belt x(1+0.25b) / gold x(1+0.15b) — таблицы 0..4
+PASS R5.3 brute_tier: {0,1}->1, 2->2, >=3->3
+WREG beat r6
+WREG r6 world A построен
+PASS R3.4 карта мира: физика==сетка (коллайдеров 48, рассогласований 0)
+WREG gate: коллайдеров-уловителей под створом ворот = 0
+PASS R3.5 локация snow: физика==сетка
+PASS R3.5 локация desert: физика==сетка
+PASS R3.5 локация steppe: физика==сетка
+PASS R3.5 локация forest: физика==сетка
+PASS R3.5 локация castle: физика==сетка
+PASS R3.5 локация dungeon: физика==сетка
+PASS R5.4 живой belt 6 зон == таблица поясов
+PASS R6.1 фикстуры резолвера зон (8/7 этажей, паритет без позиции)
+PASS R6.2 легаси-флаг пещеры -> cave
+PASS R6.3 сейв с локации: зона+флаг в user:// (roundtrip-доказательство)
+PASS R6.4 load: зона loc_dungeon + открытые порталы (wm.open.snow) без потерь
+PASS R6.5 живой resume: локация + точка входа (южная арка подземелья)
+PASS R6.6 живой resume: карта мира + позиция входа за аркой
+WREG beat r7
+WREG leak round 0 nodes=6288
+WREG leak round 1 nodes=6288
+WREG leak round 2 nodes=6288
+WREG leak round 3 nodes=6288
+PASS R7.1 туда-обратно x6 локаций (раунды 1..3 прогреты): дельта нод 0/0 == 0
+PASS R7.2 мобы не накапливаются: снег 6 == бестиарий 6
+WREG beat r8
+WREG perf worldmap med=26822.0 мкс
+WREG perf loc_snow med=24002.0 мкс
+WREG perf loc_desert med=18847.0 мкс
+WREG perf loc_steppe med=19878.0 мкс
+WREG perf loc_forest med=19189.0 мкс
+WREG perf loc_castle med=18237.0 мкс
+WREG perf loc_dungeon med=19048.0 мкс
+WREG perf v5.2: деревня медуза=18788.0 (пул 2240 кадров); поплечо (зона раунд/медуза=отношение): worldmap r0/26822.0=1.00 loc_snow r0/24002.0=1.00 loc_desert r0/18847.0=1.00 loc_steppe r0/17851.0=1.00 loc_forest r0/17922.0=1.00 loc_castle r0/18237.0=1.00 loc_dungeon r0/17930.0=0.96 worldmap r1/18584.0=0.78 loc_snow r1/23978.0=1.00 loc_desert r1/17871.0=0.95 loc_steppe r1/19878.0=1.00 loc_forest r1/19189.0=0.97 loc_castle r1/17696.0=0.92 loc_dungeon r1/19048.0=1.00
+PASS R8.1 кадр худшей зоны (worldmap) к деревне = 1.00 <= 1.3
+WREG perf gen comp=205992/202379 мкс ratio=1.02 wm=172.1мс
+PASS R8.2 генерация composition: warm-up стабильность 1.02 <= 1.1
+PASS R8.3 генерация карты мира 172.1 мс <= 400 (бюджет ленивой сборки)
+PASS R8.4 аллокации на покое мира: дельта нод/ресурсов 0/0 == 0
+WREG beat r9
+WREG frames: QA_WREG_OUT не задан — схемы пропущены
+QA_WREG 49/49
+ERROR: Failed to read the root certificate store.
+   at: get_system_ca_certificates (platform/windows/os_windows.cpp:2582)
+WARNING: 4 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)
+ERROR: 2 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:822)

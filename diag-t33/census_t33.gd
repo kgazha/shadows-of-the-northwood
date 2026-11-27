@@ -139,6 +139,13 @@ var order_fails := 0
 var order_retry := 0
 var reissue_at := 0
 var cm_frames := 0
+# t45-аддендум (27.11, qa-gate): собственные счётчики плана ClickMove. Прежний
+# trace печатал только НАШ план (path_cells), который легально пуст, когда приказ
+# делегирован игре, и «путь=0/0 следующая=нет» читалось как «в игре нет пути».
+# Разбор t45 показал обратное: из той же точки игра строит путь в 5 точек.
+var cm_path_n := 0
+var cm_path_idx := 0
+var cm_stall_rp_max := 0
 var leg_max := 0
 var wp_hits := 0
 var leg := -1
@@ -300,6 +307,7 @@ func _restart_run() -> void:
 	# ровно как кнопка «Вспыхнуть заново»: штатный start_new_run(), затем чистая
 	# пересборка сцены (тот же путь, что у свежей игры) с тем же сидом
 	GameState.call("start_new_run")
+	_clear_taken_flags("рестарт после мягкой смерти")
 	GameState.set("run_seed", int(cfg.get("seed", 7)))
 	if GameState.has_method("recalc_max_hp"):
 		GameState.call("recalc_max_hp")
@@ -444,12 +452,13 @@ func _tick() -> void:
 		leg_t += DT
 	_order_pump()
 	_policy()
+	_cm_stats()
 	_walk_clock()
 	if int(cfg.get("trace", 0)) > 0 and frame % 60 == 0 and frame < int(cfg.get("trace_until", 3600)):
 		var nr: Array = world.get("near") as Array
-		print("  [бот] кадр %d зона=%s поз=%s цель=%s (%s) путь=%d/%d подсказок=%d hp=%d/%d вконтакте=%d кто_ведёт=%s" % [
+		print("  [бот] кадр %d зона=%s поз=%s цель=%s (%s) путь=%d/%d план_игры=%d/%d подсказок=%d hp=%d/%d вконтакте=%d кто_ведёт=%s" % [
 				frame, area_now, _s(player.global_position), _s(goal_pos), goal_kind,
-				path_idx, path_cells.size(), nr.size(), int(GameState.get("hp")),
+				path_idx, path_cells.size(), cm_path_idx, cm_path_n, nr.size(), int(GameState.get("hp")),
 				int(GameState.get("max_hp")), engaged_now.size(),
 				"игра(ПКМ)" if _cm_driving() else ("приказ отдан" if ordered else "сам")])
 
@@ -649,12 +658,17 @@ func _walk_clock() -> void:
 			t_stuck_plan += 0.5
 		else:
 			t_stuck_geom += 0.5
-		print("  [застревание] к=%d поз=%s путь=%d/%d следующая=%s retries=%d цель=%s" % [
+		print("  [застревание] к=%d поз=%s путь=%d/%d следующая=%s план_игры=%d/%d перекладок_игры=%d retries=%d цель=%s" % [
 				frame, _s(player.global_position), path_idx, path_cells.size(),
 				_s(path_cells[path_idx]) if path_idx < path_cells.size() else "нет",
-				retries, goal_kind])
+				cm_path_idx, cm_path_n, cm_stall_rp_max, retries, goal_kind])
 		_unstick()
-	if intends and frame - last_moved_frame > 600:
+	# t45-аддендум: предел вастдога поднят над ЗАКОННЫМ простоем у цели.
+	# Максимальный hold в списке марша — 12 с = 720 кадров; прежний порог 600
+	# кадров (10 с) срабатывал раньше конца законной задержки и записывал её
+	# как «встанку». Учёт stuck_sec НЕ изменён (окна по 25 кадров), поэтому
+	# браковка сравнима с базой; изменился только момент «цель сброшена».
+	if hold_until < 0 and intends and frame - last_moved_frame > 840:
 		# десять секунд нажатых клавиш без хода: всё, это встанка
 		last_moved_frame = frame
 		_note("встанка у %s: цели сброшены, идём дальше" % _s(player.global_position))
@@ -662,6 +676,20 @@ func _walk_clock() -> void:
 		path_cells = []
 		if _s(cfg.get("mode", "march")) == "march":
 			_next_leg()
+
+
+## t45-аддендум (27.11): прогон обязан начинаться с ЖИВЫми точками интереса.
+## Разбор t45: на марш-прогоне 777 бот маршировал к поляне, чей флаг fw.glade_taken
+## уже был снят сбором, — держание у пустой цели мерка записывала как геометрическую
+## встанку. Снимаем только флаги сбора (*_taken), ничего больше.
+func _clear_taken_flags(why: String) -> void:
+	var cleared: Array = []
+	for k in GameState.flags.keys():
+		if String(k).ends_with("_taken") and int(GameState.flags[k]) != 0:
+			GameState.flags[k] = 0
+			cleared.append(String(k))
+	if not cleared.is_empty():
+		_note("мерка: сняты флаги сбора (%s): %s" % [why, ", ".join(cleared)])
 
 
 func _add_count(d: Dictionary, k: String) -> void:
@@ -1086,6 +1114,19 @@ func _cm() -> Node:
 	return cm as Node
 
 
+func _cm_stats() -> void:
+	# t45-аддендум: снимаем внутренности плана игры в свои счётчики каждый кадр.
+	cm_path_n = 0
+	cm_path_idx = 0
+	var cm := _cm()
+	if cm == null:
+		return
+	var p: Array = cm.get("_path") as Array
+	cm_path_n = p.size()
+	cm_path_idx = int(cm.get("_idx"))
+	cm_stall_rp_max = maxi(cm_stall_rp_max, int(cm.get("_stall_rp")))
+
+
 func _cm_driving() -> bool:
 	var cm := _cm()
 	if cm == null:
@@ -1399,6 +1440,7 @@ func _result() -> Dictionary:
 		"lock_board_sec": _r2(t_lock_board),
 		"lock_summary_sec": _r2(t_lock_summary),
 		"panels_closed": panels_closed,
+		"cm_stall_rp_max": cm_stall_rp_max,
 		"wp_hits": wp_hits,
 		"stuck_sec": _r2(t_stuck),
 		# t42: прежняя метрика осталась (с ней снята база), рядом — честные корзины

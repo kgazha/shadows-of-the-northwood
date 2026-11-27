@@ -1,0 +1,116 @@
+{
+  "areas": [
+    [
+      7312,
+      "village",
+      "ashen"
+    ]
+  ],
+  "best_quality": 0,
+  "bets": 2,
+  "bfs_fail": 0,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "march",
+    "seconds": 150.0,
+    "seed": 777.0,
+    "trace": 1.0
+  },
+  "chests": 0,
+  "cm_frames": 435,
+  "cm_stall_rp_max": 7,
+  "contact_events": 13,
+  "contacts_per_min": 5.2,
+  "death_log": [
+    [
+      8164,
+      "ashen"
+    ]
+  ],
+  "deaths": 1,
+  "decisions": 7,
+  "decisions_fled": 7,
+  "dialog_sec": 5.47,
+  "dmg_dealt": 0,
+  "dmg_taken": 22,
+  "dry_max_sec": 42.48,
+  "dry_sum_sec": 65.03,
+  "dungeons": 0,
+  "dungeons_before_wow": -1,
+  "encounter_groups": 7,
+  "enemies_met": 12,
+  "first_strike": 7,
+  "forced_flee": 8,
+  "forced_heal": 1,
+  "frames": 9000,
+  "gear_items": 0,
+  "gold_total": 10,
+  "in_contact_sec": 79.0,
+  "interacts": 6,
+  "kills": 0,
+  "leg_max": 2,
+  "levels": 1,
+  "lock_board_sec": 0.0,
+  "lock_inv_sec": 0.0,
+  "lock_other_sec": 0.5,
+  "lock_shop_sec": 0.0,
+  "lock_summary_sec": 0.0,
+  "locked_sec": 5.97,
+  "minutes": 2.5,
+  "modal_sec": 0.0,
+  "notes": [
+    [
+      3121,
+      "плечо «деревня: ПОИ «лес запад» (5,21) — Д2» пройдено, у цели простояли 12.0 с"
+    ],
+    [
+      5522,
+      "встанка у (89.59763, 346.9192): цели сброшены, идём дальше"
+    ]
+  ],
+  "order_fails": 0,
+  "orders": 11,
+  "panels_closed": 0,
+  "retries": 8,
+  "sec_total": 150.0,
+  "stuck_geom_sec": 4.0,
+  "stuck_lock_sec": 0.0,
+  "stuck_sec": 4.0,
+  "threat_share": 0.75,
+  "threats": 9,
+  "walk_pure_min": 0.38,
+  "wow_item": "",
+  "wow_sec": -1.0,
+  "wow_zone": "",
+  "wp_hits": 51,
+  "zones": {
+    "ashen": {
+      "contacts": 4,
+      "contacts_per_min": 16.49,
+      "dmg_dealt": 0,
+      "dmg_taken": 1,
+      "dry_max_sec": 3.35,
+      "dry_sec": 3.35,
+      "enemies_met": 4,
+      "heals": 0,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 14.55,
+      "walk_px": 10722.64
+    },
+    "village": {
+      "contacts": 9,
+      "contacts_per_min": 3.99,
+      "dmg_dealt": 0,
+      "dmg_taken": 21,
+      "dry_max_sec": 61.68,
+      "dry_sec": 61.68,
+      "enemies_met": 8,
+      "heals": 2,
+      "interacts": 4,
+      "loot_items": 0,
+      "sec": 135.45,
+      "walk_px": 3605.1
+    }
+  }
+}
