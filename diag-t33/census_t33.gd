@@ -668,6 +668,9 @@ func _walk_clock() -> void:
 	# кадров (10 с) срабатывал раньше конца законной задержки и записывал её
 	# как «встанку». Учёт stuck_sec НЕ изменён (окна по 25 кадров), поэтому
 	# браковка сравнима с базой; изменился только момент «цель сброшена».
+	# t46-аддендум: отдельной ветки «боевой wall-pin» здесь нет намеренно —
+	# после того как боевая ветка перестала жать клавиши под ведущим приказом,
+	# ложных intends из боя больше не возникает (проверено дымовым прогоном ниже).
 	if hold_until < 0 and intends and frame - last_moved_frame > 840:
 		# десять секунд нажатых клавиш без хода: всё, это встанка
 		last_moved_frame = frame
@@ -735,7 +738,15 @@ func _policy() -> void:
 	var disengage := march and (leg < 0 or leg_t > DISENGAGE_T)
 	if tgt != null and not disengage:
 		var d: float = (tgt as Node2D).global_position.distance_to(player.global_position)
-		if d > MELEE_PX:
+		if _cm_driving():
+			# t46-аддендум (27.11): под ведущим приказом ClickMove свои клавиши
+			# движения НЕ жмём — раньше боевая ветка тянула их сама и выходила из
+			# _policy() до _steer(), который единственный отпускает синтез;
+			# планировщик и я расходились во владении действием, герой вставал
+			# (wall-pin), а мерка писала это в stuck_geom_sec. Сближение делает
+			# игра, мы бьём то, что видим.
+			_release_moves()
+		elif d > MELEE_PX:
 			_steer_to((tgt as Node2D).global_position)
 		else:
 			_release_moves()
@@ -1324,6 +1335,12 @@ func _axis_press(d: Vector2) -> void:
 	var want := {"move_left": d.x <= -0.06, "move_right": d.x >= 0.06,
 			"move_up": d.y <= -0.06, "move_down": d.y >= 0.06}
 	for a in want.keys():
+		if _synth_holds(String(a)):
+			# t46-аддендум: действие занято синтезом ClickMove — не лезем ни нажать,
+			# ни отпустить; свою бухгалтерию помечаем свободной, чтобы stale-флаг
+			# позже не отпустил то, что держит планировщик.
+			held_moves[a] = false
+			continue
 		if bool(want[a]) and not bool(held_moves.get(a, false)):
 			Input.action_press(a)
 			held_moves[a] = true
@@ -1332,8 +1349,23 @@ func _axis_press(d: Vector2) -> void:
 			held_moves[a] = false
 
 
+func _synth_holds(a: String) -> bool:
+	# t46-аддендум: держит ли действие сам планировщик (ClickMove._held).
+	var cm := _cm()
+	if cm == null:
+		return false
+	var h: Dictionary = cm.get("_held") as Dictionary
+	if h.is_empty():
+		return false
+	return bool(h.get(a, false))
+
+
 func _release_moves() -> void:
 	for a in ["move_left", "move_right", "move_up", "move_down"]:
+		if _synth_holds(a):
+			# t46-аддендум: занято синтезом — отпускает тоже он, не мы.
+			held_moves[a] = false
+			continue
 		if bool(held_moves.get(a, false)):
 			Input.action_release(a)
 		held_moves[a] = false
