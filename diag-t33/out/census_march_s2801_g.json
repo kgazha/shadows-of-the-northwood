@@ -1,0 +1,226 @@
+{
+  "areas": [
+    [
+      5812,
+      "village",
+      "worldmap"
+    ],
+    [
+      7347,
+      "worldmap",
+      "loc_forest"
+    ],
+    [
+      15079,
+      "loc_forest",
+      "cave"
+    ],
+    [
+      15321,
+      "cave",
+      "village"
+    ],
+    [
+      17151,
+      "village",
+      "loc_forest"
+    ],
+    [
+      17321,
+      "loc_forest",
+      "mini_forest"
+    ],
+    [
+      20065,
+      "mini_forest",
+      "loc_forest"
+    ],
+    [
+      20217,
+      "loc_forest",
+      "worldmap"
+    ],
+    [
+      20248,
+      "worldmap",
+      "ashen"
+    ],
+    [
+      20766,
+      "ashen",
+      "village"
+    ]
+  ],
+  "best_quality": 2,
+  "bets": 4,
+  "bfs_fail": 2,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "march",
+    "seconds": 600.0,
+    "seed": 2801.0,
+    "trace": 1.0
+  },
+  "chests": 2,
+  "cm_frames": 9720,
+  "contact_events": 22,
+  "contacts_per_min": 2.2,
+  "death_log": [],
+  "deaths": 0,
+  "decisions": 11,
+  "decisions_fled": 10,
+  "dialog_sec": 6.03,
+  "dmg_dealt": 2,
+  "dmg_taken": 43,
+  "dry_max_sec": 135.73,
+  "dry_sum_sec": 527.18,
+  "dungeons": 2,
+  "dungeons_before_wow": 2,
+  "encounter_groups": 11,
+  "enemies_met": 20,
+  "first_strike": 9,
+  "forced_flee": 4,
+  "forced_heal": 2,
+  "frames": 36000,
+  "gear_items": 1,
+  "gold_total": 48,
+  "in_contact_sec": 61.78,
+  "interacts": 11,
+  "kills": 0,
+  "leg_max": 13,
+  "levels": 2,
+  "lock_other_sec": 5.0,
+  "locked_sec": 11.03,
+  "minutes": 10.0,
+  "modal_sec": 0.0,
+  "notes": [
+    [
+      3162,
+      "плечо «деревня: ПОИ «лес запад» (5,21) — Д2» пройдено, у цели простояли 12.0 с"
+    ],
+    [
+      15062,
+      "плечо «чаща: обход» исчерпано по времени (120 с) — дальше бродим здесь"
+    ],
+    [
+      15063,
+      "не нашли цель плеча «чаща -> пещера» — программный переход enter_cave()"
+    ],
+    [
+      17135,
+      "зона не та (village), ждём transition 30 с — программный переход enter_location(forest)"
+    ],
+    [
+      20232,
+      "не нашли цель плеча «карта мира -> Пепелище» — программный переход enter_ashen()"
+    ],
+    [
+      22244,
+      "зона не та (village), ждём transition 30 с — программный переход exit_location()"
+    ],
+    [
+      29446,
+      "плечо «деревня: обход» исчерпано по времени (120 с) — дальше бродим здесь"
+    ]
+  ],
+  "order_fails": 0,
+  "orders": 66,
+  "retries": 0,
+  "sec_total": 600.0,
+  "stuck_geom_sec": 31.5,
+  "stuck_lock_sec": 0.0,
+  "stuck_sec": 31.5,
+  "threat_share": 0.5,
+  "threats": 10,
+  "walk_pure_min": 7.37,
+  "wow_item": "chain",
+  "wow_sec": 304.95,
+  "wow_zone": "mini_forest",
+  "wp_hits": 867,
+  "zones": {
+    "ashen": {
+      "contacts": 3,
+      "contacts_per_min": 20.85,
+      "dmg_dealt": 0,
+      "dmg_taken": 3,
+      "dry_max_sec": 4.57,
+      "dry_sec": 4.57,
+      "enemies_met": 3,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 8.63,
+      "walk_px": 5470.28
+    },
+    "cave": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 0.02,
+      "dry_sec": 0.02,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 4.03,
+      "walk_px": 29157.13
+    },
+    "loc_forest": {
+      "contacts": 5,
+      "contacts_per_min": 2.23,
+      "dmg_dealt": 0,
+      "dmg_taken": 9,
+      "dry_max_sec": 123.15,
+      "dry_sec": 123.15,
+      "enemies_met": 5,
+      "heals": 0,
+      "interacts": 4,
+      "loot_items": 0,
+      "sec": 134.23,
+      "walk_px": 44833.42
+    },
+    "mini_forest": {
+      "contacts": 2,
+      "contacts_per_min": 2.62,
+      "dmg_dealt": 0,
+      "dmg_taken": 20,
+      "dry_max_sec": 22.77,
+      "dry_sec": 22.77,
+      "enemies_met": 1,
+      "heals": 2,
+      "interacts": 2,
+      "loot_items": 1,
+      "sec": 45.73,
+      "walk_px": 17818.12
+    },
+    "village": {
+      "contacts": 12,
+      "contacts_per_min": 1.89,
+      "dmg_dealt": 2,
+      "dmg_taken": 11,
+      "dry_max_sec": 351.58,
+      "dry_sec": 351.58,
+      "enemies_met": 11,
+      "heals": 1,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 381.27,
+      "walk_px": 61737.3
+    },
+    "worldmap": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 25.1,
+      "dry_sec": 25.1,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 26.1,
+      "walk_px": 36589.91
+    }
+  }
+}

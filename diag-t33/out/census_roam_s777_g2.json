@@ -1,0 +1,177 @@
+{
+  "areas": [
+    [
+      20072,
+      "village",
+      "cave"
+    ],
+    [
+      20977,
+      "cave",
+      "village"
+    ],
+    [
+      21884,
+      "village",
+      "ashen"
+    ],
+    [
+      24167,
+      "ashen",
+      "village"
+    ],
+    [
+      24508,
+      "village",
+      "worldmap"
+    ],
+    [
+      28979,
+      "worldmap",
+      "loc_castle"
+    ]
+  ],
+  "best_quality": 1,
+  "bets": 9,
+  "bfs_fail": 2,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "roam",
+    "seconds": 600.0,
+    "seed": 777.0,
+    "trace": 1.0
+  },
+  "chests": 0,
+  "cm_frames": 2044,
+  "contact_events": 42,
+  "contacts_per_min": 4.2,
+  "death_log": [
+    [
+      24211,
+      "village"
+    ],
+    [
+      29619,
+      "loc_castle"
+    ]
+  ],
+  "deaths": 2,
+  "decisions": 26,
+  "decisions_fled": 23,
+  "dialog_sec": 12.37,
+  "dmg_dealt": 60,
+  "dmg_taken": 69,
+  "dry_max_sec": 106.0,
+  "dry_sum_sec": 451.63,
+  "dungeons": 1,
+  "dungeons_before_wow": -1,
+  "encounter_groups": 26,
+  "enemies_met": 17,
+  "first_strike": 13,
+  "forced_flee": 14,
+  "forced_heal": 0,
+  "frames": 36000,
+  "gear_items": 1,
+  "gold_total": 44,
+  "in_contact_sec": 133.0,
+  "interacts": 35,
+  "kills": 15,
+  "leg_max": 0,
+  "levels": 4,
+  "lock_board_sec": 0.0,
+  "lock_inv_sec": 0.0,
+  "lock_other_sec": 3.0,
+  "lock_shop_sec": 0.0,
+  "lock_summary_sec": 0.0,
+  "locked_sec": 15.37,
+  "minutes": 10.0,
+  "modal_sec": 0.0,
+  "notes": [],
+  "order_fails": 0,
+  "orders": 27,
+  "panels_closed": 0,
+  "retries": 6,
+  "sec_total": 600.0,
+  "stuck_geom_sec": 3.0,
+  "stuck_lock_sec": 0.0,
+  "stuck_sec": 3.0,
+  "threat_share": 0.941,
+  "threats": 16,
+  "walk_pure_min": 5.02,
+  "wow_item": "",
+  "wow_sec": -1.0,
+  "wow_zone": "",
+  "wp_hits": 583,
+  "zones": {
+    "ashen": {
+      "contacts": 11,
+      "contacts_per_min": 17.35,
+      "dmg_dealt": 0,
+      "dmg_taken": 7,
+      "dry_max_sec": 6.2,
+      "dry_sec": 6.2,
+      "enemies_met": 4,
+      "heals": 0,
+      "interacts": 6,
+      "loot_items": 0,
+      "sec": 38.05,
+      "walk_px": 12951.02
+    },
+    "cave": {
+      "contacts": 5,
+      "contacts_per_min": 19.89,
+      "dmg_dealt": 0,
+      "dmg_taken": 3,
+      "dry_max_sec": 2.18,
+      "dry_sec": 2.18,
+      "enemies_met": 5,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 15.08,
+      "walk_px": 5639.74
+    },
+    "loc_castle": {
+      "contacts": 2,
+      "contacts_per_min": 10.89,
+      "dmg_dealt": 0,
+      "dmg_taken": 15,
+      "dry_max_sec": 1.48,
+      "dry_sec": 1.48,
+      "enemies_met": 2,
+      "heals": 0,
+      "interacts": 0,
+      "loot_items": 0,
+      "sec": 11.02,
+      "walk_px": 24866.73
+    },
+    "village": {
+      "contacts": 24,
+      "contacts_per_min": 3.12,
+      "dmg_dealt": 60,
+      "dmg_taken": 44,
+      "dry_max_sec": 367.75,
+      "dry_sec": 367.75,
+      "enemies_met": 6,
+      "heals": 2,
+      "interacts": 27,
+      "loot_items": 1,
+      "sec": 461.33,
+      "walk_px": 48225.29
+    },
+    "worldmap": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 74.02,
+      "dry_sec": 74.02,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 74.52,
+      "walk_px": 21997.27
+    }
+  }
+}

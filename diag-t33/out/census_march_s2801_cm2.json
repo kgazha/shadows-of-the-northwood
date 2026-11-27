@@ -1,0 +1,117 @@
+{
+  "areas": [
+    [
+      4291,
+      "village",
+      "worldmap"
+    ],
+    [
+      4702,
+      "worldmap",
+      "loc_forest"
+    ]
+  ],
+  "best_quality": 0,
+  "bets": 0,
+  "bfs_fail": 16,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "march",
+    "seconds": 150.0,
+    "seed": 2801.0,
+    "trace": 1.0
+  },
+  "chests": 1,
+  "cm_frames": 321,
+  "contact_events": 9,
+  "contacts_per_min": 3.6,
+  "death_log": [],
+  "deaths": 0,
+  "decisions": 4,
+  "decisions_fled": 0,
+  "dialog_sec": 0.0,
+  "dmg_dealt": 2,
+  "dmg_taken": 8,
+  "dry_max_sec": 73.47,
+  "dry_sum_sec": 138.23,
+  "dungeons": 0,
+  "dungeons_before_wow": -1,
+  "encounter_groups": 4,
+  "enemies_met": 9,
+  "first_strike": 7,
+  "forced_flee": 0,
+  "forced_heal": 0,
+  "frames": 9000,
+  "gear_items": 0,
+  "gold_total": 58,
+  "in_contact_sec": 10.77,
+  "interacts": 4,
+  "kills": 0,
+  "leg_max": 3,
+  "levels": 2,
+  "lock_other_sec": 1.0,
+  "locked_sec": 1.0,
+  "minutes": 2.5,
+  "modal_sec": 0.0,
+  "notes": [
+    [
+      1638,
+      "встанка у (87.85849, 340.0036): цели сброшены, идём дальше"
+    ]
+  ],
+  "orders": 7,
+  "retries": 3,
+  "sec_total": 150.0,
+  "stuck_sec": 28.5,
+  "threat_share": 0.778,
+  "threats": 7,
+  "walk_pure_min": 1.38,
+  "wow_item": "",
+  "wow_sec": -1.0,
+  "wow_zone": "",
+  "wp_hits": 328,
+  "zones": {
+    "loc_forest": {
+      "contacts": 6,
+      "contacts_per_min": 5.03,
+      "dmg_dealt": 0,
+      "dmg_taken": 7,
+      "dry_max_sec": 63.75,
+      "dry_sec": 63.75,
+      "enemies_met": 6,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 71.63,
+      "walk_px": 24882.72
+    },
+    "village": {
+      "contacts": 3,
+      "contacts_per_min": 2.52,
+      "dmg_dealt": 2,
+      "dmg_taken": 1,
+      "dry_max_sec": 68.13,
+      "dry_sec": 68.13,
+      "enemies_met": 3,
+      "heals": 0,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 71.52,
+      "walk_px": 1794.88
+    },
+    "worldmap": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 6.35,
+      "dry_sec": 6.35,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 6.85,
+      "walk_px": 15861.18
+    }
+  }
+}

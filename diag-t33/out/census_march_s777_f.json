@@ -1,0 +1,287 @@
+{
+  "areas": [
+    [
+      5774,
+      "village",
+      "worldmap"
+    ],
+    [
+      7305,
+      "worldmap",
+      "loc_forest"
+    ],
+    [
+      14538,
+      "loc_forest",
+      "cave"
+    ],
+    [
+      14780,
+      "cave",
+      "village"
+    ],
+    [
+      16610,
+      "village",
+      "loc_forest"
+    ],
+    [
+      17000,
+      "loc_forest",
+      "mini_forest"
+    ],
+    [
+      23510,
+      "mini_forest",
+      "loc_forest"
+    ],
+    [
+      24151,
+      "loc_forest",
+      "worldmap"
+    ],
+    [
+      24182,
+      "worldmap",
+      "ashen"
+    ]
+  ],
+  "best_quality": 2,
+  "bets": 3,
+  "bfs_fail": 90,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "march",
+    "seconds": 600.0,
+    "seed": 777.0,
+    "trace": 1.0
+  },
+  "chests": 2,
+  "cm_frames": 870,
+  "contact_events": 16,
+  "contacts_per_min": 1.6,
+  "death_log": [],
+  "deaths": 0,
+  "decisions": 15,
+  "decisions_fled": 7,
+  "dialog_sec": 6.03,
+  "dmg_dealt": 2,
+  "dmg_taken": 31,
+  "dry_max_sec": 198.35,
+  "dry_sum_sec": 508.07,
+  "dungeons": 2,
+  "dungeons_before_wow": 2,
+  "encounter_groups": 15,
+  "enemies_met": 9,
+  "first_strike": 5,
+  "forced_flee": 1,
+  "forced_heal": 1,
+  "frames": 36000,
+  "gear_items": 1,
+  "gold_total": 45,
+  "in_contact_sec": 81.4,
+  "interacts": 10,
+  "kills": 0,
+  "leg_max": 29,
+  "levels": 2,
+  "lock_other_sec": 4.5,
+  "locked_sec": 10.53,
+  "minutes": 10.0,
+  "modal_sec": 0.0,
+  "notes": [
+    [
+      3121,
+      "плечо «деревня: ПОИ «лес запад» (5,21) — Д2» пройдено, у цели простояли 12.0 с"
+    ],
+    [
+      14521,
+      "плечо «чаща: обход» исчерпано по времени (120 с) — дальше бродим здесь"
+    ],
+    [
+      14522,
+      "не нашли цель плеча «чаща -> пещера» — программный переход enter_cave()"
+    ],
+    [
+      16594,
+      "зона не та (village), ждём transition 30 с — программный переход enter_location(forest)"
+    ],
+    [
+      24166,
+      "не нашли цель плеча «карта мира -> Пепелище» — программный переход enter_ashen()"
+    ],
+    [
+      24986,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      25587,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      26188,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      26789,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      27390,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      27991,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      28592,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      29193,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      29794,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      30395,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      30996,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      31597,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      32198,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      32799,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      33400,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      34001,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      34602,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      35203,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ],
+    [
+      35804,
+      "встанка у (145.4246, 9924.005): цели сброшены, идём дальше"
+    ]
+  ],
+  "order_fails": 0,
+  "orders": 18,
+  "retries": 6,
+  "sec_total": 600.0,
+  "stuck_sec": 151.5,
+  "threat_share": 0.556,
+  "threats": 5,
+  "walk_pure_min": 4.7,
+  "wow_item": "shortsword",
+  "wow_sec": 301.45,
+  "wow_zone": "mini_forest",
+  "wp_hits": 1262,
+  "zones": {
+    "ashen": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 194.2,
+      "dry_sec": 194.2,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 0,
+      "loot_items": 0,
+      "sec": 196.97,
+      "walk_px": 5229.72
+    },
+    "cave": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 0.02,
+      "dry_sec": 0.02,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 4.03,
+      "walk_px": 28862.55
+    },
+    "loc_forest": {
+      "contacts": 9,
+      "contacts_per_min": 3.92,
+      "dmg_dealt": 0,
+      "dmg_taken": 9,
+      "dry_max_sec": 112.47,
+      "dry_sec": 112.47,
+      "enemies_met": 5,
+      "heals": 0,
+      "interacts": 4,
+      "loot_items": 0,
+      "sec": 137.73,
+      "walk_px": 46187.93
+    },
+    "mini_forest": {
+      "contacts": 4,
+      "contacts_per_min": 2.21,
+      "dmg_dealt": 0,
+      "dmg_taken": 22,
+      "dry_max_sec": 76.28,
+      "dry_sec": 76.28,
+      "enemies_met": 1,
+      "heals": 3,
+      "interacts": 2,
+      "loot_items": 1,
+      "sec": 108.5,
+      "walk_px": 24112.5
+    },
+    "village": {
+      "contacts": 3,
+      "contacts_per_min": 1.42,
+      "dmg_dealt": 2,
+      "dmg_taken": 0,
+      "dry_max_sec": 100.07,
+      "dry_sec": 100.07,
+      "enemies_met": 3,
+      "heals": 0,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 126.73,
+      "walk_px": 36197.04
+    },
+    "worldmap": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 25.03,
+      "dry_sec": 25.03,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 26.03,
+      "walk_px": 36569.13
+    }
+  }
+}

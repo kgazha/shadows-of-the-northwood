@@ -1,0 +1,120 @@
+{
+  "areas": [
+    [
+      8069,
+      "village",
+      "worldmap"
+    ],
+    [
+      8987,
+      "worldmap",
+      "loc_snow"
+    ]
+  ],
+  "best_quality": 0,
+  "bets": 5,
+  "bfs_fail": 0,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "roam",
+    "seconds": 600.0,
+    "seed": 2801.0,
+    "trace": 1.0
+  },
+  "chests": 0,
+  "cm_frames": 896,
+  "contact_events": 12,
+  "contacts_per_min": 1.2,
+  "death_log": [
+    [
+      10320,
+      "loc_snow"
+    ]
+  ],
+  "deaths": 1,
+  "decisions": 11,
+  "decisions_fled": 3,
+  "dialog_sec": 0.35,
+  "dmg_dealt": 6,
+  "dmg_taken": 23,
+  "dry_max_sec": 345.73,
+  "dry_sum_sec": 548.55,
+  "dungeons": 0,
+  "dungeons_before_wow": -1,
+  "encounter_groups": 11,
+  "enemies_met": 9,
+  "first_strike": 8,
+  "forced_flee": 2,
+  "forced_heal": 1,
+  "frames": 36000,
+  "gear_items": 0,
+  "gold_total": 35,
+  "in_contact_sec": 50.1,
+  "interacts": 2,
+  "kills": 1,
+  "leg_max": 0,
+  "levels": 3,
+  "lock_other_sec": 1.0,
+  "locked_sec": 1.35,
+  "minutes": 10.0,
+  "modal_sec": 0.0,
+  "notes": [],
+  "order_fails": 0,
+  "orders": 8,
+  "retries": 7,
+  "sec_total": 600.0,
+  "stuck_geom_sec": 3.5,
+  "stuck_lock_sec": 0.0,
+  "stuck_sec": 3.5,
+  "threat_share": 1.0,
+  "threats": 9,
+  "walk_pure_min": 4.87,
+  "wow_item": "",
+  "wow_sec": -1.0,
+  "wow_zone": "",
+  "wp_hits": 69,
+  "zones": {
+    "loc_snow": {
+      "contacts": 4,
+      "contacts_per_min": 10.64,
+      "dmg_dealt": 6,
+      "dmg_taken": 10,
+      "dry_max_sec": 7.75,
+      "dry_sec": 7.75,
+      "enemies_met": 3,
+      "heals": 0,
+      "interacts": 0,
+      "loot_items": 0,
+      "sec": 22.57,
+      "walk_px": 6628.16
+    },
+    "village": {
+      "contacts": 8,
+      "contacts_per_min": 0.85,
+      "dmg_dealt": 0,
+      "dmg_taken": 13,
+      "dry_max_sec": 526.0,
+      "dry_sec": 526.0,
+      "enemies_met": 6,
+      "heals": 1,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 562.13,
+      "walk_px": 31021.16
+    },
+    "worldmap": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 14.8,
+      "dry_sec": 14.8,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 15.3,
+      "walk_px": 16412.7
+    }
+  }
+}

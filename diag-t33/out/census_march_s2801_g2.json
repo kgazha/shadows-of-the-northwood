@@ -1,0 +1,265 @@
+{
+  "areas": [
+    [
+      9821,
+      "village",
+      "worldmap"
+    ],
+    [
+      11356,
+      "worldmap",
+      "loc_forest"
+    ],
+    [
+      19088,
+      "loc_forest",
+      "cave"
+    ],
+    [
+      19330,
+      "cave",
+      "village"
+    ],
+    [
+      21160,
+      "village",
+      "loc_forest"
+    ],
+    [
+      21330,
+      "loc_forest",
+      "mini_forest"
+    ],
+    [
+      27844,
+      "mini_forest",
+      "loc_forest"
+    ],
+    [
+      27996,
+      "loc_forest",
+      "worldmap"
+    ],
+    [
+      28027,
+      "worldmap",
+      "ashen"
+    ]
+  ],
+  "best_quality": 2,
+  "bets": 2,
+  "bfs_fail": 3,
+  "cfg": {
+    "cls": "warrior",
+    "mode": "march",
+    "seconds": 600.0,
+    "seed": 2801.0,
+    "trace": 1.0
+  },
+  "chests": 1,
+  "cm_frames": 5567,
+  "contact_events": 25,
+  "contacts_per_min": 2.5,
+  "death_log": [],
+  "deaths": 0,
+  "decisions": 11,
+  "decisions_fled": 9,
+  "dialog_sec": 6.03,
+  "dmg_dealt": 2,
+  "dmg_taken": 46,
+  "dry_max_sec": 146.6,
+  "dry_sum_sec": 526.67,
+  "dungeons": 2,
+  "dungeons_before_wow": 2,
+  "encounter_groups": 11,
+  "enemies_met": 16,
+  "first_strike": 15,
+  "forced_flee": 1,
+  "forced_heal": 4,
+  "frames": 36000,
+  "gear_items": 2,
+  "gold_total": 68,
+  "in_contact_sec": 62.8,
+  "interacts": 8,
+  "kills": 0,
+  "leg_max": 22,
+  "levels": 3,
+  "lock_other_sec": 4.5,
+  "locked_sec": 10.53,
+  "minutes": 10.0,
+  "modal_sec": 0.0,
+  "notes": [
+    [
+      2402,
+      "встанка у (89.74582, 346.0879): цели сброшены, идём дальше"
+    ],
+    [
+      9603,
+      "плечо «деревня -> северная арка» исчерпано по времени (120 с) — программный переход exit_location()"
+    ],
+    [
+      19071,
+      "плечо «чаща: обход» исчерпано по времени (120 с) — дальше бродим здесь"
+    ],
+    [
+      19072,
+      "не нашли цель плеча «чаща -> пещера» — программный переход enter_cave()"
+    ],
+    [
+      21144,
+      "зона не та (village), ждём transition 30 с — программный переход enter_location(forest)"
+    ],
+    [
+      28011,
+      "не нашли цель плеча «карта мира -> Пепелище» — программный переход enter_ashen()"
+    ],
+    [
+      29166,
+      "встанка у (469.0742, 9924.002): цели сброшены, идём дальше"
+    ],
+    [
+      29767,
+      "встанка у (469.0015, 9924.074): цели сброшены, идём дальше"
+    ],
+    [
+      30368,
+      "встанка у (469.0742, 9924.002): цели сброшены, идём дальше"
+    ],
+    [
+      30969,
+      "встанка у (469.0015, 9924.074): цели сброшены, идём дальше"
+    ],
+    [
+      31570,
+      "встанка у (469.0742, 9924.002): цели сброшены, идём дальше"
+    ],
+    [
+      32171,
+      "встанка у (469.0015, 9924.074): цели сброшены, идём дальше"
+    ],
+    [
+      32772,
+      "встанка у (469.0742, 9924.002): цели сброшены, идём дальше"
+    ],
+    [
+      33373,
+      "встанка у (469.0015, 9924.074): цели сброшены, идём дальше"
+    ],
+    [
+      33974,
+      "встанка у (469.0742, 9924.002): цели сброшены, идём дальше"
+    ],
+    [
+      34575,
+      "встанка у (469.0015, 9924.074): цели сброшены, идём дальше"
+    ],
+    [
+      35176,
+      "встанка у (469.0742, 9924.002): цели сброшены, идём дальше"
+    ],
+    [
+      35777,
+      "встанка у (469.0015, 9924.074): цели сброшены, идём дальше"
+    ]
+  ],
+  "order_fails": 0,
+  "orders": 3,
+  "retries": 6,
+  "sec_total": 600.0,
+  "stuck_geom_sec": 3.0,
+  "stuck_lock_sec": 0.0,
+  "stuck_sec": 3.0,
+  "threat_share": 0.938,
+  "threats": 15,
+  "walk_pure_min": 5.58,
+  "wow_item": "chain",
+  "wow_sec": 372.6,
+  "wow_zone": "mini_forest",
+  "wp_hits": 1162,
+  "zones": {
+    "ashen": {
+      "contacts": 3,
+      "contacts_per_min": 1.35,
+      "dmg_dealt": 0,
+      "dmg_taken": 5,
+      "dry_max_sec": 122.92,
+      "dry_sec": 122.92,
+      "enemies_met": 3,
+      "heals": 0,
+      "interacts": 0,
+      "loot_items": 1,
+      "sec": 132.88,
+      "walk_px": 6236.45
+    },
+    "cave": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 0.02,
+      "dry_sec": 0.02,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 4.03,
+      "walk_px": 28942.73
+    },
+    "loc_forest": {
+      "contacts": 13,
+      "contacts_per_min": 5.81,
+      "dmg_dealt": 0,
+      "dmg_taken": 15,
+      "dry_max_sec": 110.97,
+      "dry_sec": 110.97,
+      "enemies_met": 9,
+      "heals": 1,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 134.23,
+      "walk_px": 44741.55
+    },
+    "mini_forest": {
+      "contacts": 4,
+      "contacts_per_min": 2.21,
+      "dmg_dealt": 0,
+      "dmg_taken": 24,
+      "dry_max_sec": 79.85,
+      "dry_sec": 79.85,
+      "enemies_met": 1,
+      "heals": 2,
+      "interacts": 2,
+      "loot_items": 1,
+      "sec": 108.57,
+      "walk_px": 23578.35
+    },
+    "village": {
+      "contacts": 5,
+      "contacts_per_min": 1.54,
+      "dmg_dealt": 2,
+      "dmg_taken": 2,
+      "dry_max_sec": 187.82,
+      "dry_sec": 187.82,
+      "enemies_met": 3,
+      "heals": 0,
+      "interacts": 2,
+      "loot_items": 0,
+      "sec": 194.18,
+      "walk_px": 42524.63
+    },
+    "worldmap": {
+      "contacts": 0,
+      "contacts_per_min": 0.0,
+      "dmg_dealt": 0,
+      "dmg_taken": 0,
+      "dry_max_sec": 25.1,
+      "dry_sec": 25.1,
+      "enemies_met": 0,
+      "heals": 0,
+      "interacts": 1,
+      "loot_items": 0,
+      "sec": 26.1,
+      "walk_px": 36596.01
+    }
+  }
+}
