@@ -740,7 +740,12 @@ func checkpoint(label: String, expected_zone: String) -> bool:
 	await frames(8)
 	var ok_zone: bool = String(GameState.area) == expected_zone and String(world.active_area) == expected_zone
 	var resolved: bool = String(GameState.resolve_resume_zone(expected_zone)) == expected_zone
-	var restored: bool = world.player.global_position.distance_to(pos0) < 2.0
+	# t43 (перепин 27.11, страж выталкивания): позиция восстанавливается бит-в-бит,
+	# ИЛИ канонически выталкивается за один шаг кольца (поза, вжатая в дверь/стену,
+	# — не «свободно», страж по контракту сдвигает её в ближайшую чистую клетку).
+	# Смысл пина сохранён: герой вернулся туда же и ОБЯЗАТЕЛЬНО на чистый бокс.
+	var _d0: float = world.player.global_position.distance_to(pos0)
+	var restored: bool = _d0 < 2.0 or (_d0 <= 33.0 and world._box_clear(world.player.global_position))
 	var ok := true
 	ok = chk("checkpoint[%s].зона=%s" % [label, expected_zone], ok_zone, "area=%s active=%s" % [GameState.area, world.active_area]) and ok
 	ok = chk("checkpoint[%s].резолвер_зон" % label, resolved, "resolve_resume_zone(%s)=%s" % [expected_zone, GameState.resolve_resume_zone(expected_zone)]) and ok
@@ -1756,7 +1761,7 @@ func stage_return_rest() -> void:
 # ==================================================================================
 func stage_pushout() -> void:
 	stage("pushout_guard")
-	var p := world.player
+	var p: Node2D = world.player
 	# W1. Страж молчит на свободном: легаси-позиция возвращается КАК ЕСТЬ.
 	var here: Vector2 = p.global_position
 	chk("t43: страж молчит на свободном (легаси-позиция как есть)",
@@ -1786,7 +1791,7 @@ func stage_pushout() -> void:
 		"pos=%s" % str(p.global_position))
 	# W3. Вросший бокс (центр свободен, восток-угол в стене — класс t42):
 	# страж сдвигает в ближайшую свободную, позиция НЕ остаётся запрошенной.
-	var embed := world.tile_to_world(free_cell) + Vector2(4.0, 0.0)
+	var embed: Vector2 = world.tile_to_world(free_cell) + Vector2(4.0, 0.0)
 	GameState.player_pos = embed
 	GameState.pos_valid = true
 	world._place_resumed_player()

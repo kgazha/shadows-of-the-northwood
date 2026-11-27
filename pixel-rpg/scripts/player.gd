@@ -815,7 +815,11 @@ func _boar_step(delta: float) -> void:
 		boar_dust += 1
 		Fx.dust(global_position, world)
 	if boar_t <= 0.0:
-		global_position = boar_dest
+		# t43 (27.11, находка t42): рейкаст по центру не видит углов, куда бокс
+		# 10×8 наезжает целиком, а конечная точка скольжения не перепроверялась.
+		# Посадка — через страж выталкивания мира (свободно => точка как есть).
+		global_position = world.clear_player_pos(boar_dest) \
+				if world != null and world.has_method("clear_player_pos") else boar_dest
 		_boar_land()
 
 ## Точка маршрута r∈[0..1] по ДЛИНЕ пути: from->mid->dest (боулинговый «съём

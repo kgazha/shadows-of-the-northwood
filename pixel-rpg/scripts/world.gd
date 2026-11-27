@@ -1728,7 +1728,7 @@ func _place_resumed_player() -> void:
 	if zone.begins_with("mini_") and not _ensure_mini(zone.substr(5)):
 		zone = "village"  # t19: ход подключённого пояса; нет сцены — к дому
 	if GameState.pos_valid and _pos_walkable(p):
-		player.global_position = p
+		player.global_position = clear_player_pos(p)  # t43: бокс впритык — страж сдвинет
 		_snap_camera()  # t64: резюме — не «долёт», а мгновенная посадка камеры
 		if zone != "village" and zone != active_area:
 			apply_area(zone, false)  # сейв оставил героя в своей зоне
@@ -1803,6 +1803,35 @@ func _pos_walkable(p: Vector2) -> bool:
 		return dungeon_zone.cell_walkable(_world_to_tile(p, CAVE_OFFSET))
 	return _village_walkable(_world_to_tile(p, Vector2.ZERO))
 
+## t43 «Страж выталкивания» (27.11, находка t42): постановка героя боксом 10×8
+## впритык в стену = вечная неподвижность (move_and_slide не выводит из УЖЕ
+## готового перекрытия). Все канонические постановки (телепорт apply_area,
+## резюме/сейв, посадка «Рывка вепря» — из player.gd) идут через это правило:
+## бокс свободен — точка отдаётся КАК ЕСТЬ (легаси-позиции не сдвигаются,
+## страж молчит); иначе — сдвиг целыми клетками в ближайшую свободную
+## (кольца Чебышёва r=1..6, лексико порядок dx/dy в кольце = детерминизм).
+## Стены выровнены по сетке 16, бокс строго меньше клетки (10×8 < 16×16),
+## поэтому «4 угла бокса свободны» <=> «весь бокс свободен».
+func clear_player_pos(p: Vector2) -> Vector2:
+	if _box_clear(p):
+		return p
+	for r in range(1, 7):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var q := p + Vector2(dx * TILE, dy * TILE)
+				if _box_clear(q):
+					return q
+	return p  # в радиусе 6 клеток чисто нигде — отдаём как есть (не наш случай)
+
+## Углы бокса героя (±5, ±4) тем же резолвером зон/этажей, что резюме.
+func _box_clear(p: Vector2) -> bool:
+	for c in [Vector2(-5.0, -4.0), Vector2(5.0, -4.0), Vector2(-5.0, 4.0), Vector2(5.0, 4.0)]:
+		if not _pos_walkable(p + c):
+			return false
+	return true
+
 # --- переход между зонами ---
 
 ## Смена активной зоны (легаси-API пещеры): true — пещера, false — деревня.
@@ -1863,18 +1892,18 @@ func apply_area(area: String, teleport: bool = true) -> void:
 		if area == "cave":
 			village_return_pos = player.global_position
 			if dungeon_zone != null:
-				player.global_position = CAVE_OFFSET + dungeon_zone.spawn_world_pos
+				player.global_position = clear_player_pos(CAVE_OFFSET + dungeon_zone.spawn_world_pos)  # t43
 		elif area == "ashen":
 			ashen_return_pos = player.global_position
 			if ashen_grid != null:
-				player.global_position = ASHEN_OFFSET + ashen_grid.spawn_world_pos
+				player.global_position = clear_player_pos(ASHEN_OFFSET + ashen_grid.spawn_world_pos)  # t43
 		elif area == "worldmap":
 			# t3: вход из деревни — спавн за аркой; возврат из локации — отель
 			# у её портала на карте мира (встаём ровно там, где вошёл).
 			if worldmap_grid != null:
 				var from_loc := prev.begins_with("loc_") and loc_return.has(prev.substr(4))
-				player.global_position = Vector2(0.0, OW.WM_OFFSET_Y) + worldmap_grid.spawn_world_pos() \
-					if not from_loc else loc_return[prev.substr(4)]
+				player.global_position = clear_player_pos(Vector2(0.0, OW.WM_OFFSET_Y) + worldmap_grid.spawn_world_pos()
+						if not from_loc else clear_player_pos(loc_return[prev.substr(4)]))  # t43
 				# t7 «Туман открытия» (вердикт «исследовать карту»): пустая модель
 				# (новый круг / легаси-сейв без ключа) получает clearing у спавна;
 				# сейв с туманом приносит своё поле. Затем — свежая перерисовка
@@ -1892,23 +1921,25 @@ func apply_area(area: String, teleport: bool = true) -> void:
 					loc_return[b] = player.global_position
 				if prev == "mini_" + b and mini_holes.has(b) and is_instance_valid(mini_holes[b]):
 					# t19: возврат из хода — ровно на клетку хода (тот же интерактор)
-					player.global_position = (mini_holes[b] as Node2D).global_position
+					player.global_position = clear_player_pos((mini_holes[b] as Node2D).global_position)  # t43
 				else:
-					player.global_position = Vector2(0.0, float(OW.LOC_OFFSET_Y[b])) \
-						+ (biome_grids[b] as Node2D).spawn_world_pos()
+					player.global_position = clear_player_pos(Vector2(0.0, float(OW.LOC_OFFSET_Y[b]))
+							+ (biome_grids[b] as Node2D).spawn_world_pos())  # t43
 		elif area.begins_with("mini_"):
 			# t19: вход в ход — с его спавна (клетка того же интерактора внутри)
 			var mb := area.substr(5)
 			if mini_grids.has(mb) and mini_grids[mb] != null:
-				player.global_position = Vector2(0.0, MD.mini_y(mb)) \
-					+ (mini_grids[mb] as Node2D).spawn_world_pos()
+				player.global_position = clear_player_pos(Vector2(0.0, MD.mini_y(mb))
+						+ (mini_grids[mb] as Node2D).spawn_world_pos())  # t43
 		elif prev == "ashen":
-			player.global_position = ashen_return_pos if ashen_return_pos != Vector2.INF else tile_to_world(spawn_tile)
+			# t43: якоря возврата — живые позиции, но сеть зон перестраивается;
+			# страж обязан молчать на свободном и вытолкнуть из вросшего.
+			player.global_position = clear_player_pos(ashen_return_pos if ashen_return_pos != Vector2.INF else tile_to_world(spawn_tile))
 		elif prev == "worldmap":
 			# t3: выход из карты мира — к северной арке деревни (её клетка 'g')
-			player.global_position = tile_to_world(WORLD_ARCH_TILE)
+			player.global_position = clear_player_pos(tile_to_world(WORLD_ARCH_TILE))  # t43
 		else:
-			player.global_position = village_return_pos if village_return_pos != Vector2.INF else tile_to_world(spawn_tile)
+			player.global_position = clear_player_pos(village_return_pos if village_return_pos != Vector2.INF else tile_to_world(spawn_tile))  # t43
 	_set_cam_limits(area)
 	if atmosphere != null:
 		# Пепелище — НАЗЕМНЫЙ тон: пещерной палитры не просим (false), серый
