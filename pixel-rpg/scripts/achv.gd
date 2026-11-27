@@ -154,7 +154,8 @@ static func on_herb_drunk() -> void:
 		unlock("herbalist", 15, 0)
 
 ## #19/#20 rekindled / undying — смерть-петля (CONTRACT_RUNLOOP §1.5 +
-## ADDENDUM 1.0 п.1–2): зовёт GameState.start_new_run() ДО вайпа. Счётчик —
+## ADDENDUM 1.0 п.1–2; с 27.11 t38 I5 зовёт мягкая GameState.soft_death()).
+## Счётчик —
 ## вечный канал "ach.n.deaths" (переживает вайп и круги, §0). Награды — штатным
 ## механизмом каталога (золото 0, Пепел 3/5 — как у соседних записей), НЕ
 ## отдельная выдача. unlock идемпотентен по ach.-флагам: на 6-й/16-й смерти

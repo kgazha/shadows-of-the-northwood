@@ -1,11 +1,13 @@
 class_name RunSummary
 extends CanvasLayer
-## «Забег окончен» — терминальная модалка смерти (CONTRACT_RUNLOOP §1.8–1.9):
-## открывается вместо респавна по окончании диалога "death" (колбэк в
-## world.gd::on_player_death). Выходы: «Вспыхнуть заново» (тот же Esc, §1.8) =
-## GameState.start_new_run(), и «Доска пепла» (t20 P0-3, MetaBoard — покупка
-## талантов за пепел перед новым забегом). Мир пересобирает существующий хук
-## ng_plus_started (world.gd), вместе со сценой умирает и эта панель (с доской).
+## «Тьма забрала тебя» — экран смерти (CONTRACT_RUNLOOP §1.8–1.9, t38 I5 27.11:
+## ПРАВКА ВЕРДИКТА 24.11, вердикт пользователя 27.11 выбор А — МЯГКАЯ СМЕРТЬ).
+## открывается после диалога "death" (колбэк в world.gd::on_player_death; цена —
+## GameState.soft_death — уже уплачена до открытия, сумма показана прошедшим
+## временем). Выходы: «Вспыхнуть у костра» (тот же Esc, §1.8) =
+## GameState.respawn_after_death() + пересборка сцены (тот же reload-путь),
+## и «Доска пепла» (t20 P0-3, MetaBoard — покупка талантов за пепел).
+## Терминального вайпа больше нет: нажитое цел, мир пересобирается на деревне.
 ## Паттерн модалок Shop/SettingsMenu: свой GameState.input_locked + watchdog в
 ## _process + полное глотание ввода в _unhandled_input — до world-страховки
 ## «разлока при закрытых окнах hud» (world.gd::_unhandled_input) не доходит
@@ -30,11 +32,11 @@ var kills_lbl: Label
 var bless_lbl: Label
 var rekindle_btn: Button
 var board_btn: Button
-var class_btn: Button          # t9 С1 (25.11): «Выбрать класс заново» (тот же путь, что «Вспыхнуть»)
+var loss_lbl: Label             # t38 I5 (27.11): крупное «Потеряно N серебра»
 var ui_frame_tex: Texture2D     # 9-slice рамка (assets/ui/panel_frame.png), опц.
 var board: MetaBoard            # «Доска пепла» (дитя панели, layer=7)
 var _holds_lock := false        # input_locked сейчас принадлежит нам, а не кому-то ещё
-var _finalized := false         # start_new_run ровно один раз (кнопка и Esc)
+var _finalized := false         # respawn ровно один раз (кнопка и Esc)
 var _want_open := false         # t29 B-06: заявка на открытие, когда мир освободится
 
 func _enter_tree() -> void:
@@ -42,7 +44,8 @@ func _enter_tree() -> void:
 		I = self
 
 func _exit_tree() -> void:
-	# Выход из сцены с открытой панелью (перезабор мира после start_new_run)
+	# Выход из сцены с открытой панелью (перезабор мира после мягкого
+	# воскресения — t38 I5, 27.11)
 	# не должен оставлять висячий lock: снимаем, только если lock был наш и
 	# поверх не стоит чужое окно (паттерн Shop).
 	_release_lock()
@@ -114,11 +117,21 @@ func _build() -> void:
 	vb.add_theme_constant_override("separation", 6)  # t27 P1-1: разделители +2
 	panel.add_child(vb)
 	var head := Label.new()
-	head.text = "Забег окончен"
+	head.text = "Тьма забрала тебя"  # t38 I5 (27.11): мягкая смерть — «забег» не оканчивается
 	head.add_theme_font_size_override("font_size", 10)
 	head.add_theme_color_override("font_color", Color(0.85, 0.45, 0.25))
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(head)
+	# t38 I5 (27.11, вердикт пользователя «крупное предупреждение на экране
+	# смерти»): сумма потери — КРУПНЕЙШИМ текстом кодоген-меткой (ноль растровых
+	# файлов, инвариант LAW_ART законен), тон HP_RED[0] палитры. Число честное:
+	# soft_death() уже списала его до открытия экрана (прошедшее время).
+	loss_lbl = Label.new()
+	loss_lbl.text = "Потеряно 0 серебра"
+	loss_lbl.add_theme_font_size_override("font_size", 12)
+	loss_lbl.add_theme_color_override("font_color", Color("e2604e"))
+	loss_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(loss_lbl)
 	stats_lbl = Label.new()
 	stats_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	stats_lbl.add_theme_color_override("font_color", Color(0.9, 0.85, 0.75))
@@ -139,7 +152,9 @@ func _build() -> void:
 	vb.add_child(ash_row)
 	ash_row.add_child(AshIcon.make_rect(14))
 	var ash_note := Label.new()
-	ash_note.text = "Пепел переживает смерть: сохраняется 60–70% заработанного."
+	# t38 I5 (27.11): прежняя строка врала и до правки («60–70%» снял ещё t70) —
+	# теперь честна полностью: при мягкой смерти не догорает ничего, кроме доли серебра.
+	ash_note.text = "Пепел и нажитое переживают смерть: целы сумка, снасть и опыт."
 	ash_note.add_theme_font_size_override("font_size", 8)  # t27 P1-1: 7 -> 8
 	ash_note.add_theme_color_override("font_color", Color(0.78, 0.68, 0.5))
 	ash_row.add_child(ash_note)
@@ -148,26 +163,13 @@ func _build() -> void:
 	board_btn.pressed.connect(_open_board)
 	vb.add_child(board_btn)
 	rekindle_btn = Button.new()
-	rekindle_btn.text = "Вспыхнуть заново (Esc)"
+	rekindle_btn.text = "Вспыхнуть у костра (Esc)"  # t38 I5: воскресение в деревне, не новый забег
 	rekindle_btn.pressed.connect(_rekindle)
 	vb.add_child(rekindle_btn)
-	# t9 БАГ-2 С1 (25.11, вердикт пользователя «после смерти нельзя выбрать класс»):
-	# канон сменился — смерть обнуляет class_id (start_new_run), поэтому «вспыхнуть»
-	# ТЕПЕРЬ и есть путь в штатный выбор героя: мир пересоберётся с модалкой
-	# «Создание героя» (гейт world.gd по class_id == "" -> hud.show_class_modal ->
-	# _pick_class). Кнопка — явный аффорданс того же пути (тот же _rekindle, та же
-	# идемпотентность _finalized): игрок видит, что сменить героя можно, не теряя
-	# вечный слой. Выход через чужие окна (Esc-меню) не открываем — С3 вне вердикта.
-	var class_note := Label.new()
-	class_note.text = "Смерть стирает класс: следующий герой — на твой выбор."
-	class_note.add_theme_font_size_override("font_size", 8)
-	class_note.add_theme_color_override("font_color", Color(0.62, 0.72, 0.85))
-	class_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vb.add_child(class_note)
-	class_btn = Button.new()
-	class_btn.text = "Выбрать класс заново"
-	class_btn.pressed.connect(_rekindle)
-	vb.add_child(class_btn)
+	# t38 I5 (27.11, вердикт пользователя): мягкая смерть НЕ стирает класс и не
+	# обнуляет героя — снятые t9 С1 строка-подсказка и кнопка «Выбрать класс
+	# заново» больше не имеют смысла (класс цел, модалка создания героя не
+	# всплывает). Датированный след правки: см. qa_lp G12 ре-пин run_summary.
 
 ## Тёмная деревянная рамка (тот же ассет и приёмы, что Shop/hud.gd).
 func _ui_frame_style(content: float) -> StyleBoxTexture:
@@ -199,8 +201,8 @@ func _set_open(v: bool) -> void:
 		_acquire_lock()
 		_refresh()
 
-## Снимок итогов t20 — в момент открытия (start_new_run ещё не вызывался,
-## rs.* ещё живы). Значения из сейва — каноническим парсером GameState._num
+## Снимок итогов t20 — в момент открытия. 27.11 (t38): смерть мягкая — penalty
+## к открытию уже уплачена soft_death(), а rs.* при мягкой смерти живы вдвойне. Значения из сейва — каноническим парсером GameState._num
 ## (trust-boundary, R5-принцип); level/ng_wave типизированы в самом GameState.
 func _refresh() -> void:
 	var f: Dictionary = GameState.flags
@@ -209,34 +211,37 @@ func _refresh() -> void:
 	var earned := GameState._num(f.get("rs.earned", 0), 0)
 	var tsec := int(GameState._num(f.get("rs.t", 0), 0))
 	var w := GameState.ng_wave()
-	# t70 (17.11, вердикт 16:14): заработанное переживает смерть целиком — строки
-	# «сохранится ~N» больше нет: врать про догорание нечем, цифра = всё E.
-	stats_lbl.text = "Забег: #%d · Круг (глубь): %d\nВремя: %02d:%02d · Золото: %d\nПепел: баланс %d · заработано %d · сохраняется всё\n%s\nСид: %d" % [
-		deaths + 1, w,
+	# t38 I5 (27.11): экран открывается ПОСЛЕ soft_death — ach.n.deaths уже
+	# включает ЭТУ смерть (было «deaths + 1» как прогноз, теперь факт).
+	loss_lbl.text = "Потеряно %d серебра" % GameState._num(f.get("meta.last_loss", 0), 0)
+	stats_lbl.text = "Смертей: %d · Круг (глубь): %d\nВремя: %02d:%02d · Золото: %d\nПепел: баланс %d · заработано %d · сохраняется всё\n%s\nСид: %d" % [
+		deaths, w,
 		int(tsec / 60.0), tsec % 60, GameState.gold,
 		ash, earned,
 		_killer_line(), GameState.run_seed,
 	]
 	kills_lbl.text = _kills_block() + _boss_line(w)
-	# Благословение волхвы: vd ещё «до этой смерти» (инкрементит start_new_run) —
-	# показываем, с каким множителем стартует НОВЫЙ забег.
+	# Благословение волхвы: t38 I5 — мягкая смерть инкрементит meta.vd ДО
+	# открытия, множитель уже действует на воскресшего. Показываем факт:
+	# «с этим благословением ты и встанешь» (формула — тот же volkhv_stacks).
 	var next_stacks := clampi(deaths_to_stacks_preview(), 0, GameState.BLESS_CAP_DEATHS)
 	# t29 B-08 (реестр t28): процент РЕЖЕТСЯ капом, а подпись показывала сырое число
 	# смертей — при 16 игрок видел «+20% … (смертей круга: 16)» и ждал +32%. Теперь
 	# кап назван явно; ниже капа формулировка не меняется вовсе (стаб qa_mb «+6%»).
-	var raw_deaths := GameState._num(f.get("meta.vd", 0), 0) + 1
+	var raw_deaths := GameState._num(f.get("meta.vd", 0), 0)
 	var note := "смертей круга: %d" % raw_deaths
 	if raw_deaths > GameState.BLESS_CAP_DEATHS:
 		note = "кап %d смертей, а их %d" % [GameState.BLESS_CAP_DEATHS, raw_deaths]
-	bless_lbl.text = "Волхва: +%d%% урона в новом забеге (%s)" % [
+	bless_lbl.text = "Волхва: +%d%% урона (%s)" % [
 		int(round(GameState.BLESS_PER_DEATH * 100.0 * float(next_stacks))),
 		note,
 	]
 
-## Смертей круга, которые учтёт новый забег (meta.vd + эта смерть, с капом
-## через тот же BLESS_CAP_DEATHS, что и GameState.volkhv_stacks).
+## Смертей круга с учётом ЭТОЙ (soft_death уже инкрементил meta.vd — 27.11),
+## которые учитывает благословение (кап через тот же BLESS_CAP_DEATHS, что и
+## GameState.volkhv_stacks).
 func deaths_to_stacks_preview() -> int:
-	return GameState._num(GameState.flags.get("meta.vd", 0), 0) + 1
+	return GameState._num(GameState.flags.get("meta.vd", 0), 0)
 
 ## «Пал от: …» — kind убийцы (rs.src) → RU-имя из единого реестра AchvCatalog.MOBS.
 func _killer_line() -> String:
@@ -289,14 +294,19 @@ func _open_board() -> void:
 	GameAudio.sfx("ui_confirm")
 	MetaBoard.open()
 
-## Кнопка и Esc — одно и то же (§1.8). Идемпотентна: ng_plus_started триггерит
-## отложенный перезабор сцены, второй сигнал не проходит (_finalized).
+## Кнопка и Esc — одно и то же (§1.8). Идемпотентна: перезабор сцены отложен,
+## второй вызов не проходит (_finalized).
+## t38 I5 (27.11): вместо терминального start_new_run — мягкое воскресение:
+## GameState.respawn_after_death() (деревня, hp полный, сейв зафиксирован) и
+## пересборка сцены тем же reload-путём, что вёл прежний хук ng_plus_started
+## (world.gd:345). ng_plus_started НЕ эмитим — круг не новый, волна не растёт.
 func _rekindle() -> void:
 	if _finalized:
 		return
 	_finalized = true
 	GameAudio.sfx("ui_confirm")
-	GameState.start_new_run()
+	GameState.respawn_after_death()
+	get_tree().reload_current_scene.call_deferred()
 
 # --- лок и владение вводом (паттерн Shop/SettingsMenu) ---
 

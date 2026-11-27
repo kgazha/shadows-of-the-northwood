@@ -1108,10 +1108,11 @@ func _build_class_modal(th: Theme) -> void:
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(title)
 	var subtitle := Label.new()
-	# t9 (25.11, вердикт пользователя): необратима смерть ЗАБЕГА, не класс —
-	# смерть стирает class_id (game_state.start_new_run), выбор возвращается
-	# каждому новому забегу. Прежняя строка «один раз на всегда» врала бы.
-	subtitle.text = "В рамках забега выбор необратим — смерть сотрёт героя, и класс можно будет выбрать заново"
+	# t9 (25.11, вердикт пользователя) + t38 I5 (27.11, вердикт пользователя,
+	# выбор А «мягкая смерть»): смерть больше НЕ стирает class_id — выбор
+	# переживает смерть и смену круга; снимает класс только «Новая игра»
+	# (start_fresh_game). Прежняя строка «смерть сотрёт героя» отставала бы.
+	subtitle.text = "В рамках забега выбор необратим — сменит его только «Новая игра»"
 	subtitle.add_theme_font_size_override("font_size", 8)
 	subtitle.add_theme_color_override("font_color", Color(0.85, 0.75, 0.6))
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

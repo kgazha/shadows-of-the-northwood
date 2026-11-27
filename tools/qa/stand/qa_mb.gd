@@ -64,12 +64,16 @@ func r1_runstats() -> void:
 	check("R1: Loot.on_mob_death x2 -> rs.k.slime=2", int(GameState.flags.get("rs.k.slime", -1)) == 2)
 	Loot.on_mob_death("boss2", Vector2.INF)
 	check("R1: босс считается по своему kind (rs.k.boss2=1)", int(GameState.flags.get("rs.k.boss2", -1)) == 1)
-	# t70 (17.11): баланс 4, earned 7 — при смерти не сгорает НИЧЕГО: 4 и остаётся
-	# (по прежнему keep 0.65 было бы 1); rs.* стёрты вайпом.
-	GameState.start_new_run()
-	check("R1/t70: после смерти баланс цел = 4 (заработанное не догорает)", Ash.balance() == 4)
-	check("R1: rs.earned стёр вайпом", not GameState.flags.has("rs.earned"))
-	check("R1: rs.k.* стёрты вайпом", not GameState.flags.has("rs.k.slime") and not GameState.flags.has("rs.k.boss2"))
+	# t70 (17.11): баланс 4, earned 7 — при смерти не сгорает НИЧЕГО: 4 и остаётся.
+	# t38 I5 (перепин 27.11, мягкая смерть): rs.* при мягкой смерти НЕ стираются
+	# вовсе (вайпа нет); вытирание rs — на отказном входе, пин ниже.
+	GameState.soft_death()
+	check("R1/t70+t38: после мягкой смерти баланс цел = 4 (заработанное не догорает)", Ash.balance() == 4)
+	check("R1/t38: rs.earned при мягкой смерти ЦЕЛ (статистику забега не сжигают)", int(GameState.flags.get("rs.earned", -1)) == 7)
+	check("R1/t38: rs.k.* при мягкой смерти целы", int(GameState.flags.get("rs.k.slime", -1)) == 2 and int(GameState.flags.get("rs.k.boss2", -1)) == 1)
+	GameState.start_fresh_game()
+	check("R1/t38: отказ от круга — rs.earned стёрт вайпом (прежний канон жив здесь)", not GameState.flags.has("rs.earned"))
+	check("R1/t38: отказ от круга — rs.k.* стёрты вайпом", not GameState.flags.has("rs.k.slime") and not GameState.flags.has("rs.k.boss2"))
 
 # --- R2: Пепельная доска — покупка/цены/кап/табличное чиселко ---
 
@@ -101,13 +105,15 @@ func r2_board_purchase() -> void:
 
 func r3_effects_on_new_run() -> void:
 	mk({"flags": flags_with({"meta.purse": 1, "meta.mb.first_coal": 2, "meta.mb.coal_heart": 3})})
-	GameState.start_new_run()
+	# t38 I5 (перепин 27.11): «золото нового забега» отныне платится только на
+	# отказном/победном входах («Новая игра»/арка) — смерть его не сбрасывает.
+	GameState.start_fresh_game()
 	check("R3: золото нового забега = 50*purse(1) + first_coal(30) = 80", GameState.gold == 80)
 	var base_hp := int(ClassesData.class_data("warrior").hp)
 	check("R3: макс. HP = база(%d) + coal_heart(12) = %d" % [base_hp, base_hp + 12], GameState.max_hp == base_hp + 12)
 	check("R3: герой входит в забег с полным HP", GameState.hp == GameState.max_hp)
 	mk({"flags": flags_with({"meta.purse": 0})})
-	GameState.start_new_run()
+	GameState.start_fresh_game()  # t38 I5 (27.11): грант «Кошелька» — отказной вход
 	check("R3: ранги 0 -> тождество qa_run (золото 0, purse 0)", GameState.gold == 0)
 	GameState.flags["meta.mb.ash_step"] = 1
 	check("R3: ash_step ранг 1 -> множитель скорости +4% (mb_value=4)", GameState.mb_value("ash_step") == 4)
@@ -130,7 +136,7 @@ func r4_ash_retention_band() -> void:
 		var b0 := Ash.balance()
 		Ash.add(e)  # боевой канал: баланс и rs.earned растут вместе
 		check("R4/t70: earned=%d -> надбавка баланса ровно %+d (%d->%d)" % [e, e, b0, Ash.balance()], Ash.balance() == b0 + e)
-		GameState.start_new_run()
+		GameState.soft_death()  # t38 I5 (27.11): смерть мягкая — пепел и подавно цел
 		check("R4/t70: смерть при earned=%d -> баланс цел %d (при keep 0.65 было бы %d)" % [
 			e, b0 + e, b0 + int(floor(0.65 * e))], Ash.balance() == b0 + e)
 	# тот же заработок переживает «Новую игру» (отказ от круга) — оба пути когерентны
@@ -142,15 +148,15 @@ func r4_ash_retention_band() -> void:
 		check("R4/t70: start_fresh_game при earned=%d -> баланс цел %d" % [e2, b1 + e2], Ash.balance() == b1 + e2)
 	# вечный remainder как не горел, так и не горит: 100 баланса / 10 заработано -> 100
 	mk({"flags": flags_with({"meta.ash": 100, "rs.earned": 10})})
-	GameState.start_new_run()
+	GameState.soft_death()  # t38 I5 (27.11): мягкая смерть — догоранию тем более негде быть
 	check("R4/t70: balance 100 / earned 10 -> 100 (ничего не сгорело)", Ash.balance() == 100)
 	# заработанное проедено: баланс 3 при rs.earned 10 -> смерть ничего не снимает
 	mk({"flags": flags_with({"meta.ash": 3, "rs.earned": 10})})
-	GameState.start_new_run()
+	GameState.soft_death()
 	check("R4/t70: earned>balance -> баланс 3 цел (вычитания больше нет)", Ash.balance() == 3)
 	# канон qa_run R2: заработано 0 -> баланс нетронут (12)
 	mk({"flags": flags_with({"meta.ash": 12})})
-	GameState.start_new_run()
+	GameState.soft_death()
 	check("R4: earned=0 -> баланс 12 цел (qa_run-канон «мета-слой вечен»)", Ash.balance() == 12)
 
 
@@ -160,11 +166,11 @@ func r5_volkhv_blessing() -> void:
 	mk({"flags": flags_with({})})
 	check("R5: константы: BLESS_PER_DEATH=0.02, кап=10", GameState.BLESS_PER_DEATH == 0.02 and GameState.BLESS_CAP_DEATHS == 10)
 	check("R5: старт: стопки 0, множитель 1.0", GameState.volkhv_stacks() == 0 and is_equal_approx(GameState.volkhv_bless_mult(), 1.0))
-	GameState.start_new_run()
+	GameState.soft_death()  # t38 I5 (27.11): ставка круга живёт в мягкой смерти
 	check("R5: смерть 1 -> meta.vd=1", int(GameState.flags.get("meta.vd", -1)) == 1)
 	check("R5: множитель 1.02", is_equal_approx(GameState.volkhv_bless_mult(), 1.02))
 	for i in range(11):
-		GameState.start_new_run()
+		GameState.soft_death()
 	check("R5: 12 смертей -> vd=12", int(GameState.flags.get("meta.vd", -1)) == 12)
 	check("R5: кап: стопки=10, множитель 1.20 (+20%)", GameState.volkhv_stacks() == 10 and is_equal_approx(GameState.volkhv_bless_mult(), 1.2))
 	GameState.start_ng_plus()
@@ -173,8 +179,19 @@ func r5_volkhv_blessing() -> void:
 
 func meta_bless_untouched() -> bool:
 	mk({"flags": flags_with({"meta.bless": 2})})
-	GameState.start_new_run()
+	GameState.soft_death()  # t38 I5 (27.11): та же ставка, новый канал
 	return int(GameState.flags.get("meta.bless", -1)) == 2 and int(GameState.flags.get("meta.vd", -1)) == 1
+
+## t38 I5 (27.11): число кнопок экрана смерти (VBox панели): было 3 с t9
+## («Доска», «Вспыхнуть», «Выбрать класс»), стало 2 — классовый аффорданс снят
+## вместе с обнулением класса.
+func _rs_buttons(rs) -> int:
+	var n := 0
+	for c in rs.panel.get_children():
+		for cc in c.get_children():
+			if cc is Button:
+				n += 1
+	return n
 
 # --- R6: экран смерти — содержимое ярлыков + Esc-маршрут + доска ---
 
@@ -183,6 +200,9 @@ func r6_death_screen() -> void:
 		"ach.n.deaths": 4, "meta.ash": 9, "rs.earned": 8, "rs.t": 65.0,
 		"rs.zone": "cave", "rs.src": "brute", "rs.k.slime": 2,
 		"ng.wave": 2, "ng.boss_2": 1, "ashen.boss": "dead", "meta.vd": 2,
+		# t38 I5 (перепин 27.11): экран открывается ПОСЛЕ soft_death — фикстура
+		# играет уже списанную цену и уже инкрементированные ставки.
+		"meta.last_loss": 8,
 	}), "gold": 41, "run_seed": 777})
 	var host := Node.new()
 	host.name = "RSHost"
@@ -205,6 +225,20 @@ func r6_death_screen() -> void:
 			paper_any = true
 	check("R6: PaperEdge снесён — экран смерти без ген-кромки (t52)", not paper_any and rs.panel != null)
 	var st := rs.stats_lbl.text
+	# t38 I5 (перепин 27.11): экран мягкой смерти — заголовок и КРУПНАЯ сумма
+	# потери. head — первый Label первого контейнера панели (структура _build).
+	var head_lbl: Label = null
+	for c in rs.panel.get_children():
+		if head_lbl != null:
+			break
+		for cc in c.get_children():
+			if cc is Label:
+				head_lbl = cc as Label
+				break
+	check("R6/t38: заголовок мягкой смерти («Тьма забрала тебя»)", head_lbl != null and head_lbl.text == "Тьма забрала тебя")
+	check("R6/t38: крупное «Потеряно 8 серебра» (meta.last_loss, прошедшее время)", rs.loss_lbl.text == "Потеряно 8 серебра")
+	check("R6/t38: счётчик смертей на экране («Смертей: 4» — ставка видна)", st.contains("Смертей: 4"))
+	check("R6/t38: аффордансов выбора класса больше нет (класс цел) — кнопок две", _rs_buttons(rs) == 2)
 	check("R6: сид показан (Сид: 777)", st.contains("Сид: 777"))
 	check("R6: глубина/волна показана (Круг (глубь): 2)", st.contains("Круг (глубь): 2"))
 	check("R6: время mm:ss (Время: 01:05)", st.contains("Время: 01:05"))
@@ -216,9 +250,12 @@ func r6_death_screen() -> void:
 	check("R6: убийца — RU-имя из AchvCatalog (Пал от: Тлель-вепрь)", st.contains("Пал от: Тлель-вепрь"))
 	check("R6: убийства по типам (Слайм ×2)", rs.kills_lbl.text.contains("Слайм ×2"))
 	check("R6: статус боссов (Гром повержен / Ведьма повержена)", rs.kills_lbl.text.contains("Гром повержен") and rs.kills_lbl.text.contains("Ведьма повержена"))
-	check("R6: благословение в UI: +6% (vd=2 + эта смерть = 3)", rs.bless_lbl.text.contains("+6%"))
+	# t38 I5 (перепин 27.11): экран открывается ПОСЛЕ soft_death — meta.vd уже
+	# включает эту смерть, «+1 в прогноз» снят: vd=2 -> +4% (было «+6% (vd=2 +
+	# эта смерть = 3)» терминальной эпохи).
+	check("R6/t38: благословение в UI: +4% (vd=2 уже с этой смертью)", rs.bless_lbl.text.contains("+4%"))
 	check("R6: кнопка «Доска пепла» + доска-дитя созданы", rs.board_btn != null and rs.board != null)
-	# Esc-маршрут: 1-й Esc закрывает открытую доску, 2-й — «Вспыхнуть заново»
+	# Esc-маршрут: 1-й Esc закрывает открытую доску, 2-й — «Вспыхнуть у костра»
 	MetaBoard.open()
 	check("R6: доска открыта поверх экрана смерти", MetaBoard.is_open())
 	# t52 снос: и доска пепла — без ген-кромки (только code-stylebox панели).
@@ -367,9 +404,26 @@ func r6_death_screen() -> void:
 	ev.pressed = true
 	rs._unhandled_input(ev)
 	check("R6: 1-й Esc закрыл ТОЛЬКО доску", not MetaBoard.is_open() and RunSummary.is_open())
-	rs._unhandled_input(ev)
-	check("R6: 2-й Esc = rekindle: ach.n.deaths 4->5", int(GameState.flags.get("ach.n.deaths", -1)) == 5)
-	check("R6: rekindle стёр rs.* (статистика сгорела вместе с забегом)", not GameState.flags.has("rs.k.slime") and not GameState.flags.has("rs.zone") and not GameState.flags.has("rs.src"))
+	# t38 I5 (ПЕРЕПИН 27.11, мягкая смерть): прежние пины «2-й Esc = rekindle:
+	# deaths 4->5» и «rekindle сжёг rs.*» сняты — смерть оплачивается в
+	# world.on_player_death()/soft_death(), а не на кнопке; rs жив; а сам
+	# _rekindle теперь ещё и перезагружает сцену (reload_current_scene) — для
+	# сцены стенда это смерть корутины. Пин разбит: payload воскресения через
+	# GameState, идемпотентность и проводка кнопки — под щитом _finalized.
+	check("R6/t38: до решения экран живёт (Esc закрыл доску, экран на месте)", RunSummary.is_open())
+	GameState.respawn_after_death()
+	check("R6/t38: воскресение домой: area=village, in_cave=false, полный hp",
+		String(GameState.area) == "village" and GameState.in_cave == false and GameState.hp == GameState.max_hp)
+	check("R6/t38: rs.* при мягкой смерти ЦЕЛЫ (прежний пин «сгорели» снят 27.11)",
+		GameState.flags.has("rs.k.slime") and GameState.flags.has("rs.zone") and GameState.flags.has("rs.src"))
+	check("R6/t38: счётчик смертей уплачен на самой смерти — кнопка его не двигает (4 стоит)",
+		int(GameState.flags.get("ach.n.deaths", -1)) == 4)
+	rs._finalized = true
+	rs._unhandled_input(ev)  # «второй Esc» после решения: no-op, без reload
+	check("R6/t38: щит _finalized: Esc после решения не гасит экран (стенд не перезаряжается)",
+		RunSummary.is_open() and not MetaBoard.is_open())
+	rs.rekindle_btn.pressed.emit()
+	check("R6/t38: проводка кнопки под _finalized безопасна (no-op без краха/reload)", RunSummary.is_open())
 	host.queue_free()
 	await get_tree().process_frame
 
@@ -436,9 +490,9 @@ func r9_procs() -> void:
 		MetaBoard.next_cost(1, bf) == 5 and not MetaBoard.buy(bf) and Ash.balance() == 20)
 	check("R9: вечная четвёрка покупается как прежде (coal_heart ранг 1 за 2, баланс 18)",
 		MetaBoard.buy("coal_heart") and Ash.balance() == 18)
-	# смерть круга — вечный слой цел (канон доски не менялся)
-	GameState.start_new_run()
-	check("R9: смерть — вечный coal_heart уцелел", MetaBoard.rank_of("coal_heart") == 1)
+	# t38 I5 (перепин 27.11): мягкая смерть — вечный слой цел как прежде
+	GameState.soft_death()
+	check("R9: мягкая смерть — вечный coal_heart уцелел", MetaBoard.rank_of("coal_heart") == 1)
 	# --- миграция meta.mb.<proc> -> tal.<proc> (класс совпал / не совпал) ---
 	mk({"class_id": "warrior", "level": 3, "flags": flags_with({
 		"meta.mb.boar_fang": 2, "meta.mb.twisted_arrow": 1})})
@@ -454,9 +508,10 @@ func r9_procs() -> void:
 	GameState.load_game()
 	check("R9: идемпотентность — повторная загрузка ничего не добавляет",
 		GameState.tal_rank(bf) == 2 and int(GameState.flags.get("tal.gift", 0)) == 2)
-	# смерть круга — прок сгорает вместе со всеми tal.* («после смерти с нуля»)
-	GameState.start_new_run()
-	check("R9: смерть — прок-ранг и gift сгорели в общем вайпе tal.*",
+	# t38 I5 (перепин 27.11): мягкая смерть tal.* НЕ трогает (qa_run D4); сгорает
+	# прок только на отказном входе «Новая игра» — общий вайп жив там.
+	GameState.start_fresh_game()
+	check("R9: отказ от круга — прок-ранг и gift сгорели в общем вайпе tal.*",
 		GameState.tal_rank(bf) == 0 and not GameState.flags.has("tal.gift"))
 	# пин «аудиозапись в реестре»: прок-клавесин зарегистрирован и собирается
 	check("R9: «прок-клавесин» записан в кодоген-реестре (KEYS+GAIN)",

@@ -340,7 +340,7 @@ func _ready() -> void:
 	add_child(Inventory.new())
 	add_child(Shop.new())  # лавка Гриима: скрыта по умолчанию; после Journal — Esc у Shop приоритетнее
 	add_child(SettingsMenu.new())  # меню настроек (Esc): как GameAudio — узел стартует скрытым
-	add_child(RunSummary.new())  # «Забег окончен» (смерть-петля §1.8): скрыта; последняя из модалок — её Esc приоритетнее
+	add_child(RunSummary.new())  # «Тьма забрала тебя» (смерть §1.8, с 27.11 мягкая): скрыта; последняя из модалок — её Esc приоритетнее
 	add_child(Achv.new())  # достижения+daily (achv.gd); после load_game() — daily видит stamp
 	GameState.ng_plus_started.connect(func() -> void: get_tree().reload_current_scene.call_deferred())
 	if loaded:
@@ -2300,9 +2300,14 @@ func on_player_death() -> void:
 	# смерть закрывает и его (семантика B-02, до start_dialogue).
 	if Inventory.is_open():
 		Inventory.close()
-	# Смерть гасит забег (CONTRACT_RUNLOOP §1.1): респавна больше нет — после
-	# диалога открывается модалка RunSummary, «Вспыхнуть заново» = start_new_run().
-	if FirstHint.I != null: FirstHint.I.show_hint("death", "Смерть гасит забег: опыт и добыча сгорят. Но пепел, достижения и благословения алтаря — навсегда с тобой.")
+	# t38 I5 (27.11, ПРАВКА ВЕРДИКТА 24.11 — вердикт пользователя 27.11, выбор А):
+	# МЯГКАЯ СМЕРТЬ. Смерть больше не гасит забег: цена — пятая часть серебра
+	# (GameState.soft_death — ровно один хук здесь, бой не тронут), экип/сумка/
+	# класс целы. Диалог и модалка RunSummary остаются (экран с суммой потери),
+	# «Вспыхнуть у костра» = GameState.respawn_after_death() + пересборка сцены.
+	# Сумма потери к этому моменту уже в flags["meta.last_loss"] — её читает экран.
+	GameState.soft_death()
+	if FirstHint.I != null: FirstHint.I.show_hint("death", "Тьма берёт пятую часть серебра — и только. Сумка, снасть и опыт остаются с тобой; очнёшься у костра в деревне.")
 	start_dialogue("death", func() -> void: RunSummary.open())
 
 func respawn_player() -> void:

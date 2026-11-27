@@ -172,7 +172,7 @@ func _run() -> void:
 	GameState.flags["tal.boar_fang"] = 2
 	GameState.start_ng_plus()
 	_chk("t1b_gift_wiped", not GameState.flags.has("tal.gift") and GameState.tal_rank("boar_fang") == 0,
-			"вайп круга: gift и проки сгорели вместе с tal.* (после смерти/круга — с нуля)")
+			"вайп круга (арка): gift и проки сгорели вместе с tal.* (27.11: со смертью это снято — мягкая цена)")
 	# класс обратно «без класса» — прежний нейтральный базис секций T02..T14
 	# (t11_btn12 считает журнал без классовых узлов)
 	GameState.class_id = ""
@@ -314,7 +314,7 @@ func _run() -> void:
 	world3.queue_free()
 	await _frames(2)
 
-	# ---- T08: ember — золото с мобов (тот же seed, 200 убojств slime) ----
+	# ---- T08: ember — золото с мобов (тот же seed, 200 убийств slime) ----
 	_fresh()
 	GameState.gold = 0
 	seed(12345)
@@ -360,7 +360,7 @@ func _run() -> void:
 	sl.free()
 	_chk("t9_herblore", h0 > 205 and h0 < 295 and h1 > 270 and h1 < 370 and h1 > h0, "дроп 1000 роллов: rank0=%d (~250), herblore=%d (~320), тот же seed" % [h0, h1])
 
-	# ---- T10: whisper — пепло-дельты при убojстве босса (живой brute) ----
+	# ---- T10: whisper — пепло-дельты при убийстве босса (живой brute) ----
 	_fresh()
 	var world4: Node2D = FakeWorld.new()
 	add_child(world4)

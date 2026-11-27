@@ -344,6 +344,23 @@ static func entries(gs) -> Array:
 					"need": int(gs.PITY_THRESHOLD),
 					"done": pity >= int(gs.PITY_THRESHOLD)}],
 		})
+	# t38 I5 (27.11, вердикт пользователя «число смертей видно — игрок видит свои
+	# ставки»): строка ставок смерти. Вечный счётчик ach.n.deaths (веха игрока) в
+	# заголовке, ставка текущего круга — шкала благословения волхвы (кап 10).
+	# Строка живёт, только пока ставки nonzero: без смертей пугалло в журнале лишний.
+	var deaths_all := int(gs._num(gs.flags.get("ach.n.deaths", 0), 0))
+	if deaths_all > 0:
+		var vd := int(gs._num(gs.flags.get("meta.vd", 0), 0))
+		var cap := int(gs.BLESS_CAP_DEATHS)
+		out.append({
+			"id": "death_price",
+			"title": "Ставки пепла · смертей: %d" % deaths_all,
+			"desc": "Тьма берёт пятую часть серебра — и только: сумка, снасть и опыт неприкосновенны. Каждая смерть круга — благословение волхвы +2% урона, до десяти.",
+			"status": STATUS_ACTIVE,
+			"story": false,
+			"targets": [{"label": "Смертей круга",
+					"cur": mini(vd, cap), "need": cap, "done": vd >= cap}],
+		})
 	return out
 
 ## Тик системы (вызывает journal.gd): счётчики материалов + автостарты +

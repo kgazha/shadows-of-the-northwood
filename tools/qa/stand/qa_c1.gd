@@ -9,12 +9,12 @@ extends Node2D
 # дверь, сундук) -> выход -> Пепелище (ведьма, сундук, портал) -> северная арка ->
 # карта мира -> все 6 биомных локаций (вход -> зачистка мобов пояса -> сундук ->
 # выход) -> возврат в деревню -> ночлег у костра -> F5/F9 -> снежная локация:
-# ОДНА плановая смерть -> экран итогов -> доска пепла -> «Вспыхнуть заново».
+# ОДНА плановая смерть -> экран потери -> доска пепла -> «Вспыхнуть у костра».
 # На каждом чекпойнте save+load+continue (резолвер зон). Детекторы: креш,
 # софтлоки (BFS-недостижимо / бюджет кадров / залипание), дыры экономики (золото
 # и материалы против вилок LOOT-таблицы; коридор BALANCE 78–106 — харнес-допущение,
 # в ECONOMY_BALANCE.md отсутствует — P2-05; пепел), инвариант
-# «смерть = сброс забега, вечен только пепел/ачивки/амулет»,
+# «смерть = −20% серебра, нажитое цело (t38 I5, 27.11; прежде — сброс забега)»,
 # перф-пробы (µs/кадр) на всех переходах зон.
 # P2-06 пины (2026-11-19, diag-p2): corner-геометрия реальной сетки деревни
 # (центр-LOS=true, girth-LOS=false), Minkowski-клиренс (коробка героя 10x8) всех
@@ -1769,6 +1769,22 @@ func stage_death() -> void:
 		"has_amulet": bool(GameState.has_amulet),
 		"run_seed": int(GameState.run_seed),
 		"rs_earned": int(GameState.flags.get("rs.earned", 0)),
+		# t38 I5 (перепин 27.11, мягкая смерть): нажитое до смерти — эталон
+		# неприкосновенности (золото за вычетом 20% — пин ниже).
+		"gold": int(GameState.gold),
+		"dmg": int(GameState.damage),
+		"level": int(GameState.level),
+		"xp": int(GameState.xp),
+		"bag": int(GameState.owned_gear.size()),
+		"mats": _mats_sum(),
+		"torches": int(GameState.torches),
+		"herbs": int(GameState.herbs),
+		"brewed": int(GameState.brewed_potions),
+		"sq": int(GameState.slime_quest),
+		"cs": int(GameState.cave_state),
+		"chests": int(GameState.chests_used.size()),
+		"campfires": int(GameState.campfires_used.size()),
+		"weapon": String(GameState.gear.get("weapon", "")),
 	}
 	chk("пепел забега учтён в rs.earned (пин t70: == балансу)", int(carried["rs_earned"]) == int(carried["ash"]),
 		"rs.earned=%d ash=%d" % [int(carried["rs_earned"]), int(carried["ash"])])
@@ -1823,76 +1839,81 @@ func phase1_ready() -> void:
 		findings.append({"stage": "post_death", "kind": "crash", "detail": "мир не пересобрался после смерти"})
 		finalize_and_quit()
 		return
-	# t9 БАГ-2 (25.11, ВЕРДИКТ ПОЛЬЗОВАТЕЛЯ 24.11 «после смерти нельзя выбрать
-	# класс»): прежнее «класс вечен (воин)» ЗДЕСЬ ИНВЕРТИРОВАН по смене канона
-	# CONTRACT_RUNLOOP §1.2 — смерть обнуляет class_id, мир пересобирается с
-	# штатной модалкой «Создание героя» (тот же проверенный путь fresh-игры).
+	# t38 I5 (ПЕРЕПИН 27.11, ВЕРДИКТ ПОЛЬЗОВАТЕЛЯ 27.11, выбор А «МЯГКАЯ СМЕРТЬ —
+	# воскресение у костра/в деревне, −20% серебра с полом, экип/сумка/класс целы»):
+	# прежний блок t9 (инверсия 25.11 «класс обнулён, модалка, lvl1, 50×purse,
+	# сид перевыброшен, слой круга вытерт») ОТМЕНЁН этой правкой: смерть больше не
+	# сброс. Инварианты мягкой смерти ниже; полный вайп по-прежнему пинится на
+	# отказном входе (qa_run D8) и регрессии арки (qa_run D9).
 	var ok := true
-	ok = chk("post-death: класс обнулён вердиктом, модалка «Создание героя» показана",
-		String(GameState.class_id) == "" and world.hud != null and world.hud.is_modal_open(),
+	ok = chk("post-death: класс ЦЕЛ, модалка «Создание героя» НЕ всплывает (правка 27.11)",
+		String(GameState.class_id) == "warrior" and world.hud != null and not world.hud.is_modal_open(),
 		"class=[%s] modal=%s" % [String(GameState.class_id),
 			str(world.hud.is_modal_open() if world.hud != null else false)]) and ok
-	# Честный клик по карточке — тем же стартовым механизмом. Дальнейшие фазы
-	# считают экономику/скиллы ВОИНА, поэтому выбираем заново воина: смена канона
-	# не меняет чисел плейта, меняет лишь путь (модалка теперь обязательна).
-	await pick_warrior()
-	# Урон нового забега — канон gear_data.player_damage на голом герое: база
-	# класса (воин=2) + вечный Амулет Леса (+1); шмот/таланты/заточка/мастерство
-	# вытерты смертью, амулет — единственный легат (qa_run R3 — та же формула
-	# без амулета: dmg == база).
-	var _dmg_want := int(Classes.class_data("warrior").dmg) + (1 if bool(GameState.has_amulet) else 0)
-	ok = chk("post-death:retry->модалка->новый класс в бою работает (воин: ближний бой, урон = база+амулет)",
+	# Дальнейшие фазы считают экономику/скиллы ВОИНА — класс пережил смерть,
+	# выбирать заново нечего; урон обязан остаться ПРЕЖНИМ (шмот цел) — эталон
+	# берётся из снапшота ДО смерти, не из текущего состояния.
+	var pre: Dictionary = carried
+	var _dmg_want := int(pre.get("dmg", -1))
+	ok = chk("post-death: воин сразу в бою жив (ближний бой, урон = прежний %d — шмот цел)" % _dmg_want,
 		String(GameState.class_id) == "warrior" and world.player != null \
 			and String(world.player.class_data().kind) == "melee" \
 			and int(GameState.damage) == _dmg_want,
 		"class=%s dmg=%d want=%d" % [String(GameState.class_id), int(GameState.damage), _dmg_want]) and ok
-	await close_dialog()
-	var pre: Dictionary = carried
-	var expected_gold := 50 * int(GameState.flags.get("meta.purse", 0)) + int(GameState.mb_value("first_coal"))
-	ok = chk("смерть=сброс: золото == вечные ранги (%d)" % expected_gold, GameState.gold == expected_gold, "gold=%d" % GameState.gold) and ok
-	ok = chk("смерть=сброс: lvl 1, xp 0, шмот снят, сумка пуста (вечный амулет — единственный легат)",
-		GameState.level == 1 and GameState.xp == 0 and String(GameState.gear.get("weapon", "")) == "" \
-		and GameState.owned_gear.filter(func(g): return not String(g).begins_with("amulet")).is_empty(),
-		"lvl=%d xp=%d gear=%s bag=%s" % [GameState.level, GameState.xp, str(GameState.gear), str(GameState.owned_gear)]) and ok
+	# t38 I5 (27.11): цена вместо сброса — ровно floor(20%) с пола; серебро —
+	# единственная потеря, остальное сверяется со снапшотом до смерти.
+	var gold_pre := int(pre.get("gold", 0))
+	var expected_gold := gold_pre - int(floor(float(gold_pre) * GameState.DEATH_GOLD_LOSS))
+	ok = chk("мягкая смерть: золото %d -> %d (−20%% floor), meta.last_loss=%d" % [gold_pre, expected_gold, gold_pre - expected_gold],
+		GameState.gold == expected_gold and int(GameState.flags.get("meta.last_loss", -1)) == gold_pre - expected_gold,
+		"gold=%d want=%d last_loss=%s" % [GameState.gold, expected_gold, str(GameState.flags.get("meta.last_loss", -1))]) and ok
+	ok = chk("нажитое целое: lvl/xp/шмот/сумка как до смерти (экип неприкосновенен)",
+		GameState.level == int(pre.get("level", 0)) and GameState.xp == int(pre.get("xp", 0)) \
+		and String(GameState.gear.get("weapon", "")) == String(pre.get("weapon", "?")) \
+		and GameState.owned_gear.size() == int(pre.get("bag", -1)),
+		"lvl=%d xp=%d gear=%s bag=%d/%d" % [GameState.level, GameState.xp, str(GameState.gear), GameState.owned_gear.size(), int(pre.get("bag", -1))]) and ok
 	var ash_now: int = ASH.balance()
-	ok = chk("вечен только пепел: %d == %d (до смерти)" % [ash_now, int(pre.get("ash", -1))], ash_now == int(pre.get("ash", -1)),
+	ok = chk("вечен не только пепел: %d == %d (до смерти)" % [ash_now, int(pre.get("ash", -1))], ash_now == int(pre.get("ash", -1)),
 		"до=%d после=%d" % [int(pre.get("ash", -1)), ash_now]) and ok
 	ok = chk("ачивки вечны (ach.*: %d >= %d)" % [_ach_flags_count(), int(pre.get("ach_count", 0))],
 		_ach_flags_count() >= int(pre.get("ach_count", 0)), "") and ok
-	ok = chk("счётчик смертей +1 (meta.vd и ach.n.deaths)",
+	ok = chk("счётчик смертей +1 (meta.vd и ach.n.deaths) — ставки уплачены",
 		int(GameState.flags.get("meta.vd", 0)) == int(pre.get("vd", 0)) + 1 and int(GameState.flags.get("ach.n.deaths", 0)) == int(pre.get("deaths", 0)) + 1,
 		"vd=%s deaths=%s" % [str(GameState.flags.get("meta.vd", 0)), str(GameState.flags.get("ach.n.deaths", 0))]) and ok
-	var leftovers: Array = []
+	var wiped_probes: Array = []
 	for k in GameState.flags:
 		var ks := String(k)
-		# rs.zone/rs.t — НЕ легаты: их пишет процесс нового забега (таймер и смена
-		# зоны уже после вайпа), это свежие счётчики нового круга.
-		# q.q_brewer — тоже легат: «Пивовар» — постоянный квест (meta.q_brewer_done),
-		# вечный счёт варок ach.n.brews>0 предлагает его новому кругу сразу.
+		# t38 I5 (27.11): коллектор-свидетель: собираем живой слой круга; ни о
+		# каком «вытирании после вайпа» речи больше нет — смерть мягкая.
 		if ks == "q.q_brewer":
-			continue
+			pass  # постоянный квест — тоже свидетель живого слоя
 		if ks.begins_with("q.") or ks.begins_with("ashen.") or ks.begins_with("ng.boss_") or ks.begins_with("tal.") \
 				or (ks.begins_with("rs.") and ks != "rs.zone" and ks != "rs.t"):
-			leftovers.append(ks)
-	ok = chk("слой круга вытерт (q./ashen./ng.boss_/rs./tal.)", leftovers.is_empty(), "остались: %s" % str(leftovers.slice(0, 8))) and ok
+			wiped_probes.append(ks)
+	# t38 I5 (ПЕРЕПИН 27.11, вердикт пользователя, выбор А): прежний пин «слой
+	# круга вытерт» инвертирован — мягкая смерть НЕ вытирает q./ashen./tal./rs.;
+	# q. на этом этапе плейта заведомо непуст — он и есть свидетель отсутствия
+	# вайпа (полный набор вайпа пинится на отказном входе: qa_run D8).
+	ok = chk("слой круга НЕ вытерт смертью (q. жив — вайп снят 27.11)", wiped_probes.any(func(x): return String(x).begins_with("q.")), "флаги круга: %s" % str(wiped_probes.slice(0, 8))) and ok
 	ok = chk("амулет Леса вечен", bool(GameState.has_amulet), "has_amulet=%s" % str(GameState.has_amulet)) and ok
-	ok = chk("сид круга перевыброшен (%d -> %d)" % [int(pre.get("run_seed", 0)), GameState.run_seed],
-		GameState.run_seed != int(pre.get("run_seed", -1)), "") and ok
-	ok = chk("инвентарь обнулён (материалы/зелья/факелы/травы 0)",
-		_mats_sum() == 0 and GameState.brewed_potions == 0 and GameState.torches == 0 and GameState.herbs == 0,
-		"mats=%s brewed=%d torch=%d herbs=%d" % [str(GameState.materials), GameState.brewed_potions, GameState.torches, GameState.herbs]) and ok
-	ok = chk("квесты круга сброшены (slime_quest=0, cave_state=0)",
-		int(GameState.slime_quest) == 0 and int(GameState.cave_state) == 0,
-		"sq=%d cs=%d" % [GameState.slime_quest, GameState.cave_state]) and ok
-	ok = chk("смерть не оставляет в снежной: резолвер -> деревня",
+	ok = chk("сид круга НЕ перевыброшен (тот же забег: %d == %d)" % [int(pre.get("run_seed", 0)), GameState.run_seed],
+		GameState.run_seed == int(pre.get("run_seed", -1)), "") and ok
+	ok = chk("инвентарь цел (материалы/зелья/факелы/травы как до смерти)",
+		_mats_sum() == int(pre.get("mats", 0)) and GameState.brewed_potions == int(pre.get("brewed", 0)) \
+		and GameState.torches == int(pre.get("torches", 0)) and GameState.herbs == int(pre.get("herbs", 0)),
+		"mats=%d/%d brewed=%d torch=%d herbs=%d" % [_mats_sum(), int(pre.get("mats", 0)), GameState.brewed_potions, GameState.torches, GameState.herbs]) and ok
+	ok = chk("квесты круга НЕ сброшены (slime_quest/cave_state целы)",
+		int(GameState.slime_quest) == int(pre.get("sq", 0)) and int(GameState.cave_state) == int(pre.get("cs", 0)),
+		"sq=%d/%d cs=%d/%d" % [GameState.slime_quest, int(pre.get("sq", 0)), GameState.cave_state, int(pre.get("cs", 0))]) and ok
+	ok = chk("мягкая смерть уносит домой: резолвер -> деревня (костёр)",
 		String(world.active_area) == "village" and String(GameState.resolve_resume_zone(GameState.area)) == "village",
 		"active=%s area=%s" % [world.active_area, GameState.area]) and ok
 	ok = chk("герой жив, full hp, в деревне (y < CAVE_OFFSET)",
 		GameState.hp > 0 and GameState.hp == GameState.max_hp and world.player.global_position.y < world.CAVE_OFFSET.y,
 		"hp=%d/%d y=%.0f" % [GameState.hp, GameState.max_hp, world.player.global_position.y]) and ok
-	ok = chk("сундуки/костры круга сброшены (перепроходятся)",
-		GameState.chests_used.is_empty() and GameState.campfires_used.is_empty(),
-		"chests=%d camp=%d" % [GameState.chests_used.size(), GameState.campfires_used.size()]) and ok
+	ok = chk("сундуки/костры круга НЕ сброшены смертью (считаются дальше)",
+		GameState.chests_used.size() == int(pre.get("chests", -1)) and GameState.campfires_used.size() == int(pre.get("campfires", -1)),
+		"chests=%d/%d camp=%d/%d" % [GameState.chests_used.size(), int(pre.get("chests", -1)), GameState.campfires_used.size(), int(pre.get("campfires", -1))]) and ok
 	var p0: Vector2 = world.player.global_position
 	axes(Vector2.RIGHT)
 	await frames(24)
